@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --panel-2: #1f2937;
+            --border: #334155;
+            --text: #e5e7eb;
+            --muted: #94a3b8;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --success-bg: #052e16;
+            --success-border: #166534;
+            --success-text: #86efac;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .wrap {
+            max-width: 950px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: rgba(17, 24, 39, 0.96);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 32px;
+            line-height: 1.1;
+        }
+
+        p {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: var(--text);
+            text-decoration: none;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            background: #273449;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--text);
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 320px;
+            padding: 16px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            background: #0b1220;
+            color: var(--text);
+            resize: vertical;
+            font-size: 15px;
+            line-height: 1.5;
+            outline: none;
+        }
+
+        textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+
+        .help {
+            margin-top: 10px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        .success {
+            margin-top: 18px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--success-border);
+            background: var(--success-bg);
+            color: var(--success-text);
+            font-size: 14px;
+        }
+
+        .example-box {
+            margin-top: 24px;
+            padding: 18px;
+            border-radius: 14px;
+            background: #0b1220;
+            border: 1px solid var(--border);
+        }
+
+        .example-box h3 {
+            margin: 0 0 12px;
+            font-size: 16px;
+        }
+
+        .example-list {
+            margin: 0;
+            padding-left: 18px;
+            color: var(--muted);
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .active-list {
+            columns: 2;
+            column-gap: 28px;
+            margin: 0;
+            padding-left: 18px;
+            color: var(--muted);
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .active-list li {
+            break-inside: avoid;
+            margin-bottom: 4px;
+        }
+
+        code {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 6px;
+            color: #cbd5e1;
+        }
+
+        @media (max-width: 720px) {
+            .topbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .active-list {
+                columns: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="topbar">
+            <div>
+                <h1>Location Settings</h1>
+                <p>Add one location phrase per line. Duplicates are removed automatically when you save.</p>
+            </div>
+            <a class="back-link" href="/">← Back to App</a>
+        </div>
+
+        <div class="card">
+            <form method="post" action="/save-settings">
+                <label for="locations">Location terms</label>
+                <textarea id="locations" name="locations" placeholder="long island&#10;new york city&#10;queens&#10;brooklyn">{{ locations }}</textarea>
+
+                <div class="help">
+                    Example: <code>long island</code>, <code>brooklyn</code>, <code>near me</code>
+                </div>
+
+                <div class="actions">
+                    <button type="submit">Save Settings</button>
+                </div>
+            </form>
+
+            {% if saved %}
+            <div class="success">
+                Settings saved successfully.
+            </div>
+            {% endif %}
+
+            <div class="example-box">
+                <h3>Recommended format</h3>
+                <ul class="example-list">
+                    <li>Use one phrase per line</li>
+                    <li>Keep phrases clean and readable</li>
+                    <li>Duplicates are removed automatically</li>
+                    <li>Use location phrases you actually want the analyzer to recognize</li>
+                </ul>
+            </div>
+
+            {% if location_list %}
+            <div class="example-box">
+                <h3>Active geographic terms</h3>
+                <ul class="active-list">
+                    {% for item in location_list %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
