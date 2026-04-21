@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: fastapi
-Version: 0.135.3
+Version: 0.136.0
 Summary: FastAPI framework, high performance, easy to learn, fast to code, ready for production
 Author-Email: =?utf-8?q?Sebasti=C3=A1n_Ram=C3=ADrez?= <tiangolo@gmail.com>
 License-Expression: MIT
@@ -44,6 +44,7 @@ Requires-Dist: typing-inspection>=0.4.2
 Requires-Dist: annotated-doc>=0.0.2
 Provides-Extra: standard
 Requires-Dist: fastapi-cli[standard]>=0.0.8; extra == "standard"
+Requires-Dist: fastar>=0.9.0; extra == "standard"
 Requires-Dist: httpx<1.0.0,>=0.23.0; extra == "standard"
 Requires-Dist: jinja2>=3.1.5; extra == "standard"
 Requires-Dist: python-multipart>=0.0.18; extra == "standard"

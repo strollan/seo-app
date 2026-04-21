@@ -13,6 +13,7 @@ import tempfile
 import requests
 from bs4 import BeautifulSoup
 
+
 app = FastAPI()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,13 +24,48 @@ if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-def load_location_terms():
-    file_path = os.path.join(BASE_DIR, "location_terms.txt")
+def location_terms_file_path() -> str:
+    return os.path.join(BASE_DIR, "location_terms.txt")
+
+
+def load_custom_location_terms():
+    file_path = location_terms_file_path()
     if not os.path.exists(file_path):
         return set()
 
     with open(file_path, "r", encoding="utf-8") as f:
         return {line.strip().lower() for line in f if line.strip()}
+
+
+def load_custom_location_text() -> str:
+    file_path = location_terms_file_path()
+    if not os.path.exists(file_path):
+        return ""
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def normalize_term_list(lines):
+    return sorted(
+        {
+            line.strip().lower()
+            for line in lines
+            if line and line.strip()
+        }
+    )
+
+
+def get_location_sets():
+    custom_terms = load_custom_location_terms()
+    built_in_terms = set(BASE_LOCATION_TERMS)
+    combined_terms = built_in_terms.union(custom_terms)
+
+    return {
+        "built_in": sorted(built_in_terms),
+        "custom": sorted(custom_terms),
+        "combined": sorted(combined_terms),
+    }
 
 
 STOP_WORDS = {
@@ -54,7 +90,7 @@ BASE_LOCATION_TERMS = {
     "southern california", "orange county", "san jose", "bay area"
 }
 
-LOCATION_TERMS = BASE_LOCATION_TERMS.union(load_location_terms())
+LOCATION_TERMS = BASE_LOCATION_TERMS.union(load_custom_location_terms())
 
 COMMERCIAL_TERMS = {
     "cost", "price", "pricing", "quote", "estimate", "affordable", "cheap",
@@ -736,22 +772,18 @@ async def home(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    file_path = os.path.join(BASE_DIR, "location_terms.txt")
-
-    locations = ""
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            locations = f.read()
-
-    location_list = sorted({line.strip() for line in locations.splitlines() if line.strip()})
+    location_sets = get_location_sets()
+    custom_text = load_custom_location_text()
 
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
         context={
             "request": request,
-            "locations": "\n".join(location_list),
-            "location_list": location_list,
+            "locations": "",
+            "location_list": location_sets["combined"],
+            "built_in_location_list": location_sets["built_in"],
+            "custom_location_list": location_sets["custom"],
             "saved": False,
         },
     )
@@ -759,30 +791,31 @@ async def settings_page(request: Request):
 
 @app.post("/save-settings", response_class=HTMLResponse)
 async def save_settings(request: Request, locations: str = Form(...)):
-    file_path = os.path.join(BASE_DIR, "location_terms.txt")
+    file_path = location_terms_file_path()
 
-    cleaned_list = sorted(
-        {
-            line.strip().lower()
-            for line in locations.splitlines()
-            if line.strip()
-        }
-    )
-    cleaned = "\n".join(cleaned_list)
+    cleaned_list = normalize_term_list(locations.splitlines())
+    cleaned_text = "\n".join(cleaned_list)
 
     with open(file_path, "w", encoding="utf-8") as f:
-        f.write(cleaned)
+        if cleaned_text:
+            f.write(cleaned_text + "\n")
+        else:
+            f.write("")
 
     global LOCATION_TERMS
-    LOCATION_TERMS = BASE_LOCATION_TERMS.union(load_location_terms())
+    LOCATION_TERMS = BASE_LOCATION_TERMS.union(load_custom_location_terms())
+
+    location_sets = get_location_sets()
 
     return templates.TemplateResponse(
         request=request,
         name="settings.html",
         context={
             "request": request,
-            "locations": cleaned,
-            "location_list": cleaned_list,
+            "locations": "",
+            "location_list": location_sets["combined"],
+            "built_in_location_list": location_sets["built_in"],
+            "custom_location_list": location_sets["custom"],
             "saved": True,
         },
     )
@@ -805,9 +838,12 @@ async def analyze(
     competitor["score"] = comp_score
 
     gap = keyword_gap(site, competitors_sorted)
-    analysis = build_analysis_html(site, competitors_sorted, gap)
 
     site_quick_wins = build_quick_wins(site, competitor)
+
+    analysis = build_analysis_html(site, competitors_sorted, gap)
+
+
     competitor_quick_wins = [
         {
             "domain": competitor["clean_domain"],

@@ -1,4 +1,4 @@
-#!/mnt/c/Users/scott/ai-project/seo-app-fresh/venv/bin/python3
+#!/mnt/c/Users/scott/ai-project/seo-app/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
