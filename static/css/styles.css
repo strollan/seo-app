@@ -1,0 +1,19 @@
+
+/* === ANALYZE BUTTON CENTER HARD FIX START === */
+.analyze-button-center-row {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin-top: 28px !important;
+}
+
+.analyze-button-center-row #runBtn {
+    margin: 0 !important;
+}
+
+#analyzeForm .loading,
+.card .footer-note {
+    text-align: center !important;
+}
+/* === ANALYZE BUTTON CENTER HARD FIX END === */

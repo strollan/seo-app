@@ -2,257 +2,291 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="icon" href="/static/favicon.ico?v=2">
+    <link rel="stylesheet" href="/static/css/styles.css">
+
     <style>
-        :root {
-            --bg: #0f172a;
-            --panel: #111827;
-            --panel-2: #1f2937;
-            --border: #334155;
-            --text: #e5e7eb;
-            --muted: #94a3b8;
-            --accent: #2563eb;
-            --accent-hover: #1d4ed8;
-            --success-bg: #052e16;
-            --success-border: #166534;
-            --success-text: #86efac;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
         body {
             margin: 0;
             font-family: Arial, sans-serif;
-            background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
-            color: var(--text);
+            background: linear-gradient(135deg, #0f172a, #1e3a8a);
+            color: #0f172a;
             min-height: 100vh;
             padding: 40px 20px;
         }
 
-        .wrap {
-            max-width: 950px;
+        .settings-wrap {
+            max-width: 1180px;
             margin: 0 auto;
         }
 
-        .card {
-            background: rgba(17, 24, 39, 0.96);
-            border: 1px solid var(--border);
+        .settings-header,
+        .settings-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
             border-radius: 18px;
-            padding: 28px;
-            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
         }
 
-        h1 {
-            margin: 0 0 10px;
-            font-size: 32px;
-            line-height: 1.1;
-        }
-
-        p {
-            margin: 0 0 18px;
-            color: var(--muted);
-            font-size: 15px;
-            line-height: 1.6;
-        }
-
-        .topbar {
+        .settings-header {
             display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 20px;
+            padding: 26px 30px;
+            margin-bottom: 22px;
         }
 
-        .back-link {
-            display: inline-block;
-            color: var(--text);
-            text-decoration: none;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-size: 14px;
-        }
-
-        .back-link:hover {
-            background: #273449;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 10px;
-            font-size: 14px;
-            font-weight: bold;
-            color: var(--text);
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 320px;
-            padding: 16px;
-            border-radius: 14px;
-            border: 1px solid var(--border);
-            background: #0b1220;
-            color: var(--text);
-            resize: vertical;
-            font-size: 15px;
-            line-height: 1.5;
-            outline: none;
-        }
-
-        textarea:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-        }
-
-        .help {
-            margin-top: 10px;
-            font-size: 13px;
-            color: var(--muted);
-        }
-
-        .actions {
-            margin-top: 20px;
+        .settings-header-left {
             display: flex;
-            gap: 12px;
             align-items: center;
+            gap: 18px;
+        }
+
+        .settings-logo {
+            height: 68px;
+            width: auto;
+            display: block;
+        }
+
+        .settings-header h1 {
+            margin: 0 0 6px;
+            font-size: 32px;
+        }
+
+        .settings-header p,
+        .settings-card p {
+            margin: 0;
+            color: #64748b;
+            line-height: 1.55;
+            font-size: 14px;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 10px;
             flex-wrap: wrap;
         }
 
-        button {
-            background: var(--accent);
-            color: white;
-            border: none;
+        .settings-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 42px;
+            padding: 10px 16px;
             border-radius: 12px;
-            padding: 12px 18px;
-            font-size: 15px;
-            font-weight: bold;
+            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            color: #1e3a8a;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 14px;
             cursor: pointer;
         }
 
-        button:hover {
-            background: var(--accent-hover);
+        .settings-btn.primary {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #ffffff;
         }
 
-        .success {
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 22px;
+            align-items: start;
+        }
+
+        .settings-card {
+            padding: 24px;
+        }
+
+        .settings-card.full {
+            grid-column: 1 / -1;
+        }
+
+        .settings-card h2 {
+            margin: 0 0 8px;
+            font-size: 22px;
+            color: #0f172a;
+        }
+
+        .settings-list {
+            margin: 16px 0 0;
+            padding-left: 18px;
+            color: #475569;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .settings-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .settings-pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e3a8a;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+
+        .settings-status {
+            display: inline-flex;
+            align-items: center;
+            margin-top: 16px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .settings-status.on {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+
+        .settings-status.off {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .settings-switch-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
             margin-top: 18px;
-            padding: 14px 16px;
-            border-radius: 12px;
-            border: 1px solid var(--success-border);
-            background: var(--success-bg);
-            color: var(--success-text);
-            font-size: 14px;
         }
 
-        .example-box {
-            margin-top: 24px;
-            padding: 18px;
-            border-radius: 14px;
-            background: #0b1220;
-            border: 1px solid var(--border);
+        .settings-btn.danger {
+            background: #991b1b;
+            border-color: #991b1b;
+            color: #ffffff;
         }
 
-        .example-box h3 {
-            margin: 0 0 12px;
-            font-size: 16px;
+
+        /* === SETTINGS DATAFORSEO CARD CENTER START === */
+        .settings-card.dataforseo-card {
+            text-align: center;
         }
 
-        .example-list {
-            margin: 0;
-            padding-left: 18px;
-            color: var(--muted);
-            line-height: 1.7;
-            font-size: 14px;
+        .settings-card.dataforseo-card .settings-status {
+            margin-left: auto;
+            margin-right: auto;
         }
 
-        .active-list {
-            columns: 2;
-            column-gap: 28px;
-            margin: 0;
-            padding-left: 18px;
-            color: var(--muted);
-            line-height: 1.7;
-            font-size: 14px;
+        .settings-card.dataforseo-card .settings-switch-form {
+            justify-content: center;
         }
 
-        .active-list li {
-            break-inside: avoid;
-            margin-bottom: 4px;
+        .settings-card.dataforseo-card .settings-list {
+            display: inline-block;
+            text-align: left;
+            margin-left: auto;
+            margin-right: auto;
         }
+
+        .settings-card.dataforseo-card .settings-pills {
+            justify-content: center;
+        }
+        /* === SETTINGS DATAFORSEO CARD CENTER END === */
 
         code {
-            background: #0f172a;
-            border: 1px solid var(--border);
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
             padding: 2px 6px;
             border-radius: 6px;
-            color: #cbd5e1;
+            color: #334155;
         }
 
-        @media (max-width: 720px) {
-            .topbar {
+        @media (max-width: 820px) {
+            body {
+                padding: 24px 14px;
+            }
+
+            .settings-header {
                 flex-direction: column;
                 align-items: flex-start;
             }
 
-            .active-list {
-                columns: 1;
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .settings-card.full {
+                grid-column: auto;
             }
         }
     </style>
 </head>
+
 <body>
-    <div class="wrap">
-        <div class="topbar">
-            <div>
-                <h1>Location Settings</h1>
-                <p>Add one location phrase per line. Duplicates are removed automatically when you save.</p>
+    <div class="settings-wrap">
+        <div class="settings-header">
+            <div class="settings-header-left">
+                <a href="/">
+                    <img src="/static/logo.png" class="settings-logo" alt="Vast SEO Logo">
+                </a>
+                <div>
+                    <h1>Settings</h1>
+                    <p>Clean app reference and LeadBot shortcut.</p>
+                </div>
             </div>
-            <a class="back-link" href="/">← Back to App</a>
+
+            <div class="settings-actions">
+                <a href="/" class="settings-btn">← Back to App</a>
+                <a href="/lead-bot" class="settings-btn primary">Open LeadBot</a>
+            </div>
         </div>
 
-        <div class="card">
-            <form method="post" action="/save-settings">
-                <label for="locations">Location terms</label>
-                <textarea id="locations" name="locations" placeholder="long island&#10;new york city&#10;queens&#10;brooklyn">{{ locations }}</textarea>
-
-                <div class="help">
-                    Example: <code>long island</code>, <code>brooklyn</code>, <code>near me</code>
-                </div>
-
-                <div class="actions">
-                    <button type="submit">Save Settings</button>
-                </div>
-            </form>
-
-            {% if saved %}
-            <div class="success">
-                Settings saved successfully.
+        <div class="settings-grid">
             </div>
-            {% endif %}
 
-            <div class="example-box">
-                <h3>Recommended format</h3>
-                <ul class="example-list">
-                    <li>Use one phrase per line</li>
-                    <li>Keep phrases clean and readable</li>
-                    <li>Duplicates are removed automatically</li>
-                    <li>Use location phrases you actually want the analyzer to recognize</li>
+
+            <div class="settings-card dataforseo-card">
+                <h2>LeadBot DataForSEO</h2>
+                <p>Control whether LeadBot can spend money on live DataForSEO organic SERP scans.</p>
+
+                {% if leadbot_dataforseo_enabled %}
+                    <div class="settings-status on">ON — Live SERP scans enabled</div>
+                {% else %}
+                    <div class="settings-status off">OFF — Safe mode, no DataForSEO spend</div>
+                {% endif %}
+
+                <form method="post" action="/settings/leadbot-dataforseo" class="settings-switch-form">
+                    <button type="submit" name="enabled" value="1" class="settings-btn primary">Turn ON</button>
+                    <button type="submit" name="enabled" value="0" class="settings-btn danger">Turn OFF</button>
+                </form>
+
+                <ul class="settings-list">
+                    <li>OFF protects against old tabs, refreshes, and accidental scans.</li>
+                    <li>ON allows LeadBot live organic SERP scans to use DataForSEO.</li>
+                    <li>Dashboard, exports, and auto details stay available either way.</li>
                 </ul>
+
+                <div class="settings-pills">
+                    <span class="settings-pill">Wallet Safety</span>
+                    <span class="settings-pill">LeadBot Control</span>
+                </div>
+            </div>
             </div>
 
-            {% if location_list %}
-            <div class="example-box">
-                <h3>Active geographic terms</h3>
-                <ul class="active-list">
-                    {% for item in location_list %}
-                    <li>{{ item }}</li>
-                    {% endfor %}
-                </ul>
+                {% if location_list %}
+{% else %}
+                <p>No active geographic terms found.</p>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
     </div>
 </body>

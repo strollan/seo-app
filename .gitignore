@@ -1,0 +1,99 @@
+# === ENV / SECRETS ===
+.env
+.env.*
+!.env.example
+
+# === PYTHON ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# === VIRTUAL ENV ===
+venv/
+.venv/
+env/
+
+# === LOCAL DATABASE / DATA ===
+*.db
+*.sqlite
+*.sqlite3
+data/
+exports/
+reports/
+audits/
+backups/
+settings_data/
+leads
+
+# === LOGS / TEMP ===
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# === OS / EDITOR ===
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# === OLD LOCAL BACKUP / PATCH ARTIFACTS ===
+*.backup
+*.bak
+*.backout.*
+*.backup.*
+*.before-*
+*.pre-*
+*.save
+*.gold*
+*.working
+*.volume-working
+*.BROKEN*
+*.KNOWN-GOOD*
+*.START-*
+*.WORKING-*
+*_backup_*
+0
+
+# === LOCAL DEBUG / SCRATCH ===
+debug_*.html
+batch_reports.csv
+div:first-child
+div:first-child,
+
+# === APP BACKUP COPIES ===
+app/*.backup*
+app/*.bak*
+app/*.backout*
+app/*.before-*
+app/*.pre-*
+app/*.save
+app/*.gold*
+app/*.working
+app/*.volume-working
+app/*.BROKEN*
+app/*.KNOWN-GOOD*
+app/*.START-*
+app/*.WORKING-*
+app/*_backup_*
+
+# === TEMPLATE BACKUP COPIES ===
+app/templates/*.backup*
+app/templates/*.bak*
+app/templates/*.gold*
+app/templates/*.awesome*
+app/templates/*.pre-*
+app/templates/*.save
+
+# === CSS BACKUP COPIES ===
+app/static/**/*.backup*
+app/static/**/*.bak*
+app/static/**/*.gold*
+app/static/**/*.awesome*
+app/static/**/*.save
