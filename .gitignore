@@ -97,3 +97,35 @@ app/static/**/*.bak*
 app/static/**/*.gold*
 app/static/**/*.awesome*
 app/static/**/*.save
+
+# === AGENT BACKUP COPIES ===
+agents/*.backup*
+agents/*.bak*
+agents/*.backout*
+agents/*.before-*
+agents/*.pre-*
+agents/*.save
+agents/*.gold*
+agents/*.working
+agents/*.volume-working
+agents/*.BROKEN*
+agents/*.KNOWN-GOOD*
+agents/*.START-*
+agents/*.WORKING-*
+agents/*.broken-*
+
+# === AGENT BACKUP COPIES ===
+agents/*.backup*
+agents/*.bak*
+agents/*.backout*
+agents/*.before-*
+agents/*.pre-*
+agents/*.save
+agents/*.gold*
+agents/*.working
+agents/*.volume-working
+agents/*.BROKEN*
+agents/*.KNOWN-GOOD*
+agents/*.START-*
+agents/*.WORKING-*
+agents/*.broken-*
