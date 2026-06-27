@@ -129,3 +129,18 @@ agents/*.KNOWN-GOOD*
 agents/*.START-*
 agents/*.WORKING-*
 agents/*.broken-*
+
+# === LOCAL SCRATCH / OLD HELPERS ===
+app/agent.py
+app/agent_service.py
+app/competitor_agent.py
+app/runapp.sh
+app/static/logo*.png
+app/static/old-logo.png
+app/static/*.avif
+batch_runner.py
+run.sh
+run_cesspool_leads.sh
+run_roofing_leads.sh
+scripts/*.DISABLED.*.py
+test_*.py
