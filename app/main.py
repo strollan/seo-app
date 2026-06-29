@@ -10210,8 +10210,9 @@ def auth_current_user(request):
     return get_user_from_token(token)
 # === AUTH CURRENT USER COMPAT END ===
 
-def auth_login_page(error=""):
+def auth_login_page(error="", message=""):
     error_html = f'<div class="auth-error">{error}</div>' if error else ""
+    message_html = f'<div class="auth-success">{message}</div>' if message else ""
 
     return AuthHTMLResponse(f"""
 <!doctype html>
@@ -10278,6 +10279,15 @@ button {{
     margin-bottom: 14px;
     font-weight: 800;
 }}
+.auth-success {{
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+    border-radius: 12px;
+    padding: 11px 13px;
+    margin-bottom: 14px;
+    font-weight: 800;
+}}
 .auth-links {{
     margin-top: 16px;
     text-align: center;
@@ -10294,12 +10304,17 @@ button {{
         <h1>Vast SEO Login</h1>
         <p>Sign in to access protected tools.</p>
         {error_html}
+        {message_html}
         <label>Username or Email</label>
         <input name="username" autocomplete="username" maxlength="254" required>
         <label>Password</label>
         <input name="password" type="password" autocomplete="current-password" maxlength="256" required>
         <button type="submit">Log In</button>
-        <div class="auth-links"><a href="/">Back to Home</a> &nbsp;|&nbsp; <a href="/create-account">Create Account</a></div>
+        <div class="auth-links">
+            <a href="/">Back to Home</a> &nbsp;|&nbsp;
+            <a href="/forgot-password">Forgot password?</a> &nbsp;|&nbsp;
+            <a href="/create-account">Create Account</a>
+        </div>
     </form>
 </body>
 </html>
@@ -10307,7 +10322,9 @@ button {{
 
 
 @app.get("/login", response_class=AuthHTMLResponse)
-def auth_login_get():
+def auth_login_get(reset: str = AuthQuery("")):
+    if str(reset).strip() == "1":
+        return auth_login_page(message="Password reset successfully. You can now log in.")
     return auth_login_page()
 
 
@@ -10535,6 +10552,353 @@ def create_account_post(
 ):
     return signup_post(username=username, password=password, confirm_password=confirm_password)
 # === SIGNUP ROUTES END ===
+
+
+# === PASSWORD RESET ROUTES START ===
+_SMTP_PLACEHOLDERS = frozenset({
+    "smtp.yourmailprovider.com",
+    "smtp.example.com",
+    "your-smtp-host",
+    "mail.example.com",
+})
+
+_BASE_URL_PLACEHOLDERS = frozenset({
+    "https://yourdomain.com",
+    "http://yourdomain.com",
+    "https://example.com",
+    "http://example.com",
+})
+
+
+def _is_dev_mode():
+    """Dev mode when SMTP_HOST is blank or a known placeholder."""
+    host = os.getenv("SMTP_HOST", "").strip().lower()
+    return not host or host in _SMTP_PLACEHOLDERS
+
+
+def _get_base_url(request):
+    """Return base URL for reset links, ignoring placeholder env values."""
+    configured = os.getenv("APP_BASE_URL", "").rstrip("/")
+    if configured and configured not in _BASE_URL_PLACEHOLDERS:
+        return configured
+    try:
+        derived = str(request.base_url).rstrip("/")
+        if derived:
+            return derived
+    except Exception:
+        pass
+    return "http://127.0.0.1:8000"
+
+
+def _send_reset_email(to_email, reset_url):
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    from_email = os.getenv("SMTP_FROM", smtp_user).strip()
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your password"
+    msg["From"] = from_email
+    msg["To"] = to_email
+
+    text_body = (
+        f"You requested a password reset.\n\n"
+        f"Click the link below to set a new password:\n\n{reset_url}\n\n"
+        f"This link expires in 1 hour. If you did not request a reset, ignore this email."
+    )
+    html_body = (
+        f"<p>You requested a password reset.</p>"
+        f'<p><a href="{reset_url}">Reset your password</a></p>'
+        f"<p>This link expires in 1 hour. "
+        f"If you did not request a reset, ignore this email.</p>"
+    )
+
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+
+def forgot_password_page(message="", error="", dev_link=""):
+    import html as _html
+
+    error_html = f'<div class="auth-error">{_html.escape(error)}</div>' if error else ""
+    message_html = f'<div class="auth-success">{_html.escape(message)}</div>' if message else ""
+    dev_link_html = ""
+    if dev_link:
+        safe_link = _html.escape(dev_link)
+        dev_link_html = (
+            f'<div class="dev-link-box"><strong>Dev mode &mdash; reset link:</strong><br>'
+            f'<a href="{safe_link}" style="word-break:break-all;">{safe_link}</a></div>'
+        )
+
+    return AuthHTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Forgot Password | Vast SEO</title>
+<style>
+body {{
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}}
+.auth-card {{
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+}}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+p {{ margin: 0 0 18px; color: #64748b; }}
+label {{ display: block; margin-top: 14px; font-weight: 900; color: #334155; }}
+input {{
+    width: 100%; margin-top: 7px; padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;
+}}
+button {{
+    width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
+    border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    color: white; font-weight: 950; cursor: pointer;
+}}
+.auth-error {{
+    background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-success {{
+    background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-links {{ margin-top: 16px; text-align: center; }}
+.auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
+.dev-link-box {{
+    margin-top: 18px; padding: 12px 14px; background: #fef9c3;
+    border: 1px solid #fde047; border-radius: 12px; font-size: 13px; color: #713f12;
+}}
+</style>
+</head>
+<body>
+    <form class="auth-card" method="post" action="/forgot-password">
+        <h1>Forgot Password</h1>
+        <p>Enter your username and we'll send you a reset link.</p>
+        {error_html}
+        {message_html}
+        {dev_link_html}
+        <label>Username</label>
+        <input name="identifier" type="text" autocomplete="username" maxlength="254" required>
+        <button type="submit">Send Reset Link</button>
+        <div class="auth-links"><a href="/login">Back to Login</a></div>
+    </form>
+</body>
+</html>
+""")
+
+
+@app.get("/forgot-password", response_class=AuthHTMLResponse)
+def forgot_password_get():
+    return forgot_password_page()
+
+
+@app.post("/forgot-password")
+def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
+    from agents.auth_agent import create_reset_token
+
+    clean_identifier = str(identifier or "").strip().lower()[:254]
+    base_url = _get_base_url(request)
+
+    GENERIC_MSG = "If an account exists for that username, a reset link has been sent."
+
+    raw_token, user = create_reset_token(clean_identifier)
+
+    if _is_dev_mode():
+        if user:
+            print(f"\n[DEV FORGOT] User found — user_id={user['id']} username={user['username']}", flush=True)
+            print(f"[DEV FORGOT] Reset token created: yes", flush=True)
+        else:
+            print(f"\n[DEV FORGOT] No user found for identifier: {clean_identifier!r}", flush=True)
+
+    if not user:
+        return forgot_password_page(message=GENERIC_MSG)
+
+    reset_url = f"{base_url}/reset-password?token={raw_token}"
+
+    if _is_dev_mode():
+        print(f"[DEV FORGOT] Reset URL: {reset_url}\n", flush=True)
+        return forgot_password_page(message=GENERIC_MSG, dev_link=reset_url)
+
+    try:
+        _send_reset_email(clean_identifier, reset_url)
+    except Exception as exc:
+        print(f"[ERROR] Failed to send reset email to {clean_identifier}: {exc}", flush=True)
+        return forgot_password_page(error="Could not send reset email. Please try again later.")
+
+    return forgot_password_page(message=GENERIC_MSG)
+
+
+def reset_password_page(token="", error=""):
+    import html as _html
+
+    error_html = f'<div class="auth-error">{_html.escape(error)}</div>' if error else ""
+    safe_token = _html.escape(token or "")
+
+    return AuthHTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Reset Password | Vast SEO</title>
+<style>
+body {{
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}}
+.auth-card {{
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+}}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+p {{ margin: 0 0 18px; color: #64748b; }}
+label {{ display: block; margin-top: 14px; font-weight: 900; color: #334155; }}
+input {{
+    width: 100%; margin-top: 7px; padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;
+}}
+button {{
+    width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
+    border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    color: white; font-weight: 950; cursor: pointer;
+}}
+.auth-error {{
+    background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-links {{ margin-top: 16px; text-align: center; }}
+.auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
+.small-note {{ margin-top: 10px; color: #64748b; font-size: 13px; }}
+</style>
+</head>
+<body>
+    <form class="auth-card" method="post" action="/reset-password">
+        <h1>Reset Password</h1>
+        <p>Enter your new password below.</p>
+        {error_html}
+        <input type="hidden" name="token" value="{safe_token}">
+        <label>New Password</label>
+        <input name="password" type="password" autocomplete="new-password" maxlength="256" required>
+        <label>Confirm New Password</label>
+        <input name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
+        <div class="small-note">Password must be at least 12 characters.</div>
+        <button type="submit">Set New Password</button>
+        <div class="auth-links"><a href="/login">Back to Login</a></div>
+    </form>
+</body>
+</html>
+""")
+
+
+def reset_password_invalid_page():
+    return AuthHTMLResponse("""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Invalid Reset Link | Vast SEO</title>
+<style>
+body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}
+.auth-card {
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    text-align: center;
+}
+h1 { margin: 0 0 12px; font-size: 26px; }
+p { color: #64748b; margin: 0 0 14px; }
+a { color: #1e3a8a; font-weight: 800; text-decoration: none; }
+</style>
+</head>
+<body>
+    <div class="auth-card">
+        <h1>Link Expired or Invalid</h1>
+        <p>This reset link has expired or has already been used.</p>
+        <p><a href="/forgot-password">Request a new reset link</a></p>
+    </div>
+</body>
+</html>
+""")
+
+
+@app.get("/reset-password", response_class=AuthHTMLResponse)
+def reset_password_get(token: str = AuthQuery("")):
+    from agents.auth_agent import get_user_for_reset_token
+
+    token = str(token or "").strip()
+    if not get_user_for_reset_token(token):
+        return reset_password_invalid_page()
+
+    return reset_password_page(token=token)
+
+
+@app.post("/reset-password")
+def reset_password_post(
+    token: str = AuthForm(...),
+    password: str = AuthForm(...),
+    confirm_password: str = AuthForm(...),
+):
+    from agents.auth_agent import (
+        get_user_for_reset_token,
+        consume_reset_token,
+        set_user_password,
+    )
+
+    token = str(token or "").strip()
+    password = str(password or "")[:256]
+    confirm_password = str(confirm_password or "")[:256]
+
+    user = get_user_for_reset_token(token)
+    if not user:
+        return reset_password_invalid_page()
+
+    if _is_dev_mode():
+        print(
+            f"\n[DEV RESET] Token valid — user_id={user['id']} username={user['username']}",
+            flush=True,
+        )
+
+    if password != confirm_password:
+        return reset_password_page(token=token, error="Passwords do not match.")
+
+    if len(password) < 12:
+        return reset_password_page(token=token, error="Password must be at least 12 characters.")
+
+    try:
+        set_user_password(user["id"], password)
+    except ValueError as exc:
+        if _is_dev_mode():
+            print(f"[DEV RESET] set_user_password FAILED: {exc}", flush=True)
+        return reset_password_page(token=token, error=str(exc))
+
+    if _is_dev_mode():
+        print(
+            f"[DEV RESET] Password updated — user_id={user['id']} username={user['username']}",
+            flush=True,
+        )
+
+    consume_reset_token(token)
+
+    return AuthRedirectResponse(url="/login?reset=1", status_code=303)
+# === PASSWORD RESET ROUTES END ===
 
 
 
