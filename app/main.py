@@ -10576,6 +10576,12 @@ def _is_dev_mode():
     return not host or host in _SMTP_PLACEHOLDERS
 
 
+def _show_dev_reset_link():
+    """Return True only when SHOW_DEV_RESET_LINK=1 is explicitly set.
+    Must never be True in production. Controls both on-page link and console output."""
+    return os.getenv("SHOW_DEV_RESET_LINK", "").strip() == "1"
+
+
 def _get_base_url(request):
     """Return base URL for reset links, ignoring placeholder env values."""
     configured = os.getenv("APP_BASE_URL", "").rstrip("/")
@@ -10718,7 +10724,7 @@ def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
 
     raw_token, user = create_reset_token(clean_identifier)
 
-    if _is_dev_mode():
+    if _show_dev_reset_link():
         if user:
             print(f"\n[DEV FORGOT] User found — user_id={user['id']} username={user['username']}", flush=True)
             print(f"[DEV FORGOT] Reset token created: yes", flush=True)
@@ -10730,9 +10736,13 @@ def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
 
     reset_url = f"{base_url}/reset-password?token={raw_token}"
 
-    if _is_dev_mode():
+    if _show_dev_reset_link():
         print(f"[DEV FORGOT] Reset URL: {reset_url}\n", flush=True)
         return forgot_password_page(message=GENERIC_MSG, dev_link=reset_url)
+
+    if _is_dev_mode():
+        # No SMTP configured and dev link not enabled — return generic message, no output.
+        return forgot_password_page(message=GENERIC_MSG)
 
     try:
         _send_reset_email(clean_identifier, reset_url)
@@ -10870,7 +10880,7 @@ def reset_password_post(
     if not user:
         return reset_password_invalid_page()
 
-    if _is_dev_mode():
+    if _show_dev_reset_link():
         print(
             f"\n[DEV RESET] Token valid — user_id={user['id']} username={user['username']}",
             flush=True,
@@ -10885,11 +10895,11 @@ def reset_password_post(
     try:
         set_user_password(user["id"], password)
     except ValueError as exc:
-        if _is_dev_mode():
+        if _show_dev_reset_link():
             print(f"[DEV RESET] set_user_password FAILED: {exc}", flush=True)
         return reset_password_page(token=token, error=str(exc))
 
-    if _is_dev_mode():
+    if _show_dev_reset_link():
         print(
             f"[DEV RESET] Password updated — user_id={user['id']} username={user['username']}",
             flush=True,
