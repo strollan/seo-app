@@ -10388,11 +10388,12 @@ def auth_logout(request: AuthRequest):
 
 
 # === SIGNUP ROUTES START ===
-def signup_page(error="", username=""):
+def signup_page(error="", username="", email=""):
     import html as signup_html
 
     error_html = f'<div class="auth-error">{signup_html.escape(error)}</div>' if error else ""
     username_value = signup_html.escape(username or "")
+    email_value = signup_html.escape(email or "")
 
     return AuthHTMLResponse(f"""
 <!doctype html>
@@ -10482,8 +10483,11 @@ button {{
         <p>Create a standard Vast SEO account.</p>
         {error_html}
 
-        <label>Email / Username</label>
-        <input name="username" autocomplete="username" value="{username_value}" required>
+        <label>Username</label>
+        <input name="username" type="text" autocomplete="username" value="{username_value}" maxlength="150" required>
+
+        <label>Email</label>
+        <input name="email" type="email" autocomplete="email" value="{email_value}" maxlength="254" required>
 
         <label>Password</label>
         <input name="password" type="password" autocomplete="new-password" required>
@@ -10517,29 +10521,37 @@ def create_account_get():
 @app.post("/signup")
 def signup_post(
     username: str = AuthForm(...),
+    email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
 ):
-    from agents.auth_agent import create_user, user_exists
+    from agents.auth_agent import create_user, user_exists, email_exists
 
     clean_username = str(username or "").strip().lower()
+    clean_email = str(email or "").strip().lower()
 
-    if "@" not in clean_username or "." not in clean_username:
-        return signup_page("Use a valid email address.", username=clean_username)
+    if not clean_username:
+        return signup_page("Username is required.", username=clean_username, email=clean_email)
+
+    if "@" not in clean_email or "." not in clean_email:
+        return signup_page("Use a valid email address.", username=clean_username, email=clean_email)
 
     if password != confirm_password:
-        return signup_page("Passwords do not match.", username=clean_username)
+        return signup_page("Passwords do not match.", username=clean_username, email=clean_email)
 
     if len(password or "") < 12:
-        return signup_page("Password must be at least 12 characters.", username=clean_username)
+        return signup_page("Password must be at least 12 characters.", username=clean_username, email=clean_email)
 
     if user_exists(clean_username):
-        return signup_page("An account with that email already exists. Log in instead.", username=clean_username)
+        return signup_page("That username is already taken.", username=clean_username, email=clean_email)
+
+    if email_exists(clean_email):
+        return signup_page("An account with that email already exists. Log in instead.", username=clean_username, email=clean_email)
 
     try:
-        create_user(clean_username, password, role="standard")
+        create_user(clean_username, password, role="standard", email=clean_email)
     except Exception as exc:
-        return signup_page(f"Could not create account: {str(exc)}", username=clean_username)
+        return signup_page(f"Could not create account: {str(exc)}", username=clean_username, email=clean_email)
 
     return AuthRedirectResponse(url="/login", status_code=303)
 
@@ -10547,10 +10559,11 @@ def signup_post(
 @app.post("/create-account")
 def create_account_post(
     username: str = AuthForm(...),
+    email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
 ):
-    return signup_post(username=username, password=password, confirm_password=confirm_password)
+    return signup_post(username=username, email=email, password=password, confirm_password=confirm_password)
 # === SIGNUP ROUTES END ===
 
 
@@ -10598,7 +10611,6 @@ def _get_base_url(request):
 
 def _send_reset_email(to_email, reset_url):
     import smtplib
-    from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
     smtp_host = os.getenv("SMTP_HOST", "").strip()
@@ -10607,25 +10619,16 @@ def _send_reset_email(to_email, reset_url):
     smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
     from_email = os.getenv("SMTP_FROM", smtp_user).strip()
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Reset your password"
+    body = (
+        f"You requested a password reset for your LeadMeLeads account.\n\n"
+        f"Click the link below to set a new password:\n\n{reset_url}\n\n"
+        f"This link expires in 60 minutes. If you did not request a reset, ignore this email."
+    )
+
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = "Reset your LeadMeLeads password"
     msg["From"] = from_email
     msg["To"] = to_email
-
-    text_body = (
-        f"You requested a password reset.\n\n"
-        f"Click the link below to set a new password:\n\n{reset_url}\n\n"
-        f"This link expires in 1 hour. If you did not request a reset, ignore this email."
-    )
-    html_body = (
-        f"<p>You requested a password reset.</p>"
-        f'<p><a href="{reset_url}">Reset your password</a></p>'
-        f"<p>This link expires in 1 hour. "
-        f"If you did not request a reset, ignore this email.</p>"
-    )
-
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
 
     with smtplib.SMTP(smtp_host, smtp_port) as server:
         server.starttls()
@@ -10694,11 +10697,11 @@ button {{
 <body>
     <form class="auth-card" method="post" action="/forgot-password">
         <h1>Forgot Password</h1>
-        <p>Enter your username and we'll send you a reset link.</p>
+        <p>Enter your username or email and we'll send you a reset link.</p>
         {error_html}
         {message_html}
         {dev_link_html}
-        <label>Username</label>
+        <label>Username or Email</label>
         <input name="identifier" type="text" autocomplete="username" maxlength="254" required>
         <button type="submit">Send Reset Link</button>
         <div class="auth-links"><a href="/login">Back to Login</a></div>
@@ -10720,13 +10723,13 @@ def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
     clean_identifier = str(identifier or "").strip().lower()[:254]
     base_url = _get_base_url(request)
 
-    GENERIC_MSG = "If an account exists for that username, a reset link has been sent."
+    GENERIC_MSG = "If an account exists for that username or email, a reset link has been sent."
 
     raw_token, user = create_reset_token(clean_identifier)
 
     if _show_dev_reset_link():
         if user:
-            print(f"\n[DEV FORGOT] User found — user_id={user['id']} username={user['username']}", flush=True)
+            print(f"\n[DEV FORGOT] User found — user_id={user['id']} username={user['username']} email={user.get('email')!r}", flush=True)
             print(f"[DEV FORGOT] Reset token created: yes", flush=True)
         else:
             print(f"\n[DEV FORGOT] No user found for identifier: {clean_identifier!r}", flush=True)
@@ -10744,11 +10747,14 @@ def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
         # No SMTP configured and dev link not enabled — return generic message, no output.
         return forgot_password_page(message=GENERIC_MSG)
 
+    user_email = user.get("email")
+    if not user_email:
+        return forgot_password_page(message=GENERIC_MSG)
+
     try:
-        _send_reset_email(clean_identifier, reset_url)
+        _send_reset_email(user_email, reset_url)
     except Exception as exc:
-        print(f"[ERROR] Failed to send reset email to {clean_identifier}: {exc}", flush=True)
-        return forgot_password_page(error="Could not send reset email. Please try again later.")
+        print(f"[ERROR] Failed to send reset email to {user_email}: {exc}", flush=True)
 
     return forgot_password_page(message=GENERIC_MSG)
 
