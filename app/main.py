@@ -10612,6 +10612,7 @@ def _get_base_url(request):
 def _send_reset_email(to_email, reset_url):
     import smtplib
     from email.mime.text import MIMEText
+    from datetime import timezone
 
     smtp_host = os.getenv("SMTP_HOST", "").strip()
     smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
@@ -10619,14 +10620,17 @@ def _send_reset_email(to_email, reset_url):
     smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
     from_email = os.getenv("SMTP_FROM", smtp_user).strip()
 
+    requested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
     body = (
         f"You requested a password reset for your LeadMeLeads account.\n\n"
         f"Click the link below to set a new password:\n\n{reset_url}\n\n"
-        f"This link expires in 60 minutes. If you did not request a reset, ignore this email."
+        f"This link expires in 60 minutes. If you did not request a reset, ignore this email.\n\n"
+        f"Requested at: {requested_at}"
     )
 
     msg = MIMEText(body, "plain")
-    msg["Subject"] = "Reset your LeadMeLeads password"
+    msg["Subject"] = f"Reset your LeadMeLeads password — {requested_at}"
     msg["From"] = from_email
     msg["To"] = to_email
 
