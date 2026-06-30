@@ -71,11 +71,20 @@ def init_auth_db():
             """
         )
 
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        except Exception:
+            pass  # column already exists
+
         conn.commit()
 
 
 def normalize_username(username):
     return str(username or "").strip().lower()
+
+
+def normalize_email(email):
+    return str(email or "").strip().lower()
 
 
 def hash_password(password):
@@ -119,7 +128,7 @@ def verify_password(password, stored):
         return False
 
 
-def create_user(username, password, role="standard"):
+def create_user(username, password, role="standard", email=None):
     init_auth_db()
 
     username = normalize_username(username)
@@ -128,15 +137,16 @@ def create_user(username, password, role="standard"):
     if not username:
         raise ValueError("Username is required.")
 
+    clean_email = normalize_email(email) if email else None
     password_hash = hash_password(password)
 
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO users (username, password_hash, role, is_active, created_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO users (username, password_hash, role, is_active, created_at, email)
+            VALUES (?, ?, ?, 1, ?, ?)
             """,
-            (username, password_hash, role, iso(utc_now())),
+            (username, password_hash, role, iso(utc_now()), clean_email),
         )
         conn.commit()
 
@@ -156,8 +166,33 @@ def get_user_by_username(username):
     return dict(row) if row else None
 
 
+def get_user_by_email(email):
+    init_auth_db()
+    email = normalize_email(email)
+    if not email:
+        return None
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE email = ? AND is_active = 1",
+            (email,),
+        ).fetchone()
+
+    return dict(row) if row else None
+
+
+def get_user_by_username_or_email(identifier):
+    """Find active user by username first, then by email if identifier contains @."""
+    user = get_user_by_username(identifier)
+    if user:
+        return user
+    if "@" in identifier:
+        return get_user_by_email(identifier)
+    return None
+
+
 def authenticate_user(username, password):
-    user = get_user_by_username(username)
+    user = get_user_by_username_or_email(username)
 
     if not user:
         return None
@@ -333,6 +368,10 @@ def user_exists(username):
     return get_user_by_username(username) is not None
 
 
+def email_exists(email):
+    return get_user_by_email(email) is not None
+
+
 # === PASSWORD RESET START ===
 RESET_TOKEN_MINUTES = 60
 
@@ -341,9 +380,9 @@ def _ensure_reset_tokens_table():
     init_auth_db()
 
 
-def create_reset_token(username):
+def create_reset_token(identifier):
     """Return (raw_token, user) for a valid account, or (None, None) if not found."""
-    user = get_user_by_username(username)
+    user = get_user_by_username_or_email(identifier)
     if not user:
         return None, None
 
