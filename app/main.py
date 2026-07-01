@@ -10297,6 +10297,35 @@ button {{
     font-weight: 800;
     text-decoration: none;
 }}
+.password-wrap {{
+    position: relative;
+}}
+.password-wrap input {{
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 48px;
+}}
+.password-toggle {{
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px;
+    color: #64748b;
+}}
+.password-toggle:hover {{
+    color: #1e3a8a;
+}}
+.password-toggle:focus-visible {{
+    outline: 2px solid #1e3a8a;
+    outline-offset: 2px;
+    border-radius: 6px;
+}}
 </style>
 </head>
 <body>
@@ -10308,7 +10337,10 @@ button {{
         <label>Username or Email</label>
         <input name="username" autocomplete="username" maxlength="254" required>
         <label>Password</label>
-        <input name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <div class="password-wrap">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="login-password" aria-label="Show password">👁</button>
+        </div>
         <button type="submit">Log In</button>
         <div class="auth-links">
             <a href="/">Back to Home</a> &nbsp;|&nbsp;
@@ -10316,6 +10348,21 @@ button {{
             <a href="/create-account">Create Account</a>
         </div>
     </form>
+<script>
+document.addEventListener("click", function (event) {{
+    const button = event.target.closest("[data-password-toggle]");
+    if (!button) return;
+
+    const targetId = button.getAttribute("data-password-toggle");
+    const input = document.getElementById(targetId);
+    if (!input) return;
+
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    button.textContent = showing ? "👁" : "🙈";
+}});
+</script>
 </body>
 </html>
 """)
@@ -10475,6 +10522,35 @@ button {{
     font-size: 13px;
     line-height: 1.45;
 }}
+.password-wrap {{
+    position: relative;
+}}
+.password-wrap input {{
+    width: 100%;
+    box-sizing: border-box;
+    padding-right: 48px;
+}}
+.password-toggle {{
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 4px;
+    color: #64748b;
+}}
+.password-toggle:hover {{
+    color: #1e3a8a;
+}}
+.password-toggle:focus-visible {{
+    outline: 2px solid #1e3a8a;
+    outline-offset: 2px;
+    border-radius: 6px;
+}}
 </style>
 </head>
 <body>
@@ -10490,10 +10566,16 @@ button {{
         <input name="email" type="email" autocomplete="email" value="{email_value}" maxlength="254" required>
 
         <label>Password</label>
-        <input name="password" type="password" autocomplete="new-password" required>
+        <div class="password-wrap">
+            <input id="signup-password" name="password" type="password" autocomplete="new-password" required>
+            <button type="button" class="password-toggle" data-password-toggle="signup-password" aria-label="Show password">👁</button>
+        </div>
 
         <label>Confirm Password</label>
-        <input name="confirm_password" type="password" autocomplete="new-password" required>
+        <div class="password-wrap">
+            <input id="signup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required>
+            <button type="button" class="password-toggle" data-password-toggle="signup-confirm-password" aria-label="Show password">👁</button>
+        </div>
 
         <div class="small-note">Password must be at least 12 characters.</div>
 
@@ -10503,6 +10585,21 @@ button {{
             <a href="/login">Log In</a> &nbsp;|&nbsp; <a href="/">Back to Home</a>
         </div>
     </form>
+<script>
+document.addEventListener("click", function (event) {{
+    const button = event.target.closest("[data-password-toggle]");
+    if (!button) return;
+
+    const targetId = button.getAttribute("data-password-toggle");
+    const input = document.getElementById(targetId);
+    if (!input) return;
+
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    button.textContent = showing ? "👁" : "🙈";
+}});
+</script>
 </body>
 </html>
 """)
@@ -10804,6 +10901,19 @@ button {{
 .auth-links {{ margin-top: 16px; text-align: center; }}
 .auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
 .small-note {{ margin-top: 10px; color: #64748b; font-size: 13px; }}
+.password-wrap {{ position: relative; }}
+.password-wrap input {{
+    width: 100%; box-sizing: border-box; padding-right: 48px;
+}}
+.password-toggle {{
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: 0; background: transparent; cursor: pointer; font-size: 18px;
+    line-height: 1; padding: 4px; color: #64748b;
+}}
+.password-toggle:hover {{ color: #1e3a8a; }}
+.password-toggle:focus-visible {{
+    outline: 2px solid #1e3a8a; outline-offset: 2px; border-radius: 6px;
+}}
 </style>
 </head>
 <body>
@@ -10813,13 +10923,34 @@ button {{
         {error_html}
         <input type="hidden" name="token" value="{safe_token}">
         <label>New Password</label>
-        <input name="password" type="password" autocomplete="new-password" maxlength="256" required>
+        <div class="password-wrap">
+            <input id="reset-password-password" name="password" type="password" autocomplete="new-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-password" aria-label="Show password">👁</button>
+        </div>
         <label>Confirm New Password</label>
-        <input name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
+        <div class="password-wrap">
+            <input id="reset-password-confirm" name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-confirm" aria-label="Show password">👁</button>
+        </div>
         <div class="small-note">Password must be at least 12 characters.</div>
         <button type="submit">Set New Password</button>
         <div class="auth-links"><a href="/login">Back to Login</a></div>
     </form>
+<script>
+document.addEventListener("click", function (event) {{
+    const button = event.target.closest("[data-password-toggle]");
+    if (!button) return;
+
+    const targetId = button.getAttribute("data-password-toggle");
+    const input = document.getElementById(targetId);
+    if (!input) return;
+
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    button.textContent = showing ? "👁" : "🙈";
+}});
+</script>
 </body>
 </html>
 """)
