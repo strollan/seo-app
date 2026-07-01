@@ -10238,7 +10238,7 @@ def auth_current_user(request):
 _PASSWORD_TOGGLE_STYLE = """
 .password-row {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: 8px;
     width: 100%;
     margin-top: 7px;
@@ -10247,12 +10247,17 @@ _PASSWORD_TOGGLE_STYLE = """
     flex: 1 1 auto;
     min-width: 0;
     margin-top: 0;
+    height: 46px;
+    min-height: 46px;
+    padding-top: 0;
+    padding-bottom: 0;
     box-sizing: border-box;
 }
 .password-toggle {
     flex: 0 0 auto;
     width: 72px;
-    min-height: 42px;
+    height: 46px;
+    min-height: 46px;
     padding: 0 12px;
     border-radius: 12px;
     border: 1px solid #cbd5e1;
@@ -10261,6 +10266,10 @@ _PASSWORD_TOGGLE_STYLE = """
     font-weight: 850;
     font-size: 13px;
     cursor: pointer;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .password-toggle:hover {
     background: #dbeafe;
