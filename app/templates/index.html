@@ -112,15 +112,15 @@ a {
 .hero-copy h1 {
     margin: 0;
     font-size: clamp(46px, 6vw, 78px);
-    line-height: 0.96;
-    letter-spacing: -0.075em;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
 }
 
 .hero-copy .tagline {
-    margin: 18px 0 0;
+    margin: 22px 0 0;
     font-size: clamp(24px, 3vw, 38px);
-    line-height: 1.05;
-    letter-spacing: -0.045em;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
     font-weight: 950;
     color: #dbeafe;
 }
@@ -597,8 +597,12 @@ a {
             <nav class="nav" aria-label="Main navigation">
                 <a href="/lead-bot">Lead Finder</a>
                 <a href="/compare">Compare URL</a>
-                <a href="/login">Login</a>
-                <a href="/create-account">Create Account</a>
+                {% if user %}
+                    <a href="/logout">Logout</a>
+                {% else %}
+                    <a href="/login">Login</a>
+                    <a href="/create-account">Create Account</a>
+                {% endif %}
             </nav>
         </header>
 

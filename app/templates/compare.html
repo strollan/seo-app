@@ -560,8 +560,11 @@ button:hover {
                 <a href="/history">History</a>
                 <a href="/lead-bot">LeadBot</a>
                 <a href="/settings">Settings</a>
-                <a href="/login">Login</a>
-                <a href="/logout">Logout</a>
+                {% if user %}
+                    <a href="/logout">Logout</a>
+                {% else %}
+                    <a href="/login">Login</a>
+                {% endif %}
             </div>
         </div>
     </div>

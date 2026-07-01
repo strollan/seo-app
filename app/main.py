@@ -1655,6 +1655,7 @@ async def home(request: Request):
         context={
             "request": request,
             "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
         },
     )
 
@@ -1854,7 +1855,13 @@ async def report_history(request: Request):
 @app.get("/compare")
 async def compare_page(request: Request):
     return templates.TemplateResponse(
-        request, "compare.html", {"request": request, "logo_url": safe_logo_url()}
+        request,
+        "compare.html",
+        {
+            "request": request,
+            "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
+        },
     )
 
 
@@ -10332,6 +10339,7 @@ body {{
     border-radius: 20px;
     padding: 28px;
     box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{
     margin: 0 0 8px;
@@ -10354,6 +10362,7 @@ input {{
     border-radius: 12px;
     border: 1px solid #cbd5e1;
     font-size: 16px;
+    box-sizing: border-box;
 }}
 button {{
     width: 100%;
@@ -10365,6 +10374,7 @@ button {{
     color: white;
     font-weight: 950;
     cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2;
@@ -10532,6 +10542,7 @@ body {{
     border-radius: 20px;
     padding: 28px;
     box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{
     margin: 0 0 8px;
@@ -10554,6 +10565,7 @@ input {{
     border-radius: 12px;
     border: 1px solid #cbd5e1;
     font-size: 16px;
+    box-sizing: border-box;
 }}
 button {{
     width: 100%;
@@ -10565,6 +10577,7 @@ button {{
     color: white;
     font-weight: 950;
     cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2;
@@ -10806,6 +10819,7 @@ body {{
 .auth-card {{
     width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
     border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{ margin: 0 0 8px; font-size: 28px; }}
 p {{ margin: 0 0 18px; color: #64748b; }}
@@ -10818,6 +10832,7 @@ button {{
     width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
     border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
     color: white; font-weight: 950; cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
@@ -10935,6 +10950,7 @@ body {{
 .auth-card {{
     width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
     border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{ margin: 0 0 8px; font-size: 28px; }}
 p {{ margin: 0 0 18px; color: #64748b; }}
@@ -10947,6 +10963,7 @@ button {{
     width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
     border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
     color: white; font-weight: 950; cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
@@ -11015,6 +11032,7 @@ body {
     width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
     border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
     text-align: center;
+    box-sizing: border-box;
 }
 h1 { margin: 0 0 12px; font-size: 26px; }
 p { color: #64748b; margin: 0 0 14px; }
