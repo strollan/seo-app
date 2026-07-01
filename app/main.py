@@ -8520,7 +8520,7 @@ async def vast_blocked_client_access_page_middleware(request, call_next):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vast SEO Crawl Access Check</title>
+<title>LeadMeLeads Crawl Access Check</title>
 <style>
 body {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -8676,7 +8676,7 @@ body {{
     <div class="header">
         <div>
             <h1>Crawl Access Check</h1>
-            <p>Vast SEO could not fully read the client page, so this is not a normal competitor report.</p>
+            <p>LeadMeLeads could not fully read the client page, so this is not a normal competitor report.</p>
         </div>
         <div class="actions">
             <a href="/">← Home</a>
@@ -8736,7 +8736,7 @@ body {{
             <p style="line-height:1.7;font-size:16px;">Without a readable client page, the app cannot fairly score SEO basics, compare keyword coverage, or produce reliable next-step recommendations. This access check prevents a broken crawl from looking like a finished client report.</p>
         </div>
 
-        <div class="footer">Courtesy of Vast SEO</div>
+        <div class="footer">Courtesy of LeadMeLeads</div>
     </div>
 </div>
 </body>
@@ -10284,7 +10284,7 @@ def auth_login_page(error="", message=""):
 <html>
 <head>
 <meta charset="utf-8">
-<title>Login | Vast SEO</title>
+<title>Login | LeadMeLeads</title>
 <style>
 body {{
     margin: 0;
@@ -10367,7 +10367,7 @@ button {{
 </head>
 <body>
     <form class="auth-card" method="post" action="/login">
-        <h1>Vast SEO Login</h1>
+        <h1>LeadMeLeads Login</h1>
         <p>Sign in to access protected tools.</p>
         {error_html}
         {message_html}
@@ -10470,7 +10470,7 @@ def signup_page(error="", username="", email=""):
 <html>
 <head>
 <meta charset="utf-8">
-<title>Create Account | Vast SEO</title>
+<title>Create Account | LeadMeLeads</title>
 <style>
 body {{
     margin: 0;
@@ -10551,7 +10551,7 @@ button {{
 <body>
     <form class="auth-card" method="post" action="/signup">
         <h1>Create Account</h1>
-        <p>Create a standard Vast SEO account.</p>
+        <p>Create a standard LeadMeLeads account.</p>
         {error_html}
 
         <label>Username</label>
@@ -10737,7 +10737,7 @@ def forgot_password_page(message="", error="", dev_link=""):
 <html>
 <head>
 <meta charset="utf-8">
-<title>Forgot Password | Vast SEO</title>
+<title>Forgot Password | LeadMeLeads</title>
 <style>
 body {{
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -10852,7 +10852,7 @@ def reset_password_page(token="", error=""):
 <html>
 <head>
 <meta charset="utf-8">
-<title>Reset Password | Vast SEO</title>
+<title>Reset Password | LeadMeLeads</title>
 <style>
 body {{
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -10917,7 +10917,7 @@ def reset_password_invalid_page():
 <html>
 <head>
 <meta charset="utf-8">
-<title>Invalid Reset Link | Vast SEO</title>
+<title>Invalid Reset Link | LeadMeLeads</title>
 <style>
 body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
