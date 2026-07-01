@@ -10210,6 +10210,71 @@ def auth_current_user(request):
     return get_user_from_token(token)
 # === AUTH CURRENT USER COMPAT END ===
 
+
+# === PASSWORD TOGGLE SHARED CSS/JS START ===
+# Single reusable implementation, interpolated into each auth page below.
+_PASSWORD_TOGGLE_STYLE = """
+.password-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    margin-top: 7px;
+}
+.password-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+    box-sizing: border-box;
+}
+.password-toggle {
+    flex: 0 0 auto;
+    width: 72px;
+    min-height: 42px;
+    padding: 0 12px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-weight: 850;
+    font-size: 13px;
+    cursor: pointer;
+}
+.password-toggle:hover {
+    background: #dbeafe;
+}
+.password-toggle:focus-visible {
+    outline: 2px solid #1e3a8a;
+    outline-offset: 2px;
+}
+@media (max-width: 420px) {
+    .password-toggle {
+        width: 64px;
+        padding: 0 8px;
+        font-size: 12px;
+    }
+}
+"""
+
+_PASSWORD_TOGGLE_SCRIPT = """
+<script>
+document.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-password-toggle]");
+    if (!button) return;
+
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (!input) return;
+
+    const shouldShow = input.type === "password";
+    input.type = shouldShow ? "text" : "password";
+    button.textContent = shouldShow ? "Hide" : "Show";
+    button.setAttribute("aria-label", shouldShow ? "Hide password" : "Show password");
+});
+</script>
+"""
+# === PASSWORD TOGGLE SHARED CSS/JS END ===
+
+
 def auth_login_page(error="", message=""):
     error_html = f'<div class="auth-error">{error}</div>' if error else ""
     message_html = f'<div class="auth-success">{message}</div>' if message else ""
@@ -10297,35 +10362,7 @@ button {{
     font-weight: 800;
     text-decoration: none;
 }}
-.password-wrap {{
-    position: relative;
-}}
-.password-wrap input {{
-    width: 100%;
-    box-sizing: border-box;
-    padding-right: 48px;
-}}
-.password-toggle {{
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    padding: 4px;
-    color: #64748b;
-}}
-.password-toggle:hover {{
-    color: #1e3a8a;
-}}
-.password-toggle:focus-visible {{
-    outline: 2px solid #1e3a8a;
-    outline-offset: 2px;
-    border-radius: 6px;
-}}
+{_PASSWORD_TOGGLE_STYLE}
 </style>
 </head>
 <body>
@@ -10337,9 +10374,9 @@ button {{
         <label>Username or Email</label>
         <input name="username" autocomplete="username" maxlength="254" required>
         <label>Password</label>
-        <div class="password-wrap">
+        <div class="password-row">
             <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
-            <button type="button" class="password-toggle" data-password-toggle="login-password" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-password-toggle="login-password" aria-label="Show password">Show</button>
         </div>
         <button type="submit">Log In</button>
         <div class="auth-links">
@@ -10348,21 +10385,7 @@ button {{
             <a href="/create-account">Create Account</a>
         </div>
     </form>
-<script>
-document.addEventListener("click", function (event) {{
-    const button = event.target.closest("[data-password-toggle]");
-    if (!button) return;
-
-    const targetId = button.getAttribute("data-password-toggle");
-    const input = document.getElementById(targetId);
-    if (!input) return;
-
-    const showing = input.type === "text";
-    input.type = showing ? "password" : "text";
-    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
-    button.textContent = showing ? "👁" : "🙈";
-}});
-</script>
+{_PASSWORD_TOGGLE_SCRIPT}
 </body>
 </html>
 """)
@@ -10522,35 +10545,7 @@ button {{
     font-size: 13px;
     line-height: 1.45;
 }}
-.password-wrap {{
-    position: relative;
-}}
-.password-wrap input {{
-    width: 100%;
-    box-sizing: border-box;
-    padding-right: 48px;
-}}
-.password-toggle {{
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    border: 0;
-    background: transparent;
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-    padding: 4px;
-    color: #64748b;
-}}
-.password-toggle:hover {{
-    color: #1e3a8a;
-}}
-.password-toggle:focus-visible {{
-    outline: 2px solid #1e3a8a;
-    outline-offset: 2px;
-    border-radius: 6px;
-}}
+{_PASSWORD_TOGGLE_STYLE}
 </style>
 </head>
 <body>
@@ -10566,15 +10561,15 @@ button {{
         <input name="email" type="email" autocomplete="email" value="{email_value}" maxlength="254" required>
 
         <label>Password</label>
-        <div class="password-wrap">
+        <div class="password-row">
             <input id="signup-password" name="password" type="password" autocomplete="new-password" required>
-            <button type="button" class="password-toggle" data-password-toggle="signup-password" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-password-toggle="signup-password" aria-label="Show password">Show</button>
         </div>
 
         <label>Confirm Password</label>
-        <div class="password-wrap">
+        <div class="password-row">
             <input id="signup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required>
-            <button type="button" class="password-toggle" data-password-toggle="signup-confirm-password" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-password-toggle="signup-confirm-password" aria-label="Show password">Show</button>
         </div>
 
         <div class="small-note">Password must be at least 12 characters.</div>
@@ -10585,21 +10580,7 @@ button {{
             <a href="/login">Log In</a> &nbsp;|&nbsp; <a href="/">Back to Home</a>
         </div>
     </form>
-<script>
-document.addEventListener("click", function (event) {{
-    const button = event.target.closest("[data-password-toggle]");
-    if (!button) return;
-
-    const targetId = button.getAttribute("data-password-toggle");
-    const input = document.getElementById(targetId);
-    if (!input) return;
-
-    const showing = input.type === "text";
-    input.type = showing ? "password" : "text";
-    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
-    button.textContent = showing ? "👁" : "🙈";
-}});
-</script>
+{_PASSWORD_TOGGLE_SCRIPT}
 </body>
 </html>
 """)
@@ -10901,19 +10882,7 @@ button {{
 .auth-links {{ margin-top: 16px; text-align: center; }}
 .auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
 .small-note {{ margin-top: 10px; color: #64748b; font-size: 13px; }}
-.password-wrap {{ position: relative; }}
-.password-wrap input {{
-    width: 100%; box-sizing: border-box; padding-right: 48px;
-}}
-.password-toggle {{
-    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-    border: 0; background: transparent; cursor: pointer; font-size: 18px;
-    line-height: 1; padding: 4px; color: #64748b;
-}}
-.password-toggle:hover {{ color: #1e3a8a; }}
-.password-toggle:focus-visible {{
-    outline: 2px solid #1e3a8a; outline-offset: 2px; border-radius: 6px;
-}}
+{_PASSWORD_TOGGLE_STYLE}
 </style>
 </head>
 <body>
@@ -10923,34 +10892,20 @@ button {{
         {error_html}
         <input type="hidden" name="token" value="{safe_token}">
         <label>New Password</label>
-        <div class="password-wrap">
+        <div class="password-row">
             <input id="reset-password-password" name="password" type="password" autocomplete="new-password" maxlength="256" required>
-            <button type="button" class="password-toggle" data-password-toggle="reset-password-password" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-password" aria-label="Show password">Show</button>
         </div>
         <label>Confirm New Password</label>
-        <div class="password-wrap">
+        <div class="password-row">
             <input id="reset-password-confirm" name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
-            <button type="button" class="password-toggle" data-password-toggle="reset-password-confirm" aria-label="Show password">👁</button>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-confirm" aria-label="Show password">Show</button>
         </div>
         <div class="small-note">Password must be at least 12 characters.</div>
         <button type="submit">Set New Password</button>
         <div class="auth-links"><a href="/login">Back to Login</a></div>
     </form>
-<script>
-document.addEventListener("click", function (event) {{
-    const button = event.target.closest("[data-password-toggle]");
-    if (!button) return;
-
-    const targetId = button.getAttribute("data-password-toggle");
-    const input = document.getElementById(targetId);
-    if (!input) return;
-
-    const showing = input.type === "text";
-    input.type = showing ? "password" : "text";
-    button.setAttribute("aria-label", showing ? "Show password" : "Hide password");
-    button.textContent = showing ? "👁" : "🙈";
-}});
-</script>
+{_PASSWORD_TOGGLE_SCRIPT}
 </body>
 </html>
 """)
