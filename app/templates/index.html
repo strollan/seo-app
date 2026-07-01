@@ -45,15 +45,17 @@ a {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 22px;
-    padding: 26px 30px 22px;
+    row-gap: 14px;
+    padding: 20px 30px 18px;
     border-bottom: 1px solid rgba(191, 219, 254, 0.12);
 }
 
 .brand {
     display: flex;
     align-items: center;
-    gap: 28px;
+    flex-shrink: 0;
     min-width: 0;
 }
 
@@ -67,32 +69,6 @@ a {
     border: 0 !important;
     box-shadow: none !important;
     padding: 0 !important;
-}
-
-.brand-name {
-    margin: 0;
-    font-size: 30px;
-    font-weight: 950;
-    letter-spacing: -0.02em;
-    color: #ffffff;
-    white-space: nowrap;
-}
-
-.brand-name-accent {
-    color: #5eead4;
-}
-
-.brand-text {
-    min-width: 0;
-}
-
-.brand-kicker {
-    margin: 0;
-    color: #bfdbfe;
-    font-size: 17px;
-    font-weight: 900;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
 }
 
 .nav {
@@ -580,14 +556,14 @@ a {
         padding-right: 18px;
     }
 
-    .brand {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 10px;
+    .topbar {
+        align-items: center;
+        text-align: center;
     }
 
-    .brand-name {
-        font-size: 24px;
+    .nav {
+        justify-content: center;
+        width: 100%;
     }
 
     .mini-proof {
@@ -616,9 +592,6 @@ a {
         <header class="topbar">
             <a class="brand" href="/" style="text-decoration:none;">
                 <img src="/static/leadmeleads-logo-blue.jpg?v=blue-logo-1" alt="LeadMeLeads" class="logo">
-                <div class="brand-text">
-                    <p class="brand-kicker">Local lead finder</p>
-                </div>
             </a>
 
             <nav class="nav" aria-label="Main navigation">
