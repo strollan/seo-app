@@ -3546,7 +3546,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         <div class="leadbot-brand">
             <div class="leadbot-brand-left">
                 <a class="leadbot-logo-link" href="/">
-                    <img class="leadbot-logo" src="/static/logo.png" alt="LeadMeLeads Logo">
+                    <img class="leadbot-logo" src="/static/leadmeleads-logo-blue.jpg?v=blue-logo-1" alt="LeadMeLeads Logo">
                 </a>
                 <div>
                     <h1>LeadBot Dashboard</h1>

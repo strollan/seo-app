@@ -1853,7 +1853,9 @@ async def report_history(request: Request):
 
 @app.get("/compare")
 async def compare_page(request: Request):
-    return templates.TemplateResponse(request, "compare.html", {"request": request})
+    return templates.TemplateResponse(
+        request, "compare.html", {"request": request, "logo_url": safe_logo_url()}
+    )
 
 
 @app.get("/analyze")
@@ -6139,6 +6141,26 @@ a[href*="/lead-bot/my-leads"] {
 }
 /* === LEADBOT LIVE ZERO RESULTS EMPTY STATE END === */
 
+
+.auth-brand-text {
+    text-align: center;
+    margin-bottom: 16px;
+}
+.auth-brand-name {
+    display: inline-block;
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+}
+.auth-brand-subtitle {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 650;
+}
+
 </style>
 """
 
@@ -10367,7 +10389,21 @@ button {{
 </head>
 <body>
     <form class="auth-card" method="post" action="/login">
-        <h1>LeadMeLeads Login</h1>
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<h1>LeadMeLeads Login</h1>
         <p>Sign in to access protected tools.</p>
         {error_html}
         {message_html}
@@ -10550,7 +10586,21 @@ button {{
 </head>
 <body>
     <form class="auth-card" method="post" action="/signup">
-        <h1>Create Account</h1>
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<h1>Create Account</h1>
         <p>Create a standard LeadMeLeads account.</p>
         {error_html}
 
@@ -10778,7 +10828,21 @@ button {{
 </head>
 <body>
     <form class="auth-card" method="post" action="/forgot-password">
-        <h1>Forgot Password</h1>
+        
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<h1>Forgot Password</h1>
         <p>Enter your username or email and we'll send you a reset link.</p>
         {error_html}
         {message_html}
@@ -10887,7 +10951,21 @@ button {{
 </head>
 <body>
     <form class="auth-card" method="post" action="/reset-password">
-        <h1>Reset Password</h1>
+        
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<h1>Reset Password</h1>
         <p>Enter your new password below.</p>
         {error_html}
         <input type="hidden" name="token" value="{safe_token}">
@@ -10936,6 +11014,20 @@ a { color: #1e3a8a; font-weight: 800; text-decoration: none; }
 </head>
 <body>
     <div class="auth-card">
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
         <h1>Link Expired or Invalid</h1>
         <p>This reset link has expired or has already been used.</p>
         <p><a href="/forgot-password">Request a new reset link</a></p>
