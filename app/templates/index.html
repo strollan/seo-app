@@ -3,623 +3,757 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEO Competitor Report</title>
+<title>LeadMeLeads | Find Local Leads Worth Contacting</title>
 
 <style>
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
 
 body {
     margin: 0;
+    min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     background:
-        radial-gradient(circle at top right, rgba(37, 99, 235, 0.45), transparent 36%),
-        radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.35), transparent 34%),
-        linear-gradient(135deg, #07152f, #0f172a, #172554, #1e1b4b);
-    color: white;
-    min-height: 100vh;
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.42), transparent 34%),
+        radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.32), transparent 34%),
+        linear-gradient(135deg, #06142f, #0f172a, #172554, #1e1b4b);
+    color: #ffffff;
+}
+
+a {
+    color: inherit;
 }
 
 .container {
     max-width: 1180px;
-    margin: auto;
-    padding: 34px 20px;
+    margin: 0 auto;
+    padding: 32px 20px 44px;
 }
 
-.hero {
+.hero-shell {
+    border: 1px solid rgba(191, 219, 254, 0.20);
+    border-radius: 28px;
     background:
-        radial-gradient(circle at top right, rgba(124, 58, 237, 0.42), transparent 36%),
-        radial-gradient(circle at bottom left, rgba(37, 99, 235, 0.36), transparent 34%),
-        linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
-    border: 1px solid rgba(191, 219, 254, 0.22);
-    border-radius: 22px;
-    padding: 34px;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.32);
-    margin-bottom: 22px;
+        radial-gradient(circle at 80% 10%, rgba(96, 165, 250, 0.28), transparent 30%),
+        linear-gradient(135deg, rgba(7, 21, 47, 0.96), rgba(15, 23, 42, 0.94), rgba(30, 58, 138, 0.68));
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+    overflow: hidden;
 }
 
-.header {
+.topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 28px;
-    flex-wrap: wrap;
+    gap: 22px;
+    padding: 26px 30px 22px;
+    border-bottom: 1px solid rgba(191, 219, 254, 0.12);
 }
 
-.header-left {
+.brand {
     display: flex;
     align-items: center;
-    gap: 26px;
+    gap: 28px;
+    min-width: 0;
 }
 
-
-
-.header h1 {
-    margin: 0 0 8px 0;
-    font-size: 38px;
-    letter-spacing: -0.03em;
+.logo {
+    height: 118px;
+    max-width: 560px;
+    width: auto;
+    display: block;
+    object-fit: contain;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
 }
 
-.header p {
+.brand-name {
     margin: 0;
+    font-size: 30px;
+    font-weight: 950;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    white-space: nowrap;
+}
+
+.brand-name-accent {
+    color: #5eead4;
+}
+
+.brand-text {
+    min-width: 0;
+}
+
+.brand-kicker {
+    margin: 0;
+    color: #bfdbfe;
     font-size: 17px;
-    opacity: 0.92;
+    font-weight: 900;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
 }
 
 .nav {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
 .nav a {
-    color: rgba(255,255,255,0.82);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 12px 16px;
+    border-radius: 13px;
+    background: rgba(15, 23, 42, 0.60);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.90);
     text-decoration: none;
-    font-weight: 800;
-    padding: 13px 18px;
-    border-radius: 12px;
-    transition: 0.2s;
-}
-
-.nav a.active,
-.nav a:hover {
-    background: linear-gradient(135deg, #0f172a, #1e3a8a);
-    color: white;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.24);
-}
-
-.card {
-    background:
-        radial-gradient(circle at top right, rgba(79, 70, 229, 0.38), transparent 38%),
-        linear-gradient(135deg, rgba(7, 21, 47, 0.96), rgba(15, 23, 42, 0.96), rgba(30, 58, 138, 0.7));
-    border: 1px solid rgba(147, 197, 253, 0.14);
-    border-radius: 22px;
-    padding: 36px;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.32);
-}
-
-.form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 22px;
-}
-
-.input-card {
-    background: rgba(255,255,255,0.055);
-    border: 1px solid rgba(147, 197, 253, 0.14);
-    border-radius: 18px;
-    padding: 24px;
-}
-
-label {
-    display: block;
-    margin-bottom: 12px;
+    font-weight: 850;
     font-size: 14px;
-    font-weight: 900;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.14);
+    transition: background 0.18s, color 0.18s;
+}
+
+.nav a:hover {
+    background: #1e3a8a;
+    color: #ffffff;
+}
+
+.hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.02fr) minmax(360px, 0.98fr);
+    gap: 34px;
+    align-items: center;
+    padding: 44px 30px 34px;
+}
+
+.hero-copy h1 {
+    margin: 0;
+    font-size: clamp(46px, 6vw, 78px);
+    line-height: 0.96;
+    letter-spacing: -0.075em;
+}
+
+.hero-copy .tagline {
+    margin: 18px 0 0;
+    font-size: clamp(24px, 3vw, 38px);
+    line-height: 1.05;
+    letter-spacing: -0.045em;
+    font-weight: 950;
     color: #dbeafe;
 }
 
-input {
-    width: 100%;
-    padding: 16px;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.075);
-    color: white;
-    font-size: 16px;
-    outline: none;
+.hero-copy .subcopy {
+    max-width: 630px;
+    margin: 18px 0 0;
+    color: rgba(239, 246, 255, 0.84);
+    font-size: 18px;
+    line-height: 1.65;
 }
 
-input::placeholder {
-    color: rgba(219,234,254,0.72);
-}
-
-input:focus {
-    border-color: rgba(147, 197, 253, 0.9);
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
-}
-
-.example {
-    margin: 12px 0 0;
-    font-size: 14px;
-    color: rgba(219,234,254,0.82);
-}
-
-.extra-fields {
-    margin-top: 22px;
-    display: grid;
-    gap: 14px;
-}
-
-button {
+.hero-actions {
+    display: flex;
+    gap: 13px;
+    flex-wrap: wrap;
     margin-top: 28px;
-    background: linear-gradient(135deg, #0f172a, #1e3a8a);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 50px;
+    padding: 14px 22px;
+    border-radius: 14px;
+    text-decoration: none;
+    font-weight: 950;
+    font-size: 15px;
     border: 1px solid rgba(255,255,255,0.18);
-    padding: 15px 26px;
-    border-radius: 12px;
-    color: white;
-    font-size: 17px;
-    font-weight: 900;
-    cursor: pointer;
-    transition: 0.2s;
-}
-
-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 14px 28px rgba(0,0,0,0.25);
-}
-
-.loading {
-    display: none;
-    margin-top: 18px;
-    font-weight: 800;
-    color: rgba(255,255,255,0.92);
-}
-
-.spinner {
-    display: inline-block;
-    width: 18px;
-    height: 18px;
-    border: 3px solid rgba(255,255,255,0.35);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    vertical-align: middle;
-    margin-right: 8px;
-}
-
-.footer-note {
-    margin-top: 18px;
-    color: rgba(255,255,255,0.62);
-    font-size: 14px;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-@media (max-width: 850px) {
-    .header-left {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .header h1 {
-        font-size: 30px;
-    }
-
-    
-
-    .form-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .hero,
-    .card {
-        padding: 24px;
-    }
+    transition: background 0.18s, box-shadow 0.18s;
 }
 
 .btn-primary {
-    background: #1e3a8a;
-    color: white;
-    padding: 10px 14px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 800;
-    border: none;
-    cursor: pointer;
+    background: #ffffff;
+    color: #172554;
+    box-shadow: 0 16px 34px rgba(0,0,0,0.26);
+}
+
+.btn-primary:hover {
+    background: #eff6ff;
+    box-shadow: 0 20px 42px rgba(0,0,0,0.32);
 }
 
 .btn-secondary {
-    background: #ffffff;
-    color: #1e3a8a;
-    padding: 10px 14px;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 800;
-    border: 1px solid #dbe4f0;
-    cursor: pointer;
+    background: rgba(15, 23, 42, 0.58);
+    color: #ffffff;
 }
 
-
-
-
-.nav a,
-.report-actions a,
-.header-actions a {
-    background: linear-gradient(135deg, #0f172a, #1e3a8a) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255,255,255,0.18) !important;
-    padding: 13px 18px !important;
-    border-radius: 12px !important;
-    text-decoration: none !important;
-    font-weight: 800 !important;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.18) !important;
+.btn-secondary:hover {
+    background: rgba(30, 58, 138, 0.52);
 }
 
-.nav a.active,
-.nav a:hover,
-.report-actions a:hover,
-.header-actions a:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 28px rgba(0,0,0,0.24) !important;
+.mini-proof {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 30px;
+    max-width: 650px;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-.header-left a {
-    background: none !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
+.proof-card {
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.075);
+    border: 1px solid rgba(255,255,255,0.13);
 }
 
-
-
-
-
-
-
-
-
-
-
-.logo-link,
-.header-left a {
-    background: transparent !important;
-    padding: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-
-
-
-
-
-.logo-link,
-.header-left a {
-    background: transparent !important;
-    padding: 0 !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* === FINAL LOGO (LOCKED) === */
-.logo {
-    height: 72px;
-    width: auto;
+.proof-card strong {
     display: block;
+    font-size: 22px;
+    letter-spacing: -0.04em;
 }
 
-.logo-link {
-    background: transparent;
-    padding: 0;
-    border: none;
-    box-shadow: none;
+.proof-card span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(219,234,254,0.78);
+    font-size: 13px;
+    line-height: 1.35;
 }
 
+.preview-card {
+    background: rgba(248, 250, 252, 0.98);
+    color: #0f172a;
+    border-radius: 24px;
+    box-shadow: 0 26px 70px rgba(0,0,0,0.34);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.38);
+}
 
+.preview-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 18px 20px;
+    background: linear-gradient(135deg, #eff6ff, #ffffff);
+    border-bottom: 1px solid #dbeafe;
+}
 
-/* === CENTER ANALYZE BUTTON TEMPLATE FIX START === */
-.analyze-button-row {
-    width: 100%;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
+.preview-top strong {
+    display: block;
+    font-size: 15px;
+}
+
+.preview-top span {
+    display: block;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 950;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.75); }
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+.search-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    padding: 16px 20px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.fake-input {
+    min-height: 46px;
+    border-radius: 13px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    padding: 0 13px;
+    color: #334155;
+    font-weight: 700;
+    font-size: 14px;
+    gap: 7px;
+}
+
+.fake-button {
+    min-height: 46px;
+    border-radius: 13px;
+    background: #1e3a8a;
+    color: white;
+    border: 0;
+    padding: 0 18px;
+    font-weight: 850;
+    font-size: 14px;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.results {
+    padding: 18px 20px 20px;
+    display: grid;
+    gap: 12px;
+}
+
+.result-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 13px;
+    align-items: start;
+    padding: 14px;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.result-row:hover {
+    border-color: #bfdbfe;
+    box-shadow: 0 4px 16px rgba(30, 58, 138, 0.08);
+}
+
+.score {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 15px;
+    font-weight: 950;
+    flex-shrink: 0;
+}
+
+.result-main strong {
+    display: block;
+    font-size: 15px;
+}
+
+.result-main p {
+    margin: 5px 0 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.result-tag {
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 950;
+    white-space: nowrap;
+    align-self: flex-start;
+}
+
+.score-high { background: #dcfce7; color: #166534; }
+.score-mid  { background: #dbeafe; color: #1e40af; }
+.score-low  { background: #fef9c3; color: #854d0e; }
+
+.tag-email-call { background: #dcfce7; color: #166534; }
+.tag-call       { background: #dbeafe; color: #1e40af; }
+.tag-manual     { background: #fef9c3; color: #854d0e; }
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px 4px;
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 700;
+}
+
+.section-grid {
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    gap: 24px;
     margin-top: 28px;
 }
 
-.analyze-button-row #runBtn {
-    margin: 0 !important;
+.product-card {
+    border: 1px solid rgba(191, 219, 254, 0.18);
+    border-radius: 24px;
+    padding: 32px;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 20px 54px rgba(0,0,0,0.22);
 }
 
-.loading,
+.product-card.secondary {
+    background: rgba(255, 255, 255, 0.92);
+    color: #0f172a;
+}
+
+.product-label {
+    display: inline-flex;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.18);
+    color: #bfdbfe;
+    font-size: 12px;
+    font-weight: 950;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.secondary .product-label {
+    background: #eff6ff;
+    color: #1e3a8a;
+}
+
+.product-card h2 {
+    margin: 16px 0 8px;
+    font-size: 30px;
+    letter-spacing: -0.045em;
+}
+
+.product-card p {
+    margin: 0;
+    color: rgba(239, 246, 255, 0.78);
+    line-height: 1.62;
+    font-size: 16px;
+}
+
+.secondary p {
+    color: #475569;
+}
+
+.feature-list {
+    display: grid;
+    gap: 10px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.feature-list li {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.075);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: rgba(239, 246, 255, 0.88);
+    font-weight: 750;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.feature-list li::before {
+    content: "✓";
+    color: #60a5fa;
+    font-weight: 900;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.secondary .feature-list li {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #334155;
+}
+
+.secondary .feature-list li::before {
+    color: #2563eb;
+}
+
+.card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.card-actions a {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 44px;
+    padding: 12px 18px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 950;
+    font-size: 15px;
+    transition: background 0.18s;
+}
+
+.card-actions .dark {
+    background: #1e3a8a;
+    color: #ffffff;
+}
+
+.card-actions .dark:hover {
+    background: #1e40af;
+}
+
+.card-actions .light {
+    background: #ffffff;
+    color: #1e3a8a;
+    border: 1px solid #dbeafe;
+}
+
+.card-actions .light:hover {
+    background: #eff6ff;
+}
+
+.secondary .card-actions .light {
+    background: #f8fafc;
+}
+
 .footer-note {
     text-align: center;
-}
-/* === CENTER ANALYZE BUTTON TEMPLATE FIX END === */
-
-
-/* === HOME HEADER NAV ALIGNMENT FIX START === */
-.header {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    align-items: center !important;
-    gap: 24px !important;
+    margin-top: 32px;
+    color: rgba(219, 234, 254, 0.58);
+    font-size: 14px;
+    letter-spacing: 0.01em;
 }
 
-.header-left {
-    min-width: 0 !important;
-}
+@media (max-width: 940px) {
+    .hero-grid,
+    .section-grid {
+        grid-template-columns: 1fr;
+    }
 
-.nav {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    gap: 12px !important;
-    flex-wrap: nowrap !important;
-    white-space: nowrap !important;
-}
-
-.nav a {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-width: 96px !important;
-}
-
-@media (max-width: 900px) {
-    .header {
-        grid-template-columns: 1fr !important;
+    .topbar {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .nav {
-        justify-content: flex-start !important;
-        flex-wrap: wrap !important;
-    }
-}
-/* === HOME HEADER NAV ALIGNMENT FIX END === */
-
-
-/* === HOME NAV HEADER LOCK START === */
-.hero {
-    padding: 30px 34px !important;
-}
-
-.hero .header {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 28px !important;
-    flex-wrap: nowrap !important;
-}
-
-.hero .header-left {
-    display: flex !important;
-    align-items: center !important;
-    gap: 24px !important;
-    min-width: 0 !important;
-    flex: 1 1 auto !important;
-}
-
-.hero .nav {
-    position: static !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    gap: 10px !important;
-    flex-wrap: nowrap !important;
-    white-space: nowrap !important;
-    margin: 0 !important;
-    align-self: center !important;
-}
-
-.hero .nav a {
-    min-width: auto !important;
-    padding: 12px 18px !important;
-}
-
-@media (max-width: 980px) {
-    .hero .header {
-        flex-wrap: wrap !important;
+        justify-content: flex-start;
     }
 
-    .hero .nav {
-        width: 100% !important;
-        justify-content: flex-start !important;
-        flex-wrap: wrap !important;
-        margin-top: 12px !important;
+    .hero-grid {
+        padding-top: 34px;
     }
 }
-/* === HOME NAV HEADER LOCK END === */
 
-
-/* === FINAL HOME HEADER NAV OVERRIDE START === */
-.hero .header {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    flex-wrap: nowrap !important;
-    gap: 28px !important;
-}
-
-.hero .header-left {
-    display: flex !important;
-    align-items: center !important;
-    gap: 24px !important;
-    flex: 1 1 auto !important;
-    min-width: 0 !important;
-}
-
-.hero .header-left > div {
-    min-width: 0 !important;
-}
-
-.hero .header h1 {
-    white-space: normal !important;
-}
-
-.hero .header p {
-    max-width: 640px !important;
-}
-
-.hero .nav {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-end !important;
-    flex-wrap: nowrap !important;
-    gap: 10px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    flex: 0 0 auto !important;
-    align-self: center !important;
-}
-
-.hero .nav a {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-width: auto !important;
-    white-space: nowrap !important;
-    margin: 0 !important;
-    padding: 12px 16px !important;
-    line-height: 1 !important;
-}
-
-@media (max-width: 980px) {
-    .hero .header {
-        flex-direction: column !important;
-        align-items: flex-start !important;
+@media (max-width: 620px) {
+    .search-strip {
+        grid-template-columns: 1fr;
     }
 
-    .hero .nav {
-        justify-content: flex-start !important;
-        flex-wrap: wrap !important;
-        width: 100% !important;
-        margin-top: 16px !important;
+    .mini-proof {
+        grid-template-columns: 1fr 1fr;
     }
 }
-/* === FINAL HOME HEADER NAV OVERRIDE END === */
+
+@media (max-width: 560px) {
+    .container {
+        padding: 18px 12px 32px;
+    }
+
+    .topbar,
+    .hero-grid {
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    .brand {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .brand-name {
+        font-size: 24px;
+    }
+
+    .mini-proof {
+        grid-template-columns: 1fr;
+    }
+
+    .result-row {
+        grid-template-columns: 1fr;
+    }
+
+    .result-tag {
+        width: max-content;
+    }
+}
+
+.preview-card .results .result-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+}
 
 </style>
-    <link rel="icon" href="/static/favicon.ico?v=2">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
-<link rel="stylesheet" href="/static/css/styles.css">
 </head>
 
 <body>
 <div class="container">
-
-    <div class="hero">
-        <div class="header">
-            <div class="header-left">
-                {% if logo_url %}
-                    <a href="/" class="logo-link"><img src="/static/logo.png" class="logo" alt="Vast SEO Logo"></a>
-                {% endif %}
-                <div>
-                    <h1>SEO Competitor Report</h1>
-                    <p>Smart comparison of key on-page SEO signals, keyword overlap, and opportunity gaps.</p>
+    <main class="hero-shell">
+        <header class="topbar">
+            <a class="brand" href="/" style="text-decoration:none;">
+                <img src="/static/leadmeleads-logo-blue.jpg?v=blue-logo-1" alt="LeadMeLeads" class="logo">
+                <div class="brand-text">
+                    <p class="brand-kicker">Local lead finder</p>
                 </div>
-            </div>
+            </a>
 
-            <div class="nav">
-                <a href="/history">History</a>
-                <a href="/lead-bot">LeadBot</a>
-                <a href="/settings">Settings</a>
+            <nav class="nav" aria-label="Main navigation">
+                <a href="/lead-bot">Lead Finder</a>
+                <a href="/compare">Vast Compare</a>
                 <a href="/login">Login</a>
-                <a href="/logout">Logout</a>
-            </div>
-        </div>
-    </div>
+                <a href="/create-account">Create Account</a>
+            </nav>
+        </header>
 
-    <div class="card">
-        <form method="post" action="/analyze" id="analyzeForm">
-            <div class="form-grid">
-                <div class="input-card">
-                    <label>Your Site</label>
-                    <input name="url_1" placeholder="cnn.com or https://cnn.com" required value="{{ request.query_params.get('url_1', '') }}">
+        <section class="hero-grid">
+            <div class="hero-copy">
+                <h1>Find local leads worth contacting.</h1>
+                <p class="tagline">Stop hunting. Start finding.</p>
+                <p class="subcopy">
+                    LeadMeLeads helps you turn a service and market into a practical prospect list:
+                    businesses with weak online signals, useful contact clues, and clear reasons to reach out.
+                </p>
+
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="/lead-bot">Open Lead Finder</a>
+                    <a class="btn btn-secondary" href="/compare">Compare Websites</a>
                 </div>
 
-                <div class="input-card">
-                    <label>Competitor</label>
-                    <input name="url_2" placeholder="msnbc.com or https://msnbc.com" value="{{ request.query_params.get('url_2', '') }}">
+                <div class="mini-proof">
+                    <div class="proof-card">
+                        <strong>Search</strong>
+                        <span>Pick a service and city.</span>
+                    </div>
+                    <div class="proof-card">
+                        <strong>Score</strong>
+                        <span>Spot weak web presence signals.</span>
+                    </div>
+                    <div class="proof-card">
+                        <strong>Act</strong>
+                        <span>Export leads and outreach angles.</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="extra-fields">
-            </div>
-            <div class="analyze-button-row">
-                <button type="submit" id="runBtn">Analyze Pages</button>
-            </div>
-
-            <div class="loading" id="loadingMsg">
-                <span class="spinner"></span>
-                Analyzing pages and extracting SEO signals...
-            </div>
-        </form>
-
-        <div class="footer-note">Built for fast, actionable SEO insights.</div>
-    </div>
+            <aside class="preview-card" aria-label="Lead Finder preview">
+                <div class="preview-top">
+                    <div>
+                        <strong>Lead Finder Preview</strong>
+                        <span>Example local search</span>
+                    </div>
+                    <div class="live-pill"><span class="live-dot"></span>Scanning</div>
                 </div>
 
-<script>
-const form = document.getElementById("analyzeForm");
-const button = document.getElementById("runBtn");
-const loading = document.getElementById("loadingMsg");
+                <div class="search-strip">
+                    <div class="fake-input">plumber</div>
+                    <div class="fake-input">Albany, NY</div>
+                    <button class="fake-button" type="button">Find Leads</button>
+                </div>
 
-function resetAnalyzeFormState() {
-    if (button) {
-        button.disabled = false;
-        button.textContent = "Analyze Pages";
-    }
-    if (loading) {
-        loading.style.display = "none";
-    }
-}
+                <div class="results-header">
+                    <span>12 leads found &middot; Albany NY</span>
+                    <span>Top 3 shown</span>
+                </div>
 
-window.addEventListener("pageshow", resetAnalyzeFormState);
-window.addEventListener("focus", resetAnalyzeFormState);
+                <div class="results">
+                    <div class="result-row">
+                        <div class="score score-high">84</div>
+                        <div class="result-main">
+                            <strong>Quick Pipe Repair</strong>
+                            <p>Thin homepage, weak title, contact details need cleanup.</p>
+                        </div>
+                        <div class="result-tag tag-email-call">Email + Call Ready</div>
+                    </div>
 
-form.addEventListener("submit", function () {
-    button.disabled = true;
-    button.textContent = "Analyzing...";
-    loading.style.display = "block";
-});
-</script>
+                    <div class="result-row">
+                        <div class="score score-mid">77</div>
+                        <div class="result-main">
+                            <strong>Northside Drain Co.</strong>
+                            <p>Ranking locally, missing stronger service-page signals.</p>
+                        </div>
+                        <div class="result-tag tag-call">Call Ready</div>
+                    </div>
 
+                    <div class="result-row">
+                        <div class="score score-low">71</div>
+                        <div class="result-main">
+                            <strong>Capital City Plumbing</strong>
+                            <p>Decent presence, local SEO gaps are easy to explain.</p>
+                        </div>
+                        <div class="result-tag tag-manual">Needs Manual Research</div>
+                    </div>
+                </div>
+            </aside>
+        </section>
+    </main>
+
+    <section class="section-grid">
+        <article class="product-card">
+            <span class="product-label">Primary tool</span>
+            <h2>Lead Finder</h2>
+            <p>
+                Find local businesses that need help getting found. Start with a keyword and a market,
+                then review prospects by score, website signals, contact readiness, and “why this lead.”
+            </p>
+
+            <ul class="feature-list">
+                <li>Local keyword + market lead scans</li>
+                <li>Lead scores and weak-signal clues</li>
+                <li>Exports for follow-up and outreach</li>
+            </ul>
+
+            <div class="card-actions">
+                <a class="dark" href="/lead-bot">Open Lead Finder</a>
+            </div>
+        </article>
+
+        <article class="product-card secondary">
+            <span class="product-label">Secondary tool</span>
+            <h2>Vast Compare</h2>
+            <p>
+                Compare two websites and uncover practical SEO opportunities. Useful for sales calls,
+                client conversations, and quick before-and-after research.
+            </p>
+
+            <ul class="feature-list">
+                <li>Compare titles, meta descriptions, and headings</li>
+                <li>Spot content and local SEO gaps</li>
+                <li>Generate client-friendly recommendations</li>
+            </ul>
+
+            <div class="card-actions">
+                <a class="dark" href="/compare">Open Vast Compare</a>
+            </div>
+        </article>
+    </section>
+
+    <p class="footer-note">
+        LeadMeLeads is built for local prospecting, quick research, and practical outreach.
+    </p>
+</div>
 </body>
 </html>
