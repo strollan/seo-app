@@ -3546,7 +3546,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         <div class="leadbot-brand">
             <div class="leadbot-brand-left">
                 <a class="leadbot-logo-link" href="/">
-                    <img class="leadbot-logo" src="/static/leadmeleads-logo-blue.jpg?v=blue-logo-1" alt="LeadMeLeads Logo">
+                    <img class="leadbot-logo" src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" alt="LeadMeLeads Logo">
                 </a>
                 <div>
                     <h1>Lead Finder Dashboard</h1>
@@ -8257,23 +8257,6 @@ body.leadbot-live-page button[data-action="block"] {
 }
 </style>
 <!-- LEADBOT MOBILE LEAD CARD FIX END -->
-
-<!-- LEADBOT MOBILE LOGO BACKGROUND FIX START -->
-<style>
-@media (max-width: 700px) {
-    /* leadmeleads-logo-blue.jpg is a JPEG with a solid #07152f background
-       baked into the file. On desktop it sits at the matching corner of the
-       .hero gradient, but the mobile stacked/centered layout moves it to a
-       lighter part of that gradient, exposing the rectangle. Match the
-       container background to the exact baked-in color instead of touching
-       the gradient itself. */
-    .leadbot-logo-link {
-        background: #07152f !important;
-        border-radius: 10px !important;
-    }
-}
-</style>
-<!-- LEADBOT MOBILE LOGO BACKGROUND FIX END -->
 
 <!-- LEADBOT MOBILE READABILITY FIX START -->
 <style>
