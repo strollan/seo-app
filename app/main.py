@@ -11762,7 +11762,7 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
 <html>
 <head>
 <meta charset="utf-8">
-<title>LeadBot Live Scan</title>
+<title>Lead Finder Live Scan</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{
@@ -12142,11 +12142,11 @@ body.leadbot-live-final .live-progress-bar {{
     <section class="hero">
         <div class="hero-row">
             <div>
-                <h1>LeadBot Live Scan</h1>
+                <h1>Lead Finder Live Scan</h1>
                 <p>Leads appear as they are found. Contact details fill in as cache/enrichment runs.</p>
             </div>
             <nav class="nav">
-                <a href="/lead-bot">LeadBot</a>
+                <a href="/lead-bot">Lead Finder</a>
                 <a href="/">Home</a>
                 <a href="/logout">Logout</a>
             </nav>
@@ -12168,7 +12168,7 @@ body.leadbot-live-final .live-progress-bar {{
                 <span class="live-dot"></span>
             </div>
             <div class="live-console-body">
-                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing LeadBot crawler...</span></div>
+                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing Lead Finder crawler...</span></div>
                 <div class="live-line"><strong>serp</strong><span id="liveConsoleLine2">Finding page 1–4 opportunities...</span></div>
                 <div class="live-line"><strong>data</strong><span id="liveConsoleLine3">Contacts will appear as they are enriched.</span></div>
                 <div class="live-progress-rail"><div class="live-progress-bar"></div></div>
@@ -12355,7 +12355,7 @@ async function poll() {{
         const liveLine2 = document.getElementById("liveConsoleLine2");
         const liveLine3 = document.getElementById("liveConsoleLine3");
 
-        if (liveLine1) liveLine1.textContent = job.message || "LeadBot is scanning...";
+        if (liveLine1) liveLine1.textContent = job.message || "Lead Finder is scanning...";
         if (liveLine2) liveLine2.textContent = "Found " + String(counts.found || 0) + " of " + String(params.limit || "—") + " target leads.";
         if (liveLine3) liveLine3.textContent = String(counts.cached || 0) + " cache hits · " + String(counts.enriched || 0) + " enriched · " + String(counts.needs_research || 0) + " need research.";
 
@@ -12376,7 +12376,7 @@ async function poll() {{
                 empty.className = "leadbot-zero-results-empty";
                 empty.innerHTML = `
                     <h3>No leads found.</h3>
-                    <p>LeadBot finished the scan, but no usable local business leads made it through search and filtering.</p>
+                    <p>Lead Finder finished the scan, but no usable local business leads made it through search and filtering.</p>
                     <ul>
                         <li>Include city and state, like <b>Santa Barbara CA</b>.</li>
                         <li>Try a broader business type.</li>
@@ -12483,7 +12483,7 @@ def leadbot_real_manual_add_domain(
         )
     except Exception as e:
         return LeadBotHTMLResponse(
-            f"<h1>Could not add domain</h1><p>{str(e)}</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            f"<h1>Could not add domain</h1><p>{str(e)}</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
@@ -13156,13 +13156,13 @@ def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = 
 
     if not safe_name or safe_name == "leadbot_master.csv":
         return LeadBotHTMLResponse(
-            "<h1>Cannot delete from this export.</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Cannot delete from this export.</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -13170,7 +13170,7 @@ def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = 
 
     if not export_path or not export_path.exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -13248,7 +13248,7 @@ def leadbot_update_address(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot update address</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot update address</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
@@ -13269,7 +13269,7 @@ def leadbot_update_address(
                 flush=True,
             )
             return LeadBotHTMLResponse(
-                "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=403,
             )
 
@@ -13278,7 +13278,7 @@ def leadbot_update_address(
 
     if not export_path or not Path(export_path).exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -13431,7 +13431,7 @@ def leadbot_update_address(
 
     if updated == 0:
         return LeadBotHTMLResponse(
-            "<h1>Address not saved</h1><p>The app could not match this card to a row in the selected export. Open the export from the Exports list and try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Address not saved</h1><p>The app could not match this card to a row in the selected export. Open the export from the Exports list and try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
@@ -13492,7 +13492,7 @@ def leadbot_complete_details(filename: str, request: Request):
     try:
         if not leadbot_user_can_access_export(safe_name, request):
             return LeadBotHTMLResponse(
-                "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=403,
             )
     except Exception:
@@ -14021,13 +14021,13 @@ def leadbot_update_contact_fields(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot update contact fields</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot update contact fields</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -14036,7 +14036,7 @@ def leadbot_update_contact_fields(
 
     if not export_path or not export_path.exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -14089,7 +14089,7 @@ def leadbot_update_contact_fields(
 
     if not updated:
         return LeadBotHTMLResponse(
-            "<h1>Lead not found</h1><p>Could not match that domain in this export.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Lead not found</h1><p>Could not match that domain in this export.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -14151,13 +14151,13 @@ def leadbot_save_details_combined(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot save details</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot save details</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -14309,8 +14309,8 @@ def lead_bot_export(filename: str, request: AuthRequest):
     if not _leadbot_export_visible_to_user(path, current_user=user):
         return LeadBotHTMLResponse(
             "<h1>Export not available</h1>"
-            "<p>You can only download your own LeadBot exports.</p>"
-            "<p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<p>You can only download your own Lead Finder exports.</p>"
+            "<p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -14368,7 +14368,7 @@ def leadbot_open_desktop():
 
     except Exception as exc:
         return PlainTextResponse(
-            f"Could not open LeadBot exports folder.\n\nFolder: {exports_dir}\nError: {exc}",
+            f"Could not open Lead Finder exports folder.\n\nFolder: {exports_dir}\nError: {exc}",
             status_code=500,
         )
 

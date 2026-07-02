@@ -813,7 +813,7 @@ def render_lead_dashboard(file="", current_user=None):
 <html>
 <head>
 <meta charset="utf-8">
-<title>LeadBot Dashboard</title>
+<title>Lead Finder Dashboard</title>
 <style>
 * { box-sizing: border-box; }
 body {
@@ -3549,7 +3549,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                     <img class="leadbot-logo" src="/static/leadmeleads-logo-blue.jpg?v=blue-logo-1" alt="LeadMeLeads Logo">
                 </a>
                 <div>
-                    <h1>LeadBot Dashboard</h1>
+                    <h1>Lead Finder Dashboard</h1>
                     <p>Find page 1–4 prospects, enrich contact details, and prioritize outreach opportunities.</p>
                 </div>
             </div>
@@ -3566,7 +3566,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
     
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
-            <h2>Run LeadBot</h2>
+            <h2>Run Lead Finder</h2>
             <form id="leadbotRunForm" action="/lead-bot/live-start" method="get">
                 <label>Industry</label>
                 <input name="industry" value="">
@@ -3606,12 +3606,12 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 </details>
 
 <button type="submit" class="leadbot-start-btn" id="leadbotStartScanButton">
-    Start LeadBot Scan
+    Start Lead Finder Scan
 </button>
 
 </form>
 
-            <p class="help"><strong>LeadBot:</strong> live results appear as prospects are found and contacts are enriched.</p>
+            <p class="help">Live results appear as prospects are found and contacts are enriched.</p>
 
 
 <div class="leadbot-complete-details-above-exports">
@@ -3673,7 +3673,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         </div>
     </div>
     <div class="leadbot-wait-copy">
-        <strong>LeadBot is building your lead list...</strong>
+        <strong>Lead Finder is building your lead list...</strong>
         <span>Finding page 1–4 prospects, enriching contact details, and building your export.</span>
     </div>
 </div>
@@ -3785,7 +3785,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
             const button = form.querySelector('button[type="submit"]');
             if (button) {
                 button.disabled = true;
-                button.textContent = "Starting LeadBot...";
+                button.textContent = "Starting Lead Finder...";
             }
         });
     });
@@ -4667,7 +4667,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 block.textContent = "Block";
                 block.href = "/lead-bot/block-domains?domains=" + encodeURIComponent(domain);
                 block.onclick = function () {
-                    return confirm("Block " + domain + " from future LeadBot scans?");
+                    return confirm("Block " + domain + " from future Lead Finder scans?");
                 };
                 card.appendChild(block);
             }
@@ -6937,7 +6937,7 @@ btn.dataset.busy = "1";
         var leadCount = leads.querySelectorAll(".lead-card").length || "";
 
         bar.innerHTML =
-            '<div class="leadbot-scan-context-title">Current LeadBot Scan</div>' +
+            '<div class="leadbot-scan-context-title">Current Lead Finder Scan</div>' +
             '<div class="leadbot-scan-context-grid">' +
 
                 '<div class="leadbot-scan-context-item"><b>Keyword</b><span>' + keyword + '</span></div>' +
@@ -8795,7 +8795,7 @@ body.leadbot-live-page button[data-action="block"] {
         var btn = document.getElementById("leadbotStartScanButton");
         if (btn) {
             btn.disabled = true;
-            btn.textContent = "Starting LeadBot...";
+            btn.textContent = "Starting Lead Finder...";
         }
 
         window.location.href = buildLiveStartUrl(form);
