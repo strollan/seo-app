@@ -561,9 +561,33 @@ a {
         text-align: center;
     }
 
+    .brand {
+        width: 100%;
+        max-width: 100%;
+        justify-content: center;
+        flex-shrink: 1;
+    }
+
+    .logo {
+        height: auto;
+        width: 100%;
+        max-width: 240px;
+        object-fit: contain;
+        display: block;
+        margin: 0 auto;
+    }
+
     .nav {
         justify-content: center;
         width: 100%;
+    }
+
+    .nav a {
+        flex: 1 1 calc(50% - 5px);
+        text-align: center;
+        white-space: nowrap;
+        padding: 12px 10px;
+        font-size: 13px;
     }
 
     .mini-proof {

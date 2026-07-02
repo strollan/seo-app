@@ -8275,6 +8275,63 @@ body.leadbot-live-page button[data-action="block"] {
 </style>
 <!-- LEADBOT MOBILE LOGO BACKGROUND FIX END -->
 
+<!-- LEADBOT MOBILE READABILITY FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Several sidebar tools (Exports title, Blocked Domains box, badges,
+       Save Details button) were deliberately shrunk for a dense desktop
+       sidebar and never scaled back up for mobile, leaving them well under
+       comfortable reading/tap size on a phone. Restore readable sizes here
+       without touching the desktop-only rules above. */
+
+    #exports {
+        font-size: 18px !important;
+        line-height: 1.25 !important;
+    }
+
+    .leadbot-block-domains-box {
+        padding: 14px !important;
+    }
+
+    .leadbot-block-domains-box h2 {
+        font-size: 16px !important;
+        line-height: 1.25 !important;
+    }
+
+    .leadbot-block-domains-box label {
+        font-size: 12px !important;
+    }
+
+    .leadbot-block-domains-box textarea {
+        min-height: 72px !important;
+        font-size: 15px !important;
+        padding: 10px 12px !important;
+    }
+
+    .leadbot-block-domains-box .leadbot-secondary-btn {
+        min-height: 44px !important;
+        padding: 12px 14px !important;
+        font-size: 14px !important;
+    }
+
+    .leadbot-block-domains-box .help {
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+    }
+
+    .lead-card .badges span {
+        font-size: 12.5px !important;
+        padding: 7px 11px !important;
+    }
+
+    .lead-contact-save,
+    button.lead-contact-save {
+        font-size: 13px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE READABILITY FIX END -->
+
 <script>
 (function () {
     function isLiveScanPage() {
