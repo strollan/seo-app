@@ -3556,6 +3556,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
             <nav class="leadbot-nav">
                 <a href="/">Home</a>
+                <a href="/compare">Compare URL</a>
                 <a href="#run-lead-bot">Start</a>
                 <a href="#exports">Exports</a>
                 <a href="/logout">Logout</a>
