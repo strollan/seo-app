@@ -12147,6 +12147,7 @@ body.leadbot-live-final .live-progress-bar {{
             </div>
             <nav class="nav">
                 <a href="/lead-bot">Lead Finder</a>
+                <a href="/compare">Compare URL</a>
                 <a href="/">Home</a>
                 <a href="/logout">Logout</a>
             </nav>

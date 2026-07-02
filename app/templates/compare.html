@@ -557,13 +557,15 @@ button:hover {
             </div>
 
             <div class="nav">
-                <a href="/history">History</a>
                 <a href="/lead-bot">Lead Finder</a>
-                <a href="/settings">Settings</a>
+                <a href="/compare">Compare URL</a>
                 {% if user %}
+                    <a href="/history">History</a>
+                    <a href="/settings">Settings</a>
                     <a href="/logout">Logout</a>
                 {% else %}
                     <a href="/login">Login</a>
+                    <a href="/create-account">Create Account</a>
                 {% endif %}
             </div>
         </div>

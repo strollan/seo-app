@@ -496,7 +496,7 @@ def lead_cards(rows, selected_name=""):
     # === LEADBOT FILTER BLOCKED LEADS ON DASHBOARD RENDER END ===
 
     if not rows:
-        return '<div class="empty">No leads found yet. Run the bot or select an export.</div>'
+        return '<div class="empty">No leads found yet. Start a scan or select an export.</div>'
 
     cards = []
 
