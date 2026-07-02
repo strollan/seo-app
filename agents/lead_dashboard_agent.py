@@ -8225,6 +8225,38 @@ body.leadbot-live-page button[data-action="block"] {
 </style>
 <!-- LEADBOT MOBILE HEADER FIX END -->
 
+<!-- LEADBOT MOBILE LEAD CARD FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Reclaim the desktop delete/block-button gutter so the title/domain
+       block gets the full card width instead of ~45% of it. */
+    .lead-head {
+        align-items: stretch !important;
+        padding-right: 8px !important;
+    }
+
+    .lead-head > div:first-child {
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    /* A page-load script moves this button out of form.lead-contact-edit-form
+       into .leadbot-save-details-row, so a plain ".lead-contact-save" class
+       selector loses to the existing "button.lead-contact-save" (type+class)
+       rule regardless of source order. Match that specificity directly. */
+    .lead-contact-save,
+    button.lead-contact-save,
+    .lead-address-box button,
+    .lead-address-box button[type="submit"] {
+        min-height: 44px !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        width: 100% !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE LEAD CARD FIX END -->
+
 <script>
 (function () {
     function isLiveScanPage() {
