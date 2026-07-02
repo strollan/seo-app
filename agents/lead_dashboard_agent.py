@@ -8147,6 +8147,83 @@ body.leadbot-live-page button[data-action="block"] {
     display: none !important;
 }
 </style>
+<!-- LEADBOT LIVE SCAN GLOBAL REMOVE BLOCK BUTTON END -->
+
+<!-- LEADBOT MOBILE HEADER FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* .hero > div.leadbot-brand matches the same element as .hero > div:first-child
+       (the earlier grid-layout rule) at equal specificity, so being declared last
+       here wins the cascade tie and actually forces flex instead of grid. */
+    .hero > div.leadbot-brand {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        gap: 16px !important;
+    }
+
+    .leadbot-brand-left {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        width: 100% !important;
+        gap: 10px !important;
+    }
+
+    .leadbot-logo-link {
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+    }
+
+    .leadbot-logo {
+        height: auto !important;
+        max-height: 44px !important;
+        max-width: 230px !important;
+        width: auto !important;
+    }
+
+    .leadbot-brand-left h1 {
+        font-size: 22px !important;
+        line-height: 1.08 !important;
+        margin: 0 !important;
+    }
+
+    .leadbot-brand-left p {
+        font-size: 13px !important;
+        line-height: 1.35 !important;
+        max-width: 280px !important;
+        margin: 0 auto !important;
+    }
+
+    .leadbot-nav {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        width: 100% !important;
+        gap: 10px !important;
+        white-space: normal !important;
+        margin: 0 !important;
+    }
+
+    .leadbot-nav a {
+        flex: 1 1 calc(50% - 10px) !important;
+        max-width: 150px !important;
+        min-height: 40px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+    }
+
+    .container {
+        padding: 14px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE HEADER FIX END -->
 
 <script>
 (function () {
