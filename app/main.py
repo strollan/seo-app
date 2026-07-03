@@ -10323,6 +10323,7 @@ def auth_login_page(error="", message=""):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login | LeadMeLeads</title>
 <style>
 body {{
@@ -10572,6 +10573,7 @@ def signup_page(error="", username="", email=""):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Create Account | LeadMeLeads</title>
 <style>
 body {{
@@ -10905,6 +10907,7 @@ def forgot_password_page(message="", error="", dev_link=""):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forgot Password | LeadMeLeads</title>
 <style>
 body {{
@@ -11082,6 +11085,7 @@ def reset_password_page(token="", error=""):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reset Password | LeadMeLeads</title>
 <style>
 body {{
@@ -11163,6 +11167,7 @@ def reset_password_invalid_page():
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invalid Reset Link | LeadMeLeads</title>
 <style>
 body {
@@ -11904,6 +11909,7 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lead Finder Live Scan</title>
 <style>
 * {{ box-sizing: border-box; }}

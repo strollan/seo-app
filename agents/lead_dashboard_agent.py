@@ -813,6 +813,7 @@ def render_lead_dashboard(file="", current_user=None):
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lead Finder Dashboard</title>
 <style>
 * { box-sizing: border-box; }
