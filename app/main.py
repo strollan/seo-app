@@ -10244,35 +10244,35 @@ def auth_current_user(request):
 # Single reusable implementation, interpolated into each auth page below.
 _PASSWORD_TOGGLE_STYLE = """
 .password-row {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
     gap: 8px;
     width: 100%;
     margin-top: 7px;
 }
 .password-row input {
-    flex: 1 1 auto;
     min-width: 0;
     margin-top: 0;
-    height: 48px;
-    min-height: 48px;
+    height: 54px;
+    min-height: 54px;
     padding-top: 0;
     padding-bottom: 0;
     font-size: 16px;
     box-sizing: border-box;
 }
 .password-toggle {
-    flex: 0 0 auto;
-    width: 72px;
-    height: 48px;
-    min-height: 48px;
-    padding: 0 12px;
+    width: auto;
+    min-width: 72px;
+    height: 54px;
+    min-height: 54px;
+    padding: 0 14px;
     border-radius: 12px;
     border: 1px solid #cbd5e1;
     background: #eff6ff;
     color: #1e3a8a;
     font-weight: 850;
-    font-size: 13px;
+    font-size: 14px;
     cursor: pointer;
     box-sizing: border-box;
     display: inline-flex;
@@ -10286,9 +10286,9 @@ _PASSWORD_TOGGLE_STYLE = """
     outline: 2px solid #1e3a8a;
     outline-offset: 2px;
 }
-@media (max-width: 420px) {
+@media (max-width: 340px) {
     .password-toggle {
-        width: 64px;
+        min-width: 64px;
         padding: 0 8px;
         font-size: 12px;
     }
@@ -10406,16 +10406,42 @@ button {{
 }}
 {_PASSWORD_TOGGLE_STYLE}
 @media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
     .auth-card {{
-        padding: 22px 18px;
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
     }}
     input {{
-        min-height: 48px;
+        min-height: 54px;
         font-size: 16px;
+        padding: 14px 14px;
     }}
     button {{
-        min-height: 52px;
-        font-size: 16px;
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
     }}
 }}
 </style>
@@ -10626,16 +10652,42 @@ button {{
 }}
 {_PASSWORD_TOGGLE_STYLE}
 @media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
     .auth-card {{
-        padding: 22px 18px;
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
     }}
     input {{
-        min-height: 48px;
+        min-height: 54px;
         font-size: 16px;
+        padding: 14px 14px;
     }}
     button {{
-        min-height: 52px;
-        font-size: 16px;
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
     }}
     .small-note {{
         font-size: 14px;
@@ -10893,16 +10945,42 @@ button {{
     border: 1px solid #fde047; border-radius: 12px; font-size: 13px; color: #713f12;
 }}
 @media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
     .auth-card {{
-        padding: 22px 18px;
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
     }}
     input {{
-        min-height: 48px;
+        min-height: 54px;
         font-size: 16px;
+        padding: 14px 14px;
     }}
     button {{
-        min-height: 52px;
-        font-size: 16px;
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
     }}
 }}
 </style>
