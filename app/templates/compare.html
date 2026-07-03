@@ -340,8 +340,8 @@ button:hover {
 
 /* === FINAL LOGO (LOCKED) === */
 .logo {
-    max-width: 170px;
-    height: auto;
+    height: 72px;
+    width: auto;
     display: block;
 }
 
@@ -539,6 +539,21 @@ button:hover {
     <link rel="icon" href="/static/favicon.ico?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
 <link rel="stylesheet" href="/static/css/styles.css">
+<style>
+/* static/css/styles.css locks .logo to height:81px + max-width:180px !important,
+   which forces object-fit:contain to shrink this logo's actual visible content
+   to ~44px tall (this asset's aspect ratio needs ~330px width at 81px height).
+   Override with matching specificity/!important, scoped to this page only, so
+   /settings (which shares that stylesheet) is unaffected. */
+.logo,
+.header .logo,
+.hero .logo,
+.logo-link img {
+    height: 72px !important;
+    width: auto !important;
+    max-width: none !important;
+}
+</style>
 </head>
 
 <body>
@@ -557,8 +572,8 @@ button:hover {
             </div>
 
             <div class="nav">
+                <a href="/">Home</a>
                 <a href="/lead-bot">Lead Finder</a>
-                <a href="/compare">Compare URL</a>
                 {% if user %}
                     <a href="/history">History</a>
                     <a href="/settings">Settings</a>

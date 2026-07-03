@@ -10422,6 +10422,13 @@ button {{
     </p>
 </div>
 
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/create-account">Create Account</a>
+</div>
+
 <h1>LeadMeLeads Login</h1>
         <p>Sign in to access protected tools.</p>
         {error_html}
@@ -10620,6 +10627,13 @@ button {{
     <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
         Find local leads worth contacting.
     </p>
+</div>
+
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/login">Login</a>
 </div>
 
 <h1>Create Account</h1>
@@ -10864,6 +10878,13 @@ button {{
     <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
         Find local leads worth contacting.
     </p>
+</div>
+
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/login">Login</a>
 </div>
 
 <h1>Forgot Password</h1>
