@@ -3570,14 +3570,14 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         <aside class="panel" id="run-lead-bot">
             <h2>Run Lead Finder</h2>
             <form id="leadbotRunForm" action="/lead-bot/live-start" method="get">
-                <label>Industry</label>
-                <input name="industry" value="">
+                <label>Keyword</label>
+                <input name="keyword" value="">
 
                 <label>Market</label>
                 <input name="market" value="">
 
-                <label>Keyword</label>
-                <input name="keyword" value="">
+                <label>Industry</label>
+                <input name="industry" value="">
 
                 <label>Own Domain</label>
                 <input name="own_domain" value="">
