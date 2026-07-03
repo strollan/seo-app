@@ -8315,6 +8315,51 @@ body.leadbot-live-page button[data-action="block"] {
 </style>
 <!-- LEADBOT MOBILE READABILITY FIX END -->
 
+<!-- LEADBOT MOBILE FORM USABILITY FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Run Lead Finder was a shrunk-down desktop form: 12px uppercase
+       labels, 42-44px inputs at 15px font (triggers mobile zoom-on-focus
+       below 16px), a 13px "Advanced settings" toggle, and a 46px start
+       button. Bring the whole form up to real mobile-app scale. */
+    .container {
+        padding: 10px;
+    }
+
+    label {
+        font-size: 15px;
+        margin: 16px 0 7px;
+    }
+
+    input,
+    select,
+    .leadbot-select {
+        min-height: 48px;
+        font-size: 16px;
+    }
+
+    .leadbot-advanced {
+        padding: 14px;
+    }
+
+    .leadbot-advanced summary {
+        font-size: 15px;
+        min-height: 24px;
+    }
+
+    /* #leadbotStartScanButton / #leadbotRunForm .leadbot-start-btn (ID
+       specificity) locks this to 46px/15px elsewhere in this file, so a
+       plain class selector loses regardless of !important. Match the ID. */
+    .leadbot-start-btn,
+    #leadbotStartScanButton,
+    #leadbotRunForm .leadbot-start-btn {
+        min-height: 52px !important;
+        font-size: 16px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE FORM USABILITY FIX END -->
+
 <script>
 (function () {
     function isLiveScanPage() {

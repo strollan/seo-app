@@ -10254,17 +10254,18 @@ _PASSWORD_TOGGLE_STYLE = """
     flex: 1 1 auto;
     min-width: 0;
     margin-top: 0;
-    height: 46px;
-    min-height: 46px;
+    height: 48px;
+    min-height: 48px;
     padding-top: 0;
     padding-bottom: 0;
+    font-size: 16px;
     box-sizing: border-box;
 }
 .password-toggle {
     flex: 0 0 auto;
     width: 72px;
-    height: 46px;
-    min-height: 46px;
+    height: 48px;
+    min-height: 48px;
     padding: 0 12px;
     border-radius: 12px;
     border: 1px solid #cbd5e1;
@@ -10404,6 +10405,19 @@ button {{
     text-decoration: none;
 }}
 {_PASSWORD_TOGGLE_STYLE}
+@media (max-width: 700px) {{
+    .auth-card {{
+        padding: 22px 18px;
+    }}
+    input {{
+        min-height: 48px;
+        font-size: 16px;
+    }}
+    button {{
+        min-height: 52px;
+        font-size: 16px;
+    }}
+}}
 </style>
 </head>
 <body>
@@ -10611,6 +10625,22 @@ button {{
     line-height: 1.45;
 }}
 {_PASSWORD_TOGGLE_STYLE}
+@media (max-width: 700px) {{
+    .auth-card {{
+        padding: 22px 18px;
+    }}
+    input {{
+        min-height: 48px;
+        font-size: 16px;
+    }}
+    button {{
+        min-height: 52px;
+        font-size: 16px;
+    }}
+    .small-note {{
+        font-size: 14px;
+    }}
+}}
 </style>
 </head>
 <body>
@@ -10861,6 +10891,19 @@ button {{
 .dev-link-box {{
     margin-top: 18px; padding: 12px 14px; background: #fef9c3;
     border: 1px solid #fde047; border-radius: 12px; font-size: 13px; color: #713f12;
+}}
+@media (max-width: 700px) {{
+    .auth-card {{
+        padding: 22px 18px;
+    }}
+    input {{
+        min-height: 48px;
+        font-size: 16px;
+    }}
+    button {{
+        min-height: 52px;
+        font-size: 16px;
+    }}
 }}
 </style>
 </head>
