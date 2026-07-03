@@ -249,6 +249,41 @@
     <link rel="icon" href="/static/favicon.ico?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
 <link rel="stylesheet" href="/static/css/styles.css">
+<style>
+/* static/css/styles.css locks .header to a fixed 94px row and forces
+   .header-actions/.top-actions to flex-wrap:nowrap !important, so on a
+   narrow phone the 3-4 nav pills can't wrap and get clipped instead.
+   Override with matching selectors/specificity, scoped to this page only,
+   placed after that stylesheet so it wins. */
+@media (max-width: 560px) {
+    .header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        height: auto !important;
+        min-height: 0 !important;
+        gap: 16px !important;
+    }
+
+    .header-left {
+        width: 100% !important;
+    }
+
+    .header-actions,
+    .top-actions {
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+        width: 100% !important;
+        margin-left: 0 !important;
+    }
+
+    .header-actions a,
+    .top-actions a {
+        flex: 1 1 calc(50% - 5px) !important;
+        white-space: nowrap !important;
+        text-align: center !important;
+    }
+}
+</style>
 </head>
 <body class="history-page">
 <div class="container">
