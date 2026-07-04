@@ -8182,8 +8182,8 @@ body.leadbot-live-page button[data-action="block"] {
 
     .leadbot-logo {
         height: auto !important;
-        max-height: 44px !important;
-        max-width: 230px !important;
+        max-height: 72px !important;
+        max-width: 280px !important;
         width: auto !important;
     }
 
@@ -8218,6 +8218,14 @@ body.leadbot-live-page button[data-action="block"] {
         align-items: center !important;
         justify-content: center !important;
         text-align: center !important;
+    }
+
+    /* With 5 links (Home, Compare URL, Start, Exports, Logout), a 2-column
+       wrap leaves the last one alone on its own row. Let it span the full
+       row instead of sitting there as a stray narrow orphan. */
+    .leadbot-nav a:last-child {
+        flex: 1 1 100% !important;
+        max-width: none !important;
     }
 
     .container {
