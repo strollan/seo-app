@@ -8175,45 +8175,58 @@ body.leadbot-live-page button[data-action="block"] {
 @media (max-width: 700px) {
     /* .hero > div.leadbot-brand matches the same element as .hero > div:first-child
        (the earlier grid-layout rule) at equal specificity, so being declared last
-       here wins the cascade tie and actually forces this grid instead of that one.
-       Grid (not flex) so the hamburger's position never depends on how tall the
-       title/subtitle block is: row 1 = logo + hamburger only, row 2 = title/
-       subtitle spanning the full width underneath. This matches the same
-       logo-top / hamburger-top-right / title-below structure used on
+       here wins the cascade tie and actually forces this flex layout instead of
+       that one. Flexbox (not grid + display:contents) so the hamburger's position
+       never depends on how tall the title/subtitle block is, and so it renders
+       correctly on every engine. A prior version used CSS Grid with
+       display:contents to dissolve .leadbot-brand-left and place the logo and
+       title on separate grid rows; WebKit has a long-standing bug where
+       display:contents on a grid item breaks minmax(0,1fr) sizing for the
+       dissolved element's former children, collapsing the title's width toward 0
+       and wrapping it one letter per line on real Safari/iOS (Chromium doesn't
+       have this bug, which is why that version looked fine in automated checks
+       but broke on a real phone). This version keeps the existing DOM (title
+       still nested inside .leadbot-brand-left) and only uses plain flexbox:
+       .leadbot-brand-left becomes a column (logo, then title, title full width),
+       the outer .leadbot-brand row top-aligns .leadbot-brand-left against the
+       hamburger so a taller title can never move it, and the hamburger gets a
+       small top margin (see its rule further below) to sit centered against the
+       fixed-height logo specifically rather than the whole column. Matches the
+       same logo-top / hamburger-top-right / title-below structure used on
        /compare, /history, and report.html (see static/css/styles.css). */
     .leadbot-dashboard-page .hero > div.leadbot-brand {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) auto !important;
-        grid-template-rows: auto auto !important;
-        align-items: center !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
         text-align: left !important;
-        column-gap: 12px !important;
-        row-gap: 8px !important;
+        gap: 12px !important;
     }
 
-    /* Dissolve the wrapper so the logo and the title/subtitle div become
-       independent grid items instead of one combined flex item. */
     .leadbot-dashboard-page .leadbot-brand-left {
-        display: contents !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        text-align: left !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 6px !important;
     }
 
     .leadbot-dashboard-page .leadbot-logo-link {
-        grid-column: 1 !important;
-        grid-row: 1 !important;
         justify-content: flex-start !important;
         width: auto !important;
     }
 
     .leadbot-dashboard-page .leadbot-brand-left > div {
-        grid-column: 1 / -1 !important;
-        grid-row: 2 !important;
+        width: 100% !important;
         min-width: 0 !important;
     }
 
     .leadbot-dashboard-page .leadbot-logo {
-        height: auto !important;
-        max-height: 68px !important;
-        max-width: 280px !important;
+        height: 58px !important;
+        max-width: 240px !important;
         width: auto !important;
     }
 
@@ -8242,7 +8255,7 @@ body.leadbot-live-page button[data-action="block"] {
         justify-content: center !important;
         width: 44px !important;
         height: 44px !important;
-        margin: 0 !important;
+        margin: 7px 0 0 0 !important;
         padding: 0 !important;
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,.24) !important;
@@ -8250,8 +8263,6 @@ body.leadbot-live-page button[data-action="block"] {
         color: #ffffff !important;
         cursor: pointer !important;
         flex: 0 0 auto !important;
-        grid-column: 2 !important;
-        grid-row: 1 !important;
         position: relative !important;
         z-index: 1002 !important;
     }

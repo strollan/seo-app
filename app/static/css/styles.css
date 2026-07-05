@@ -1013,59 +1013,57 @@ label {
     .report-page .header .logo,
     .report-page .hero .logo,
     .report-page .logo-link img {
-        height: 68px !important;
+        height: 58px !important;
         width: auto !important;
-        max-width: 280px !important;
+        max-width: 240px !important;
     }
 
-    /* Grid (not flex) so the hamburger's position never depends on how
-       tall the title/subtitle block is. Row 1 = logo + hamburger only;
-       row 2 = title/subtitle spanning the full width underneath. Before
-       this, .header-left (logo+title together) was one flex item next to
-       the toggle, so a long subtitle made that item taller and shifted
-       the vertically-centered hamburger down by a different amount on
-       every page (each page's subtitle wraps differently at 375-414px). */
+    /* Flexbox (not grid + display:contents) so the hamburger's position
+       never depends on how tall the title/subtitle block is, and so it
+       renders correctly on every engine. A prior version used CSS Grid
+       with display:contents to dissolve .header-left and place the logo
+       and title on separate grid rows; WebKit has a long-standing bug
+       where display:contents on a grid item breaks minmax(0,1fr) sizing
+       for the dissolved element's former children, collapsing the title's
+       width toward 0 and wrapping it one letter per line on real
+       Safari/iOS (Chromium doesn't have this bug, which is why that
+       version looked fine in automated checks but broke on a real
+       phone). This version keeps the existing DOM (title still nested
+       inside .header-left) and only uses plain flexbox: .header-left
+       becomes a column (logo, then title, title full width), the outer
+       .header top-aligns .header-left against the hamburger so a taller
+       title can never move it, and the hamburger gets a small top
+       margin (see its rule further below) to sit centered against the
+       fixed-height logo specifically rather than the whole column. */
     .compare-page .header,
     .history-page .header,
     .report-page .header {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr) auto !important;
-        grid-template-rows: auto auto !important;
-        align-items: center !important;
-        column-gap: 12px !important;
-        row-gap: 6px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
         height: auto !important;
         min-height: 0 !important;
     }
 
-    /* Dissolve the wrapper so the logo and the title/subtitle div become
-       independent grid items instead of one combined flex item. */
     .compare-page .header-left,
     .history-page .header-left,
     .report-page .header-left {
-        display: contents !important;
-    }
-
-    .compare-page .logo-link,
-    .history-page .logo-link,
-    .report-page .logo-link {
-        grid-column: 1 !important;
-        grid-row: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 6px !important;
     }
 
     .compare-page .header-left > div,
     .history-page .header-left > div,
     .report-page .header-left > div {
-        grid-column: 1 / -1 !important;
-        grid-row: 2 !important;
-    }
-
-    .compare-page .app-nav-toggle,
-    .history-page .app-nav-toggle,
-    .report-page .app-nav-toggle {
-        grid-column: 2 !important;
-        grid-row: 1 !important;
-        margin: 0 !important;
+        width: 100% !important;
+        min-width: 0 !important;
     }
 
     /* FINAL HEADER LOCK above forces the title to a fixed 32px !important
@@ -1125,7 +1123,7 @@ label {
         justify-content: center !important;
         width: 44px !important;
         height: 44px !important;
-        margin: 0 !important;
+        margin: 7px 0 0 0 !important;
         padding: 0 !important;
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,.24) !important;
