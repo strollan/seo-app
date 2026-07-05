@@ -1018,15 +1018,54 @@ label {
         max-width: 280px !important;
     }
 
+    /* Grid (not flex) so the hamburger's position never depends on how
+       tall the title/subtitle block is. Row 1 = logo + hamburger only;
+       row 2 = title/subtitle spanning the full width underneath. Before
+       this, .header-left (logo+title together) was one flex item next to
+       the toggle, so a long subtitle made that item taller and shifted
+       the vertically-centered hamburger down by a different amount on
+       every page (each page's subtitle wraps differently at 375-414px). */
     .compare-page .header,
     .history-page .header,
     .report-page .header {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        grid-template-rows: auto auto !important;
         align-items: center !important;
-        justify-content: space-between !important;
+        column-gap: 12px !important;
+        row-gap: 6px !important;
         height: auto !important;
         min-height: 0 !important;
+    }
+
+    /* Dissolve the wrapper so the logo and the title/subtitle div become
+       independent grid items instead of one combined flex item. */
+    .compare-page .header-left,
+    .history-page .header-left,
+    .report-page .header-left {
+        display: contents !important;
+    }
+
+    .compare-page .logo-link,
+    .history-page .logo-link,
+    .report-page .logo-link {
+        grid-column: 1 !important;
+        grid-row: 1 !important;
+    }
+
+    .compare-page .header-left > div,
+    .history-page .header-left > div,
+    .report-page .header-left > div {
+        grid-column: 1 / -1 !important;
+        grid-row: 2 !important;
+    }
+
+    .compare-page .app-nav-toggle,
+    .history-page .app-nav-toggle,
+    .report-page .app-nav-toggle {
+        grid-column: 2 !important;
+        grid-row: 1 !important;
+        margin: 0 !important;
     }
 
     /* FINAL HEADER LOCK above forces the title to a fixed 32px !important
@@ -1086,7 +1125,7 @@ label {
         justify-content: center !important;
         width: 44px !important;
         height: 44px !important;
-        margin: 0 0 0 12px !important;
+        margin: 0 !important;
         padding: 0 !important;
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,.24) !important;

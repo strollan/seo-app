@@ -8175,31 +8175,39 @@ body.leadbot-live-page button[data-action="block"] {
 @media (max-width: 700px) {
     /* .hero > div.leadbot-brand matches the same element as .hero > div:first-child
        (the earlier grid-layout rule) at equal specificity, so being declared last
-       here wins the cascade tie and actually forces flex instead of grid. */
+       here wins the cascade tie and actually forces this grid instead of that one.
+       Grid (not flex) so the hamburger's position never depends on how tall the
+       title/subtitle block is: row 1 = logo + hamburger only, row 2 = title/
+       subtitle spanning the full width underneath. This matches the same
+       logo-top / hamburger-top-right / title-below structure used on
+       /compare, /history, and report.html (see static/css/styles.css). */
     .leadbot-dashboard-page .hero > div.leadbot-brand {
-        display: flex !important;
-        flex-direction: row !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        grid-template-rows: auto auto !important;
         align-items: center !important;
-        justify-content: space-between !important;
         text-align: left !important;
-        gap: 12px !important;
+        column-gap: 12px !important;
+        row-gap: 8px !important;
     }
 
+    /* Dissolve the wrapper so the logo and the title/subtitle div become
+       independent grid items instead of one combined flex item. */
     .leadbot-dashboard-page .leadbot-brand-left {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: flex-start !important;
-        text-align: left !important;
-        width: auto !important;
-        flex: 1 1 auto !important;
-        min-width: 0 !important;
-        gap: 8px !important;
+        display: contents !important;
     }
 
     .leadbot-dashboard-page .leadbot-logo-link {
-        display: flex !important;
+        grid-column: 1 !important;
+        grid-row: 1 !important;
         justify-content: flex-start !important;
         width: auto !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left > div {
+        grid-column: 1 / -1 !important;
+        grid-row: 2 !important;
+        min-width: 0 !important;
     }
 
     .leadbot-dashboard-page .leadbot-logo {
@@ -8242,6 +8250,8 @@ body.leadbot-live-page button[data-action="block"] {
         color: #ffffff !important;
         cursor: pointer !important;
         flex: 0 0 auto !important;
+        grid-column: 2 !important;
+        grid-row: 1 !important;
         position: relative !important;
         z-index: 1002 !important;
     }
