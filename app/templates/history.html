@@ -251,39 +251,11 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
 <link rel="stylesheet" href="/static/css/styles.css">
 <style>
-/* static/css/styles.css locks .header to a fixed 94px row and forces
-   .header-actions/.top-actions to flex-wrap:nowrap !important, so on a
-   narrow phone the 3-4 nav pills can't wrap and get clipped instead.
-   Override with matching selectors/specificity, scoped to this page only,
-   placed after that stylesheet so it wins. */
-@media (max-width: 560px) {
-    .header {
-        flex-direction: column !important;
-        align-items: flex-start !important;
-        height: auto !important;
-        min-height: 0 !important;
-        gap: 16px !important;
-    }
-
-    .header-left {
-        width: 100% !important;
-    }
-
-    .header-actions,
-    .top-actions {
-        flex-wrap: wrap !important;
-        justify-content: center !important;
-        width: 100% !important;
-        margin-left: 0 !important;
-    }
-
-    .header-actions a,
-    .top-actions a {
-        flex: 1 1 calc(50% - 5px) !important;
-        white-space: nowrap !important;
-        text-align: center !important;
-    }
-}
+/* The old "stack header + wrap pills" mobile fix that used to live here has
+   been superseded by the shared hamburger-menu pattern in
+   static/css/styles.css (max-width: 700px). That shared block already
+   converts .header-actions into a slide-in panel on mobile, so this page
+   no longer needs its own nav-wrapping override. */
 </style>
 </head>
 <body class="history-page">
@@ -299,12 +271,17 @@
                 <p>Saved SEO comparison reports and score changes over time.</p>
             </div>
         </div>
-        <div class="top-actions header-actions">
+        <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="historyNav" aria-label="Open menu">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+        </button>
+
+        <div class="top-actions header-actions" id="historyNav">
             <a href="/lead-bot" class="btn">Lead Finder</a>
             <a href="/" class="btn">New Report</a>
     <a href="/settings" class="btn">Settings</a>
         </div>
     </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
 
     {% if history %}
         {% for item in history %}
@@ -365,5 +342,6 @@
     {% endif %}
 
 </div>
+<script src="/static/js/mobile-nav.js" defer></script>
 </body>
 </html>

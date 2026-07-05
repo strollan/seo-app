@@ -577,68 +577,62 @@ body {
     min-height: 0 !important;
 }
 
-.nav a,
-.hero .nav a,
-.header .nav a,
-.report-actions a,
-.header-actions a,
-.top-actions a,
-.header .btn {
-    background: rgba(255,255,255,.14) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255,255,255,.22) !important;
-    border-radius: 999px !important;
-    box-shadow: none !important;
-    font-weight: 900 !important;
-}
-
-.nav a:hover,
-.hero .nav a:hover,
-.header .nav a:hover,
-.report-actions a:hover,
-.header-actions a:hover,
-.top-actions a:hover,
-.header .btn:hover {
-    background: rgba(255,255,255,.25) !important;
-    color: #ffffff !important;
-    transform: none !important;
-}
-
-/* Same shared-stylesheet lock also forces .nav to flex-wrap:nowrap, which
-   clips the nav pills on a narrow phone instead of wrapping (same bug
-   already fixed on /history). Match Lead Finder's clean mobile wrap. */
-@media (max-width: 850px) {
-    .header {
-        flex-direction: column !important;
-        align-items: flex-start !important;
-        height: auto !important;
-        min-height: 0 !important;
-        gap: 16px !important;
-    }
-
-    .header-left {
-        width: 100% !important;
-    }
-
-    .nav,
-    .hero .nav {
-        flex-wrap: wrap !important;
-        justify-content: center !important;
-        width: 100% !important;
-        margin-left: 0 !important;
-    }
-
+/* Scoped to desktop only: below 700px the shared hamburger-menu pattern in
+   static/css/styles.css takes over .nav entirely (slide-in stacked list),
+   and this pill styling would otherwise win the cascade tie against it
+   since this block sits later in the document than that shared file. */
+@media (min-width: 701px) {
     .nav a,
     .hero .nav a,
-    .header .nav a {
-        flex: 1 1 calc(50% - 5px) !important;
-        text-align: center !important;
+    .header .nav a,
+    .report-actions a,
+    .header-actions a,
+    .top-actions a,
+    .header .btn {
+        background: rgba(255,255,255,.14) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,.22) !important;
+        border-radius: 999px !important;
+        box-shadow: none !important;
+        font-weight: 900 !important;
+    }
+
+    .nav a:hover,
+    .hero .nav a:hover,
+    .header .nav a:hover,
+    .report-actions a:hover,
+    .header-actions a:hover,
+    .top-actions a:hover,
+    .header .btn:hover {
+        background: rgba(255,255,255,.25) !important;
+        color: #ffffff !important;
+        transform: none !important;
+    }
+}
+
+/* The old "stack header + wrap pills" mobile fix that used to live here has
+   been superseded by the shared hamburger-menu pattern in
+   static/css/styles.css (max-width: 700px). That shared block already
+   converts .nav into a slide-in panel on mobile, so this page no longer
+   needs its own nav-wrapping override. */
+
+/* Winning rule that made this page edge-to-edge on mobile: this page's own
+   body{padding:0 !important} above (added to escape styles.css's dark
+   "FINAL HEADER LOCK" body lock) combined with styles.css's unconditional
+   .container{padding:0 !important} left nothing to inset the hero card from
+   the viewport edge, unlike /lead-bot's .leadbot-dashboard-page .container
+   {padding:14px !important}. Restore that same 14px inset here, scoped to
+   this page and mobile only, so the rounded blue card gets light gutters
+   again instead of touching both edges. */
+@media (max-width: 700px) {
+    .compare-page .container {
+        padding: 14px !important;
     }
 }
 </style>
 </head>
 
-<body>
+<body class="compare-page">
 <div class="container">
 
     <div class="hero">
@@ -653,7 +647,11 @@ body {
                 </div>
             </div>
 
-            <div class="nav">
+            <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            </button>
+
+            <div class="nav" id="compareNav">
                 <a href="/">Home</a>
                 <a href="/lead-bot">Lead Finder</a>
                 {% if user %}
@@ -667,6 +665,7 @@ body {
             </div>
         </div>
     </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
 
     <div class="card">
         <form method="post" action="/analyze" id="analyzeForm">
@@ -698,6 +697,7 @@ body {
     </div>
                 </div>
 
+<script src="/static/js/mobile-nav.js" defer></script>
 <script>
 const form = document.getElementById("analyzeForm");
 const button = document.getElementById("runBtn");

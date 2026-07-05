@@ -2268,6 +2268,7 @@ async def analyze(
 
     context = {
             "request": request,
+            "user": auth_current_user(request),
             "site": site,
             "competitors": competitors_sorted,
             "analysis_html": final_report_phrase_polish(polish_client_report_phrases(enforce_single_seo_action_plan(final_single_analysis_filter(clean_client_facing_report_text(clean_analysis_html_output(analysis)))))),

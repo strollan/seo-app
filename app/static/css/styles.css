@@ -983,3 +983,200 @@ label {
     }
 }
 
+/* ===== APP MOBILE HAMBURGER NAV (2026 pattern) =====
+   Shared by the dark-header Jinja pages only:
+   /compare (#compareNav), /history (#historyNav), and report.html
+   (#reportNav). Keep this ID/page scoped so unrelated pages with generic
+   .nav, .header-actions, or .top-actions classes are not transformed. */
+.compare-page .app-nav-toggle,
+.history-page .app-nav-toggle,
+.report-page .app-nav-toggle {
+    display: none;
+}
+
+.compare-page .app-nav-overlay,
+.history-page .app-nav-overlay,
+.report-page .app-nav-overlay {
+    display: none;
+}
+
+@media (max-width: 700px) {
+    .compare-page .logo,
+    .compare-page .header .logo,
+    .compare-page .hero .logo,
+    .compare-page .logo-link img,
+    .history-page .logo,
+    .history-page .header .logo,
+    .history-page .hero .logo,
+    .history-page .logo-link img,
+    .report-page .logo,
+    .report-page .header .logo,
+    .report-page .hero .logo,
+    .report-page .logo-link img {
+        height: 68px !important;
+        width: auto !important;
+        max-width: 280px !important;
+    }
+
+    .compare-page .header,
+    .history-page .header,
+    .report-page .header {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+
+    /* FINAL HEADER LOCK above forces the title to a fixed 32px !important
+       regardless of viewport, which doesn't fit "Report History"-length
+       titles in the narrow column left after the hamburger button takes
+       its share of a 375px row (default browser behavior won't break a
+       long word mid-word, so it silently overflows instead of wrapping). */
+    .compare-page .header h1,
+    .compare-page .header-text h1,
+    .history-page .header h1,
+    .history-page .header-text h1,
+    .report-page .header h1,
+    .report-page .header-text h1 {
+        font-size: 18px !important;
+        line-height: 1.15 !important;
+        max-width: 100% !important;
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+    }
+
+    .compare-page .header p,
+    .compare-page .header-text p,
+    .history-page .header p,
+    .history-page .header-text p,
+    .report-page .header p,
+    .report-page .header-text p {
+        font-size: 13px !important;
+        line-height: 1.3 !important;
+        max-width: 100% !important;
+        overflow-wrap: break-word !important;
+    }
+
+    .compare-page .header-left > div,
+    .history-page .header-left > div,
+    .report-page .header-left > div {
+        min-width: 0 !important;
+    }
+
+    .compare-page .header-left,
+    .history-page .header-left,
+    .report-page .header-left {
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+    }
+
+    /* #compareNav/#historyNav/#reportNav below is position:fixed with
+       z-index:1001 and spans right:0 to min(78vw,300px) wide, which
+       physically covers this button's location in the header (also at the
+       far right edge) once open. Without its own stacking context above
+       the panel, a second tap on the hamburger hits the panel instead of
+       the button, so the "tap again to close" behavior is unreachable. */
+    .compare-page .app-nav-toggle,
+    .history-page .app-nav-toggle,
+    .report-page .app-nav-toggle {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        height: 44px !important;
+        margin: 0 0 0 12px !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,.24) !important;
+        background: rgba(255,255,255,.08) !important;
+        color: #ffffff !important;
+        cursor: pointer !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 1002 !important;
+    }
+
+    .compare-page .app-nav-toggle svg,
+    .history-page .app-nav-toggle svg,
+    .report-page .app-nav-toggle svg {
+        width: 22px !important;
+        height: 22px !important;
+        pointer-events: none !important;
+    }
+
+    #compareNav,
+    #historyNav,
+    #reportNav {
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        left: auto !important;
+        margin: 0 !important;
+        width: min(78vw, 300px) !important;
+        max-width: none !important;
+        height: 100vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        justify-content: flex-start !important;
+        gap: 2px !important;
+        padding: 84px 20px 24px !important;
+        background: rgba(7, 21, 47, .98) !important;
+        box-shadow: -18px 0 50px rgba(0,0,0,.35) !important;
+        transform: translateX(100%) !important;
+        transition: transform .2s ease !important;
+        z-index: 1001 !important;
+    }
+
+    #compareNav.is-open,
+    #historyNav.is-open,
+    #reportNav.is-open {
+        transform: translateX(0) !important;
+    }
+
+    #compareNav a,
+    #historyNav a,
+    #reportNav a {
+        width: 100% !important;
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        background: transparent !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(255,255,255,.12) !important;
+        border-radius: 0 !important;
+        padding: 12px 4px !important;
+        margin: 0 !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
+        box-shadow: none !important;
+        white-space: normal !important;
+    }
+
+    #compareNav a:last-child,
+    #historyNav a:last-child,
+    #reportNav a:last-child {
+        border-bottom: 0 !important;
+    }
+
+    .compare-page .app-nav-overlay,
+    .history-page .app-nav-overlay,
+    .report-page .app-nav-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(5, 10, 20, .5) !important;
+        z-index: 1000 !important;
+    }
+
+    .compare-page .app-nav-overlay.is-open,
+    .history-page .app-nav-overlay.is-open,
+    .report-page .app-nav-overlay.is-open {
+        display: block !important;
+    }
+}

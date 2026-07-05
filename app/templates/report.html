@@ -849,7 +849,7 @@
 
 <link rel="stylesheet" href="/static/css/styles.css">
 </head>
-<body>
+<body class="report-page">
 
 
 
@@ -865,14 +865,21 @@
                     <p>On-page comparison with title and meta length checks against common SERP ranges.</p>
                 </div>
             </div>
-<div class="report-actions header-actions">
+<button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="reportNav" aria-label="Open menu">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+</button>
+
+<div class="report-actions header-actions" id="reportNav">
     <a href="/index" class="btn">← Home</a>
     <a href="/lead-bot" class="btn">Lead Finder</a>
+    {% if user %}
     <a href="/history" class="btn">History</a>
+    {% endif %}
     <a href="/settings" class="btn">Settings</a>
     <a href="/logout" class="btn">Logout</a>
     <a href="#" class="btn" onclick="window.print(); return false;">Save PDF</a>
 </div>
+<div class="app-nav-overlay" data-nav-overlay></div>
 
         </div>
 
@@ -1245,6 +1252,7 @@
 
     </div>
 </div>
+<script src="/static/js/mobile-nav.js" defer></script>
 <script>
 setInterval(() => {
     fetch(window.location.href, { method: "HEAD" })

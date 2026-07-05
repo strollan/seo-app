@@ -3541,7 +3541,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
 
 </head>
-<body>
+<body class="leadbot-dashboard-page">
 <div class="container">
     <div class="hero">
         <div class="leadbot-brand">
@@ -3555,17 +3555,23 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 </div>
             </div>
 
-            <nav class="leadbot-nav">
+            <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="leadbotNav" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            </button>
+
+            <nav class="leadbot-nav" id="leadbotNav">
                 <a href="/">Home</a>
                 <a href="/compare">Compare URL</a>
-                <a href="#run-lead-bot">Start</a>
+                __HISTORY_NAV_LINK__<a href="#run-lead-bot">Start</a>
                 <a href="#exports">Exports</a>
                 <a href="/logout">Logout</a>
             </nav>
         </div>
     </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
+<script src="/static/js/mobile-nav.js" defer></script>
 
-    
+
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
             <h2>Run Lead Finder</h2>
@@ -8153,82 +8159,163 @@ body.leadbot-live-page button[data-action="block"] {
 
 <!-- LEADBOT MOBILE HEADER FIX START -->
 <style>
+/* Same hamburger pattern as /compare, /history, and report pages
+   (see static/css/styles.css "APP MOBILE HAMBURGER NAV" section). This
+   page is plain HTML (not Jinja) so it can't share that stylesheet's
+   rules directly, but reuses the same class-free JS contract via
+   [data-nav-toggle]/[data-nav-overlay] and /static/js/mobile-nav.js. */
+.leadbot-dashboard-page .app-nav-toggle {
+    display: none;
+}
+
+.leadbot-dashboard-page .app-nav-overlay {
+    display: none;
+}
+
 @media (max-width: 700px) {
     /* .hero > div.leadbot-brand matches the same element as .hero > div:first-child
        (the earlier grid-layout rule) at equal specificity, so being declared last
        here wins the cascade tie and actually forces flex instead of grid. */
-    .hero > div.leadbot-brand {
+    .leadbot-dashboard-page .hero > div.leadbot-brand {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        text-align: left !important;
+        gap: 12px !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left {
         display: flex !important;
         flex-direction: column !important;
-        align-items: center !important;
-        text-align: center !important;
-        gap: 16px !important;
+        align-items: flex-start !important;
+        text-align: left !important;
+        width: auto !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 8px !important;
     }
 
-    .leadbot-brand-left {
+    .leadbot-dashboard-page .leadbot-logo-link {
         display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        text-align: center !important;
-        width: 100% !important;
-        gap: 10px !important;
+        justify-content: flex-start !important;
+        width: auto !important;
     }
 
-    .leadbot-logo-link {
-        display: flex !important;
-        justify-content: center !important;
-        width: 100% !important;
-    }
-
-    .leadbot-logo {
+    .leadbot-dashboard-page .leadbot-logo {
         height: auto !important;
-        max-height: 72px !important;
+        max-height: 68px !important;
         max-width: 280px !important;
         width: auto !important;
     }
 
-    .leadbot-brand-left h1 {
-        font-size: 22px !important;
-        line-height: 1.08 !important;
+    .leadbot-dashboard-page .leadbot-brand-left h1 {
+        font-size: 20px !important;
+        line-height: 1.1 !important;
         margin: 0 !important;
     }
 
-    .leadbot-brand-left p {
-        font-size: 13px !important;
-        line-height: 1.35 !important;
-        max-width: 280px !important;
-        margin: 0 auto !important;
-    }
-
-    .leadbot-nav {
-        display: flex !important;
-        flex-wrap: wrap !important;
-        justify-content: center !important;
-        width: 100% !important;
-        gap: 10px !important;
-        white-space: normal !important;
+    .leadbot-dashboard-page .leadbot-brand-left p {
+        font-size: 12.5px !important;
+        line-height: 1.3 !important;
+        max-width: 100% !important;
         margin: 0 !important;
     }
 
-    .leadbot-nav a {
-        flex: 1 1 calc(50% - 10px) !important;
-        max-width: 150px !important;
-        min-height: 40px !important;
-        display: flex !important;
+    /* #leadbotNav below is position:fixed with z-index:1001 and spans
+       right:0 to min(78vw,300px) wide, which physically covers this
+       button's location in the header (also at the far right edge) once
+       open. Without its own stacking context above the panel, a second
+       tap on the hamburger hits the panel instead of the button, so the
+       "tap again to close" behavior is unreachable. */
+    .leadbot-dashboard-page .app-nav-toggle {
+        display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
-        text-align: center !important;
+        width: 44px !important;
+        height: 44px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,.24) !important;
+        background: rgba(255,255,255,.08) !important;
+        color: #ffffff !important;
+        cursor: pointer !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 1002 !important;
     }
 
-    /* With 5 links (Home, Compare URL, Start, Exports, Logout), a 2-column
-       wrap leaves the last one alone on its own row. Let it span the full
-       row instead of sitting there as a stray narrow orphan. */
-    .leadbot-nav a:last-child {
-        flex: 1 1 100% !important;
+    .leadbot-dashboard-page .app-nav-toggle svg {
+        width: 22px !important;
+        height: 22px !important;
+        pointer-events: none !important;
+    }
+
+    #leadbotNav {
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        left: auto !important;
+        margin: 0 !important;
+        width: min(78vw, 300px) !important;
         max-width: none !important;
+        height: 100vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        justify-content: flex-start !important;
+        gap: 2px !important;
+        padding: 84px 20px 24px !important;
+        background: rgba(7, 21, 47, .98) !important;
+        box-shadow: -18px 0 50px rgba(0,0,0,.35) !important;
+        transform: translateX(100%) !important;
+        transition: transform .2s ease !important;
+        z-index: 1001 !important;
     }
 
-    .container {
+    #leadbotNav.is-open {
+        transform: translateX(0) !important;
+    }
+
+    #leadbotNav a {
+        width: 100% !important;
+        max-width: none !important;
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        background: transparent !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(255,255,255,.12) !important;
+        border-radius: 0 !important;
+        padding: 12px 4px !important;
+        margin: 0 !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
+        box-shadow: none !important;
+        white-space: normal !important;
+    }
+
+    #leadbotNav a:last-child {
+        border-bottom: 0 !important;
+    }
+
+    .leadbot-dashboard-page .app-nav-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(5, 10, 20, .5) !important;
+        z-index: 1000 !important;
+    }
+
+    .leadbot-dashboard-page .app-nav-overlay.is-open {
+        display: block !important;
+    }
+
+    .leadbot-dashboard-page .container {
         padding: 14px !important;
     }
 }
@@ -8987,6 +9074,10 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)
     page = page.replace("__CARDS__", lead_cards(rows, selected_name=file))
+    page = page.replace(
+        "__HISTORY_NAV_LINK__",
+        '<a href="/history">History</a>\n                ' if current_user else "",
+    )
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
     return page
@@ -9053,6 +9144,5 @@ try:
 except NameError:
     print("[LeadBot dashboard] read_csv_rows was not available for CSV size cap.")
 # === LEADBOT CSV SIZE CAP END ===
-
 
 
