@@ -8225,8 +8225,8 @@ body.leadbot-live-page button[data-action="block"] {
     }
 
     .leadbot-dashboard-page .leadbot-logo {
-        height: 58px !important;
-        max-width: 240px !important;
+        height: 54px !important;
+        max-width: 225px !important;
         width: auto !important;
     }
 
@@ -8255,7 +8255,7 @@ body.leadbot-live-page button[data-action="block"] {
         justify-content: center !important;
         width: 44px !important;
         height: 44px !important;
-        margin: 7px 0 0 0 !important;
+        margin: 5px 0 0 0 !important;
         padding: 0 !important;
         border-radius: 10px !important;
         border: 1px solid rgba(255,255,255,.24) !important;
