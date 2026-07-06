@@ -249,13 +249,66 @@
 </style>
     <link rel="icon" href="/static/favicon.ico?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
-<link rel="stylesheet" href="/static/css/styles.css">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-07-06-history-fix">
 <style>
 /* The old "stack header + wrap pills" mobile fix that used to live here has
    been superseded by the shared hamburger-menu pattern in
    static/css/styles.css (max-width: 700px). That shared block already
    converts .header-actions into a slide-in panel on mobile, so this page
    no longer needs its own nav-wrapping override. */
+
+/* Page-scoped safety net: static/css/styles.css is served with
+   Cache-Control: max-age=604800 and this <link> had no cache-busting
+   query string, so a phone that loaded /history any time in the last 7
+   days can still be running a stale cached copy of that file (e.g. an
+   older revision that used display:contents and collapsed this title to
+   one letter per line) even after the origin's copy is fixed. This block
+   lives inline in the HTML document itself, which is never cached
+   (no-store by default from FastAPI), so it always reflects the current
+   fix regardless of the visitor's styles.css cache state. Mirrors only
+   the structural rules needed to prevent the collapse: logo size, the
+   outer row (logo + hamburger, top-aligned so a tall title can't push
+   the hamburger down), and the title column (full width, no shrink). */
+@media (max-width: 700px) {
+    .history-page .logo,
+    .history-page .header .logo,
+    .history-page .hero .logo,
+    .history-page .logo-link img {
+        height: 54px !important;
+        width: auto !important;
+        max-width: 225px !important;
+    }
+
+    .history-page .header {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        gap: 12px !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+
+    .history-page .header-left {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 6px !important;
+    }
+
+    .history-page .header-left > div {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .history-page .app-nav-toggle {
+        margin: 5px 0 0 0 !important;
+        flex: 0 0 auto !important;
+    }
+}
 </style>
 </head>
 <body class="history-page">
