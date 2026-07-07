@@ -315,7 +315,8 @@
                 <a href="/history/rerun?saved_report={{ item.saved_report }}" class="btn">Run Again</a>
 
                 <form method="post" action="/history/delete">
-                    <input type="hidden" name="index" value="{{ loop.index0 }}">
+                    <input type="hidden" name="saved_report" value="{{ item.saved_report }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" onclick="return confirm('Delete this saved report?')">Delete</button>
                 </form>
             </div>

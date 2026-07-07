@@ -1408,16 +1408,30 @@ def load_report_history():
         return []
 
 
+def _write_history_atomic(history):
+    path = history_file_path()
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(path), prefix=".history_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
 def save_report_history_item(item: dict):
     history = load_report_history()
     history.insert(0, item)
     history = history[:100]
 
-    with open(history_file_path(), "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2)
+    _write_history_atomic(history)
 
 
-def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list):
+def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list, owner_id=None):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     site_slug = slugify_report_part(site.get("clean_domain", "site"))
     comp_slug = slugify_report_part(competitor.get("clean_domain", "competitor"))
@@ -1452,6 +1466,7 @@ def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, vol
         "volume_opportunities": volume_data[:8] if volume_data else [],
         "saved_report": f"/reports/saved/{filename}",
         "saved_path": file_path,
+        "owner_id": owner_id,
     }
 
     save_report_history_item(history_item)
@@ -1832,15 +1847,39 @@ async def save_settings(request: Request, locations: str = Form(...)):
 
 
 @app.post("/history/delete")
-async def delete_saved_report(index: int = Form(...)):
+async def delete_saved_report(
+    request: Request,
+    saved_report: str = Form(...),
+    csrf_token: str = Form(""),
+):
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
+    is_admin = _admin_role_from_user(user) == "admin"
     history = load_report_history()
 
-    if 0 <= index < len(history):
-        item = history.pop(index)
+    match_index = None
+    for i, entry in enumerate(history):
+        if entry.get("saved_report") != saved_report:
+            continue
+
+        entry_owner_id = entry.get("owner_id")
+        if is_admin or (entry_owner_id is not None and entry_owner_id == user["id"]):
+            match_index = i
+        break
+
+    if match_index is not None:
+        item = history.pop(match_index)
 
         try:
-            saved_report = item.get("saved_report", "")
-            filename = os.path.basename(saved_report)
+            filename = os.path.basename(item.get("saved_report", ""))
             saved_path = os.path.join(reports_dir_path(), "saved", filename)
 
             if os.path.isfile(saved_path):
@@ -1848,8 +1887,7 @@ async def delete_saved_report(index: int = Form(...)):
         except Exception as e:
             print("Saved report delete failed:", e)
 
-        with open(history_file_path(), "w", encoding="utf-8") as f:
-            json.dump(history, f, indent=2)
+        _write_history_atomic(history)
 
     return RedirectResponse(url="/history", status_code=303)
 
@@ -1872,13 +1910,24 @@ async def rerun_saved_report(request: Request, saved_report: str):
 
 @app.get("/history", response_class=HTMLResponse)
 async def report_history(request: Request):
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    is_admin = _admin_role_from_user(user) == "admin"
+    history = load_report_history()
+
+    if not is_admin:
+        history = [entry for entry in history if entry.get("owner_id") == user["id"]]
+
     return templates.TemplateResponse(
         request=request,
         name="history.html",
         context={
             "request": request,
-            "history": load_report_history(),
+            "history": history,
             "logo_url": safe_logo_url(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
@@ -2323,7 +2372,9 @@ async def analyze(
     try:
         html = templates.env.get_template("report.html").render(context)
         html = final_polish_report_html(html)
-        save_report_snapshot(html, site, competitor, gap, volume_data)
+        owner_user = auth_current_user(request)
+        owner_id = owner_user["id"] if owner_user else None
+        save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id)
     except Exception as e:
         print("Report history save failed:", e)
 
