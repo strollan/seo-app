@@ -858,7 +858,7 @@
         <div class="header">
             <div class="header-left">
                 {% if logo_url %}
-                    <a href="/" class="logo-link"><img src="/static/logo.png" class="logo" alt="" onerror="this.style.display='none';"></a>
+                    <a href="/" class="logo-link"><img src="/static/logo.png" class="logo" alt="Vast SEO Logo" onerror="this.style.display='none';"></a>
                 {% endif %}
                 <div class="header-text">
                     <h1>SEO Competitor Report</h1>
@@ -896,7 +896,7 @@
 
                     <div class="site-label">Your Site</div>
                     <div class="score">{{ site.score if site.score is number else 0 }}</div>
-                    <div class="site-url"><a href="https://{{ site.clean_domain }}" target="_blank">{{ site.clean_domain }}</a></div>
+                    <div class="site-url"><a href="https://{{ site.clean_domain }}" target="_blank" rel="noopener">{{ site.clean_domain }}</a></div>
 
                     {% if site.meta_description and site.meta_description not in ["ERROR", "No meta", "No meta description", "Blocked by site", "Unable to fetch"] %}
                         <span class="pill good">Meta Present</span>

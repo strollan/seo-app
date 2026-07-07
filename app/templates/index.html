@@ -570,13 +570,13 @@ button:hover {
         <form method="post" action="/analyze" id="analyzeForm">
             <div class="form-grid">
                 <div class="input-card">
-                    <label>Your Site</label>
-                    <input name="url_1" placeholder="cnn.com or https://cnn.com" required value="{{ request.query_params.get('url_1', '') }}">
+                    <label for="url_1">Your Site</label>
+                    <input id="url_1" name="url_1" placeholder="cnn.com or https://cnn.com" required value="{{ request.query_params.get('url_1', '') }}">
                 </div>
 
                 <div class="input-card">
-                    <label>Competitor</label>
-                    <input name="url_2" placeholder="msnbc.com or https://msnbc.com" value="{{ request.query_params.get('url_2', '') }}">
+                    <label for="url_2">Competitor</label>
+                    <input id="url_2" name="url_2" placeholder="msnbc.com or https://msnbc.com" value="{{ request.query_params.get('url_2', '') }}">
                 </div>
             </div>
 
