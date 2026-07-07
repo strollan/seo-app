@@ -1721,6 +1721,39 @@ def _admin_only_response(request: Request):
     return None
 
 
+def _login_required_user_or_response(request: Request):
+    from fastapi.responses import RedirectResponse
+
+    user = auth_current_user(request)
+    if not user:
+        return None, RedirectResponse(url="/login", status_code=303)
+
+    return user, None
+
+
+# CSRF token state is stored server-side in the sessions table
+# (agents.auth_agent: sessions.csrf_token_hash), keyed by the session's own
+# token_hash -- never as a raw value in memory or in the database. A fresh
+# token is issued on every GET /history render (overwriting the prior hash),
+# since a stored hash cannot be reversed to reuse a previously issued raw
+# token across separate requests.
+def _get_or_create_csrf_token(request: Request):
+    from agents.auth_agent import issue_csrf_token
+
+    session_token = request.cookies.get(AUTH_COOKIE_NAME)
+    if not session_token:
+        return None
+
+    return issue_csrf_token(session_token)
+
+
+def _csrf_token_valid(request: Request, submitted_token: str) -> bool:
+    from agents.auth_agent import verify_csrf_token
+
+    session_token = request.cookies.get(AUTH_COOKIE_NAME)
+    return verify_csrf_token(session_token, submitted_token)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     admin_block = _admin_only_response(request)
