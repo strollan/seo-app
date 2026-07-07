@@ -265,6 +265,7 @@
                 {% endif %}
 
                 <form method="post" action="/settings/leadbot-dataforseo" class="settings-switch-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" name="enabled" value="1" class="settings-btn primary">Turn ON</button>
                     <button type="submit" name="enabled" value="0" class="settings-btn danger">Turn OFF</button>
                 </form>

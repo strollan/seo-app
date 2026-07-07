@@ -1788,16 +1788,27 @@ async def settings_page(request: Request):
             "custom_location_list": location_sets["custom"],
             "saved": False,
             "leadbot_dataforseo_enabled": leadbot_get_dataforseo_enabled(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
 @app.post("/settings/leadbot-dataforseo", response_class=HTMLResponse)
-async def leadbot_dataforseo_settings_switch(request: Request, enabled: str = Form("0")):
+async def leadbot_dataforseo_settings_switch(
+    request: Request,
+    enabled: str = Form("0"),
+    csrf_token: str = Form(""),
+):
     from fastapi.responses import RedirectResponse
 
     admin_block = _admin_only_response(request)
     if admin_block:
         return admin_block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     value = leadbot_set_dataforseo_enabled(str(enabled).strip() == "1")
 
@@ -1810,10 +1821,20 @@ async def leadbot_dataforseo_settings_switch(request: Request, enabled: str = Fo
 
 
 @app.post("/save-settings", response_class=HTMLResponse)
-async def save_settings(request: Request, locations: str = Form(...)):
+async def save_settings(
+    request: Request,
+    locations: str = Form(...),
+    csrf_token: str = Form(""),
+):
     admin_block = _admin_only_response(request)
     if admin_block:
         return admin_block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     file_path = location_terms_file_path()
 
@@ -1842,6 +1863,7 @@ async def save_settings(request: Request, locations: str = Form(...)):
             "custom_location_list": location_sets["custom"],
             "saved": True,
             "leadbot_dataforseo_enabled": leadbot_get_dataforseo_enabled(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
