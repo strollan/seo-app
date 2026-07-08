@@ -14601,9 +14601,9 @@ async def reset_password_submit(request: Request):
     if not token:
         return AuthRedirectResponse(url="/forgot-password", status_code=303)
 
-    if len(new_password) < 8:
+    if len(new_password) < 12:
         return AuthRedirectResponse(
-            url=f"/reset-password?token={quote(token)}&error={quote('Password must be at least 8 characters.')}",
+            url=f"/reset-password?token={quote(token)}&error={quote('Password must be at least 12 characters.')}",
             status_code=303,
         )
 
