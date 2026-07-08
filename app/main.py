@@ -6280,7 +6280,7 @@ a[href*="/lead-bot/my-leads"] {
 """
 
     if ".target-quickwins-grid" not in html:
-        html = html.replace("</head>", extra_css + "\n</head>", 1)
+        html = html.replace("</head>", css + "\n</head>", 1)
 def final_fix_priority_recommendations_layout_retry_html(html):
     import re
 
