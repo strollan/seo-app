@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEO Competitor Report</title>
+<title>Compare URL</title>
 
 <style>
 * { box-sizing: border-box; }
@@ -11,11 +11,8 @@
 body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    background:
-        radial-gradient(circle at top right, rgba(37, 99, 235, 0.45), transparent 36%),
-        radial-gradient(circle at bottom left, rgba(79, 70, 229, 0.35), transparent 34%),
-        linear-gradient(135deg, #07152f, #0f172a, #172554, #1e1b4b);
-    color: white;
+    background: #eef3fb;
+    color: #0f172a;
     min-height: 100vh;
 }
 
@@ -26,14 +23,11 @@ body {
 }
 
 .hero {
-    background:
-        radial-gradient(circle at top right, rgba(124, 58, 237, 0.42), transparent 36%),
-        radial-gradient(circle at bottom left, rgba(37, 99, 235, 0.36), transparent 34%),
-        linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
-    border: 1px solid rgba(191, 219, 254, 0.22);
-    border-radius: 22px;
-    padding: 34px;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.32);
+    background: linear-gradient(135deg, #07152f, #1e3a8a);
+    color: white;
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 18px 48px rgba(15,23,42,.18);
     margin-bottom: 22px;
 }
 
@@ -88,13 +82,12 @@ body {
 }
 
 .card {
-    background:
-        radial-gradient(circle at top right, rgba(79, 70, 229, 0.38), transparent 38%),
-        linear-gradient(135deg, rgba(7, 21, 47, 0.96), rgba(15, 23, 42, 0.96), rgba(30, 58, 138, 0.7));
-    border: 1px solid rgba(147, 197, 253, 0.14);
-    border-radius: 22px;
-    padding: 36px;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.32);
+    background: white;
+    color: #0f172a;
+    border: 1px solid #dbe4f0;
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: 0 10px 28px rgba(15,23,42,.07);
 }
 
 .form-grid {
@@ -104,8 +97,8 @@ body {
 }
 
 .input-card {
-    background: rgba(255,255,255,0.055);
-    border: 1px solid rgba(147, 197, 253, 0.14);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 18px;
     padding: 24px;
 }
@@ -113,37 +106,37 @@ body {
 label {
     display: block;
     margin-bottom: 12px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 900;
-    letter-spacing: 0.09em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #dbeafe;
+    color: #475569;
 }
 
 input {
     width: 100%;
-    padding: 16px;
+    padding: 13px 14px;
     border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.18);
-    background: rgba(255,255,255,0.075);
-    color: white;
+    border: 1px solid #cbd5e1;
+    background: white;
+    color: #0f172a;
     font-size: 16px;
     outline: none;
 }
 
 input::placeholder {
-    color: rgba(219,234,254,0.72);
+    color: #94a3b8;
 }
 
 input:focus {
-    border-color: rgba(147, 197, 253, 0.9);
+    border-color: #93c5fd;
     box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.16);
 }
 
 .example {
     margin: 12px 0 0;
     font-size: 14px;
-    color: rgba(219,234,254,0.82);
+    color: #64748b;
 }
 
 .extra-fields {
@@ -154,35 +147,36 @@ input:focus {
 
 button {
     margin-top: 28px;
-    background: linear-gradient(135deg, #0f172a, #1e3a8a);
-    border: 1px solid rgba(255,255,255,0.18);
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    border: 0;
     padding: 15px 26px;
     border-radius: 12px;
     color: white;
     font-size: 17px;
     font-weight: 900;
     cursor: pointer;
+    box-shadow: 0 10px 22px rgba(30, 58, 138, .20);
     transition: 0.2s;
 }
 
 button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+    box-shadow: 0 14px 28px rgba(30, 58, 138, .28);
 }
 
 .loading {
     display: none;
     margin-top: 18px;
     font-weight: 800;
-    color: rgba(255,255,255,0.92);
+    color: #334155;
 }
 
 .spinner {
     display: inline-block;
     width: 18px;
     height: 18px;
-    border: 3px solid rgba(255,255,255,0.35);
-    border-top-color: white;
+    border: 3px solid #cbd5e1;
+    border-top-color: #1e3a8a;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     vertical-align: middle;
@@ -191,7 +185,7 @@ button:hover {
 
 .footer-note {
     margin-top: 18px;
-    color: rgba(255,255,255,0.62);
+    color: #64748b;
     font-size: 14px;
 }
 
@@ -249,22 +243,23 @@ button:hover {
 .nav a,
 .report-actions a,
 .header-actions a {
-    background: linear-gradient(135deg, #0f172a, #1e3a8a) !important;
+    background: rgba(255,255,255,.14) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(255,255,255,0.18) !important;
-    padding: 13px 18px !important;
-    border-radius: 12px !important;
+    border: 1px solid rgba(255,255,255,.22) !important;
+    padding: 10px 14px !important;
+    border-radius: 999px !important;
     text-decoration: none !important;
-    font-weight: 800 !important;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.18) !important;
+    font-weight: 900 !important;
+    box-shadow: none !important;
 }
 
 .nav a.active,
 .nav a:hover,
 .report-actions a:hover,
 .header-actions a:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 28px rgba(0,0,0,0.24) !important;
+    transform: none;
+    background: rgba(255,255,255,.25) !important;
+    box-shadow: none !important;
 }
 
 
@@ -539,32 +534,138 @@ button:hover {
     <link rel="icon" href="/static/favicon.ico?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
 <link rel="stylesheet" href="/static/css/styles.css">
+<style>
+/* static/css/styles.css locks .logo to height:81px + max-width:180px !important,
+   which forces object-fit:contain to shrink this logo's actual visible content
+   to ~44px tall (this asset's aspect ratio needs ~330px width at 81px height).
+   Override with matching specificity/!important, scoped to this page only, so
+   /settings (which shares that stylesheet) is unaffected. */
+.logo,
+.header .logo,
+.hero .logo,
+.logo-link img {
+    height: 72px !important;
+    width: auto !important;
+    max-width: none !important;
+}
+
+/* static/css/styles.css has a "FINAL HEADER LOCK" section that forces
+   body{background:#0f1a33}, .hero{background:transparent, padding:0,
+   margin zeroed}, and .nav a / .hero .nav a / .header .nav a to solid
+   white pills, all !important. That section is what makes every page
+   using this stylesheet render as one flat dark page instead of a light
+   page with a contained dark header card. Override everything it touches
+   here, scoped to this page only (so /history, /report, /settings, which
+   also use this stylesheet, are unaffected), matching or exceeding its
+   selectors' specificity so this wins regardless of source order. */
+body {
+    background: #eef3fb !important;
+    padding: 0 !important;
+}
+
+.hero {
+    background: linear-gradient(135deg, #07152f, #1e3a8a) !important;
+    border: 0 !important;
+    border-radius: 24px !important;
+    padding: 30px !important;
+    margin: 0 0 22px 0 !important;
+    box-shadow: 0 18px 48px rgba(15,23,42,.18) !important;
+}
+
+.header {
+    height: auto !important;
+    min-height: 0 !important;
+}
+
+/* Scoped to desktop only: below 700px the shared hamburger-menu pattern in
+   static/css/styles.css takes over .nav entirely (slide-in stacked list),
+   and this pill styling would otherwise win the cascade tie against it
+   since this block sits later in the document than that shared file. */
+@media (min-width: 701px) {
+    .nav a,
+    .hero .nav a,
+    .header .nav a,
+    .report-actions a,
+    .header-actions a,
+    .top-actions a,
+    .header .btn {
+        background: rgba(255,255,255,.14) !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,.22) !important;
+        border-radius: 999px !important;
+        box-shadow: none !important;
+        font-weight: 900 !important;
+    }
+
+    .nav a:hover,
+    .hero .nav a:hover,
+    .header .nav a:hover,
+    .report-actions a:hover,
+    .header-actions a:hover,
+    .top-actions a:hover,
+    .header .btn:hover {
+        background: rgba(255,255,255,.25) !important;
+        color: #ffffff !important;
+        transform: none !important;
+    }
+}
+
+/* The old "stack header + wrap pills" mobile fix that used to live here has
+   been superseded by the shared hamburger-menu pattern in
+   static/css/styles.css (max-width: 700px). That shared block already
+   converts .nav into a slide-in panel on mobile, so this page no longer
+   needs its own nav-wrapping override. */
+
+/* Winning rule that made this page edge-to-edge on mobile: this page's own
+   body{padding:0 !important} above (added to escape styles.css's dark
+   "FINAL HEADER LOCK" body lock) combined with styles.css's unconditional
+   .container{padding:0 !important} left nothing to inset the hero card from
+   the viewport edge, unlike /lead-bot's .leadbot-dashboard-page .container
+   {padding:14px !important}. Restore that same 14px inset here, scoped to
+   this page and mobile only, so the rounded blue card gets light gutters
+   again instead of touching both edges. */
+@media (max-width: 700px) {
+    .compare-page .container {
+        padding: 14px !important;
+    }
+}
+</style>
 </head>
 
-<body>
+<body class="compare-page">
 <div class="container">
 
     <div class="hero">
         <div class="header">
             <div class="header-left">
                 {% if logo_url %}
-                    <a href="/" class="logo-link"><img src="/static/logo.png" class="logo" alt="Vast SEO Logo"></a>
+                    <a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" alt="LeadMeLeads Logo"></a>
                 {% endif %}
                 <div>
-                    <h1>SEO Competitor Report</h1>
+                    <h1>Compare URL</h1>
                     <p>Smart comparison of key on-page SEO signals, keyword overlap, and opportunity gaps.</p>
                 </div>
             </div>
 
-            <div class="nav">
-                <a href="/history">History</a>
-                <a href="/lead-bot">LeadBot</a>
-                <a href="/settings">Settings</a>
-                <a href="/login">Login</a>
-                <a href="/logout">Logout</a>
+            <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            </button>
+
+            <div class="nav" id="compareNav">
+                <a href="/">Home</a>
+                <a href="/lead-bot">Lead Finder</a>
+                {% if user %}
+                    <a href="/history">History</a>
+                    <a href="/settings">Settings</a>
+                    <a href="/logout">Logout</a>
+                {% else %}
+                    <a href="/login">Login</a>
+                    <a href="/create-account">Create Account</a>
+                {% endif %}
             </div>
         </div>
     </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
 
     <div class="card">
         <form method="post" action="/analyze" id="analyzeForm">
@@ -596,6 +697,7 @@ button:hover {
     </div>
                 </div>
 
+<script src="/static/js/mobile-nav.js" defer></script>
 <script>
 const form = document.getElementById("analyzeForm");
 const button = document.getElementById("runBtn");

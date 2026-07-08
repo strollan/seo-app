@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Vast SEO Competitor Report</title>
+    <title>LeadMeLeads Competitor Report</title>
 
 
     <style>
@@ -849,7 +849,7 @@
 
 <link rel="stylesheet" href="/static/css/styles.css">
 </head>
-<body>
+<body class="report-page">
 
 
 
@@ -858,21 +858,28 @@
         <div class="header">
             <div class="header-left">
                 {% if logo_url %}
-                    <a href="/" class="logo-link"><img src="/static/logo.png" class="logo" alt="Vast SEO Logo" onerror="this.style.display='none';"></a>
+                    <a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" alt="" onerror="this.style.display='none';"></a>
                 {% endif %}
                 <div class="header-text">
-                    <h1>SEO Competitor Report</h1>
+                    <h1>Compare URL</h1>
                     <p>On-page comparison with title and meta length checks against common SERP ranges.</p>
                 </div>
             </div>
-<div class="report-actions header-actions">
+<button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="reportNav" aria-label="Open menu">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+</button>
+
+<div class="report-actions header-actions" id="reportNav">
     <a href="/index" class="btn">← Home</a>
+    <a href="/lead-bot" class="btn">Lead Finder</a>
+    {% if user %}
     <a href="/history" class="btn">History</a>
-    <a href="/lead-bot" class="btn">LeadBot</a>
+    {% endif %}
     <a href="/settings" class="btn">Settings</a>
     <a href="/logout" class="btn">Logout</a>
     <a href="#" class="btn" onclick="window.print(); return false;">Save PDF</a>
 </div>
+<div class="app-nav-overlay" data-nav-overlay></div>
 
         </div>
 
@@ -1240,11 +1247,12 @@
         </div>
 
         <div class="footer">
-            Courtesy of Vast SEO
+            Courtesy of LeadMeLeads
         </div>
 
     </div>
 </div>
+<script src="/static/js/mobile-nav.js" defer></script>
 <script>
 setInterval(() => {
     fetch(window.location.href, { method: "HEAD" })

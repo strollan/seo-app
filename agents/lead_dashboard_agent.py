@@ -496,7 +496,7 @@ def lead_cards(rows, selected_name=""):
     # === LEADBOT FILTER BLOCKED LEADS ON DASHBOARD RENDER END ===
 
     if not rows:
-        return '<div class="empty">No leads found yet. Run the bot or select an export.</div>'
+        return '<div class="empty">No leads found yet. Start a scan or select an export.</div>'
 
     cards = []
 
@@ -813,7 +813,8 @@ def render_lead_dashboard(file="", current_user=None):
 <html>
 <head>
 <meta charset="utf-8">
-<title>LeadBot Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Finder Dashboard</title>
 <style>
 * { box-sizing: border-box; }
 body {
@@ -3540,42 +3541,49 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
 
 </head>
-<body>
+<body class="leadbot-dashboard-page">
 <div class="container">
     <div class="hero">
         <div class="leadbot-brand">
             <div class="leadbot-brand-left">
                 <a class="leadbot-logo-link" href="/">
-                    <img class="leadbot-logo" src="/static/logo.png" alt="Vast SEO Logo">
+                    <img class="leadbot-logo" src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" alt="LeadMeLeads Logo">
                 </a>
                 <div>
-                    <h1>LeadBot Dashboard</h1>
+                    <h1>Lead Finder Dashboard</h1>
                     <p>Find page 1–4 prospects, enrich contact details, and prioritize outreach opportunities.</p>
                 </div>
             </div>
 
-            <nav class="leadbot-nav">
+            <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="leadbotNav" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            </button>
+
+            <nav class="leadbot-nav" id="leadbotNav">
                 <a href="/">Home</a>
-                <a href="#run-lead-bot">Start</a>
+                <a href="/compare">Compare URL</a>
+                __HISTORY_NAV_LINK__<a href="#run-lead-bot">Start</a>
                 <a href="#exports">Exports</a>
                 <a href="/logout">Logout</a>
             </nav>
         </div>
     </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
+<script src="/static/js/mobile-nav.js" defer></script>
 
-    
+
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
-            <h2>Run LeadBot</h2>
+            <h2>Run Lead Finder</h2>
             <form id="leadbotRunForm" action="/lead-bot/live-start" method="get">
-                <label>Industry</label>
-                <input name="industry" value="">
+                <label>Keyword</label>
+                <input name="keyword" value="">
 
                 <label>Market</label>
                 <input name="market" value="">
 
-                <label>Keyword</label>
-                <input name="keyword" value="">
+                <label>Industry</label>
+                <input name="industry" value="">
 
                 <label>Own Domain</label>
                 <input name="own_domain" value="">
@@ -3606,12 +3614,12 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 </details>
 
 <button type="submit" class="leadbot-start-btn" id="leadbotStartScanButton">
-    Start LeadBot Scan
+    Start Lead Finder Scan
 </button>
 
 </form>
 
-            <p class="help"><strong>LeadBot:</strong> live results appear as prospects are found and contacts are enriched.</p>
+            <p class="help">Live results appear as prospects are found and contacts are enriched.</p>
 
 
 <div class="leadbot-complete-details-above-exports">
@@ -3673,7 +3681,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         </div>
     </div>
     <div class="leadbot-wait-copy">
-        <strong>LeadBot is building your lead list...</strong>
+        <strong>Lead Finder is building your lead list...</strong>
         <span>Finding page 1–4 prospects, enriching contact details, and building your export.</span>
     </div>
 </div>
@@ -3785,7 +3793,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
             const button = form.querySelector('button[type="submit"]');
             if (button) {
                 button.disabled = true;
-                button.textContent = "Starting LeadBot...";
+                button.textContent = "Starting Lead Finder...";
             }
         });
     });
@@ -4667,7 +4675,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 block.textContent = "Block";
                 block.href = "/lead-bot/block-domains?domains=" + encodeURIComponent(domain);
                 block.onclick = function () {
-                    return confirm("Block " + domain + " from future LeadBot scans?");
+                    return confirm("Block " + domain + " from future Lead Finder scans?");
                 };
                 card.appendChild(block);
             }
@@ -6937,7 +6945,7 @@ btn.dataset.busy = "1";
         var leadCount = leads.querySelectorAll(".lead-card").length || "";
 
         bar.innerHTML =
-            '<div class="leadbot-scan-context-title">Current LeadBot Scan</div>' +
+            '<div class="leadbot-scan-context-title">Current Lead Finder Scan</div>' +
             '<div class="leadbot-scan-context-grid">' +
 
                 '<div class="leadbot-scan-context-item"><b>Keyword</b><span>' + keyword + '</span></div>' +
@@ -8147,6 +8155,327 @@ body.leadbot-live-page button[data-action="block"] {
     display: none !important;
 }
 </style>
+<!-- LEADBOT LIVE SCAN GLOBAL REMOVE BLOCK BUTTON END -->
+
+<!-- LEADBOT MOBILE HEADER FIX START -->
+<style>
+/* Same hamburger pattern as /compare, /history, and report pages
+   (see static/css/styles.css "APP MOBILE HAMBURGER NAV" section). This
+   page is plain HTML (not Jinja) so it can't share that stylesheet's
+   rules directly, but reuses the same class-free JS contract via
+   [data-nav-toggle]/[data-nav-overlay] and /static/js/mobile-nav.js. */
+.leadbot-dashboard-page .app-nav-toggle {
+    display: none;
+}
+
+.leadbot-dashboard-page .app-nav-overlay {
+    display: none;
+}
+
+@media (max-width: 700px) {
+    /* .hero > div.leadbot-brand matches the same element as .hero > div:first-child
+       (the earlier grid-layout rule) at equal specificity, so being declared last
+       here wins the cascade tie and actually forces this flex layout instead of
+       that one. Flexbox (not grid + display:contents) so the hamburger's position
+       never depends on how tall the title/subtitle block is, and so it renders
+       correctly on every engine. A prior version used CSS Grid with
+       display:contents to dissolve .leadbot-brand-left and place the logo and
+       title on separate grid rows; WebKit has a long-standing bug where
+       display:contents on a grid item breaks minmax(0,1fr) sizing for the
+       dissolved element's former children, collapsing the title's width toward 0
+       and wrapping it one letter per line on real Safari/iOS (Chromium doesn't
+       have this bug, which is why that version looked fine in automated checks
+       but broke on a real phone). This version keeps the existing DOM (title
+       still nested inside .leadbot-brand-left) and only uses plain flexbox:
+       .leadbot-brand-left becomes a column (logo, then title, title full width),
+       the outer .leadbot-brand row top-aligns .leadbot-brand-left against the
+       hamburger so a taller title can never move it, and the hamburger gets a
+       small top margin (see its rule further below) to sit centered against the
+       fixed-height logo specifically rather than the whole column. Matches the
+       same logo-top / hamburger-top-right / title-below structure used on
+       /compare, /history, and report.html (see static/css/styles.css). */
+    .leadbot-dashboard-page .hero > div.leadbot-brand {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: flex-start !important;
+        justify-content: space-between !important;
+        text-align: left !important;
+        gap: 12px !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        text-align: left !important;
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        gap: 6px !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-logo-link {
+        justify-content: flex-start !important;
+        width: auto !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left > div {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-logo {
+        height: 54px !important;
+        max-width: 225px !important;
+        width: auto !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left h1 {
+        font-size: 20px !important;
+        line-height: 1.1 !important;
+        margin: 0 !important;
+    }
+
+    .leadbot-dashboard-page .leadbot-brand-left p {
+        font-size: 12.5px !important;
+        line-height: 1.3 !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+    }
+
+    /* #leadbotNav below is position:fixed with z-index:1001 and spans
+       right:0 to min(78vw,300px) wide, which physically covers this
+       button's location in the header (also at the far right edge) once
+       open. Without its own stacking context above the panel, a second
+       tap on the hamburger hits the panel instead of the button, so the
+       "tap again to close" behavior is unreachable. */
+    .leadbot-dashboard-page .app-nav-toggle {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 44px !important;
+        height: 44px !important;
+        margin: 5px 0 0 0 !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,.24) !important;
+        background: rgba(255,255,255,.08) !important;
+        color: #ffffff !important;
+        cursor: pointer !important;
+        flex: 0 0 auto !important;
+        position: relative !important;
+        z-index: 1002 !important;
+    }
+
+    .leadbot-dashboard-page .app-nav-toggle svg {
+        width: 22px !important;
+        height: 22px !important;
+        pointer-events: none !important;
+    }
+
+    #leadbotNav {
+        position: fixed !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        left: auto !important;
+        margin: 0 !important;
+        width: min(78vw, 300px) !important;
+        max-width: none !important;
+        height: 100vh !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        justify-content: flex-start !important;
+        gap: 2px !important;
+        padding: 84px 20px 24px !important;
+        background: rgba(7, 21, 47, .98) !important;
+        box-shadow: -18px 0 50px rgba(0,0,0,.35) !important;
+        transform: translateX(100%) !important;
+        transition: transform .2s ease !important;
+        z-index: 1001 !important;
+    }
+
+    #leadbotNav.is-open {
+        transform: translateX(0) !important;
+    }
+
+    #leadbotNav a {
+        width: 100% !important;
+        max-width: none !important;
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        background: transparent !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(255,255,255,.12) !important;
+        border-radius: 0 !important;
+        padding: 12px 4px !important;
+        margin: 0 !important;
+        color: #ffffff !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
+        box-shadow: none !important;
+        white-space: normal !important;
+    }
+
+    #leadbotNav a:last-child {
+        border-bottom: 0 !important;
+    }
+
+    .leadbot-dashboard-page .app-nav-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        background: rgba(5, 10, 20, .5) !important;
+        z-index: 1000 !important;
+    }
+
+    .leadbot-dashboard-page .app-nav-overlay.is-open {
+        display: block !important;
+    }
+
+    .leadbot-dashboard-page .container {
+        padding: 14px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE HEADER FIX END -->
+
+<!-- LEADBOT MOBILE LEAD CARD FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Reclaim the desktop delete/block-button gutter so the title/domain
+       block gets the full card width instead of ~45% of it. */
+    .lead-head {
+        align-items: stretch !important;
+        padding-right: 8px !important;
+    }
+
+    .lead-head > div:first-child {
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    /* A page-load script moves this button out of form.lead-contact-edit-form
+       into .leadbot-save-details-row, so a plain ".lead-contact-save" class
+       selector loses to the existing "button.lead-contact-save" (type+class)
+       rule regardless of source order. Match that specificity directly. */
+    .lead-contact-save,
+    button.lead-contact-save,
+    .lead-address-box button,
+    .lead-address-box button[type="submit"] {
+        min-height: 44px !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        width: 100% !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE LEAD CARD FIX END -->
+
+<!-- LEADBOT MOBILE READABILITY FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Several sidebar tools (Exports title, Blocked Domains box, badges,
+       Save Details button) were deliberately shrunk for a dense desktop
+       sidebar and never scaled back up for mobile, leaving them well under
+       comfortable reading/tap size on a phone. Restore readable sizes here
+       without touching the desktop-only rules above. */
+
+    #exports {
+        font-size: 18px !important;
+        line-height: 1.25 !important;
+    }
+
+    .leadbot-block-domains-box {
+        padding: 14px !important;
+    }
+
+    .leadbot-block-domains-box h2 {
+        font-size: 16px !important;
+        line-height: 1.25 !important;
+    }
+
+    .leadbot-block-domains-box label {
+        font-size: 12px !important;
+    }
+
+    .leadbot-block-domains-box textarea {
+        min-height: 72px !important;
+        font-size: 15px !important;
+        padding: 10px 12px !important;
+    }
+
+    .leadbot-block-domains-box .leadbot-secondary-btn {
+        min-height: 44px !important;
+        padding: 12px 14px !important;
+        font-size: 14px !important;
+    }
+
+    .leadbot-block-domains-box .help {
+        font-size: 12px !important;
+        line-height: 1.4 !important;
+    }
+
+    .lead-card .badges span {
+        font-size: 12.5px !important;
+        padding: 7px 11px !important;
+    }
+
+    .lead-contact-save,
+    button.lead-contact-save {
+        font-size: 13px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE READABILITY FIX END -->
+
+<!-- LEADBOT MOBILE FORM USABILITY FIX START -->
+<style>
+@media (max-width: 700px) {
+    /* Run Lead Finder was a shrunk-down desktop form: 12px uppercase
+       labels, 42-44px inputs at 15px font (triggers mobile zoom-on-focus
+       below 16px), a 13px "Advanced settings" toggle, and a 46px start
+       button. Bring the whole form up to real mobile-app scale. */
+    .container {
+        padding: 10px;
+    }
+
+    label {
+        font-size: 15px;
+        margin: 16px 0 7px;
+    }
+
+    input,
+    select,
+    .leadbot-select {
+        min-height: 48px;
+        font-size: 16px;
+    }
+
+    .leadbot-advanced {
+        padding: 14px;
+    }
+
+    .leadbot-advanced summary {
+        font-size: 15px;
+        min-height: 24px;
+    }
+
+    /* #leadbotStartScanButton / #leadbotRunForm .leadbot-start-btn (ID
+       specificity) locks this to 46px/15px elsewhere in this file, so a
+       plain class selector loses regardless of !important. Match the ID. */
+    .leadbot-start-btn,
+    #leadbotStartScanButton,
+    #leadbotRunForm .leadbot-start-btn {
+        min-height: 52px !important;
+        font-size: 16px !important;
+    }
+}
+</style>
+<!-- LEADBOT MOBILE FORM USABILITY FIX END -->
 
 <script>
 (function () {
@@ -8669,7 +8998,7 @@ body.leadbot-live-page button[data-action="block"] {
         var btn = document.getElementById("leadbotStartScanButton");
         if (btn) {
             btn.disabled = true;
-            btn.textContent = "Starting LeadBot...";
+            btn.textContent = "Starting Lead Finder...";
         }
 
         window.location.href = buildLiveStartUrl(form);
@@ -8766,6 +9095,10 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)
     page = page.replace("__CARDS__", lead_cards(rows, selected_name=file))
+    page = page.replace(
+        "__HISTORY_NAV_LINK__",
+        '<a href="/history">History</a>\n                ' if current_user else "",
+    )
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
     return page
@@ -8832,6 +9165,5 @@ try:
 except NameError:
     print("[LeadBot dashboard] read_csv_rows was not available for CSV size cap.")
 # === LEADBOT CSV SIZE CAP END ===
-
 
 

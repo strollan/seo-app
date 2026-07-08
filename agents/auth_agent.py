@@ -57,6 +57,25 @@ def init_auth_db():
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        except Exception:
+            pass  # column already exists
+
         conn.commit()
 
         session_columns = {
@@ -69,6 +88,10 @@ def init_auth_db():
 
 def normalize_username(username):
     return str(username or "").strip().lower()
+
+
+def normalize_email(email):
+    return str(email or "").strip().lower()
 
 
 def hash_password(password):
@@ -112,7 +135,7 @@ def verify_password(password, stored):
         return False
 
 
-def create_user(username, password, role="standard"):
+def create_user(username, password, role="standard", email=None):
     init_auth_db()
 
     username = normalize_username(username)
@@ -121,15 +144,16 @@ def create_user(username, password, role="standard"):
     if not username:
         raise ValueError("Username is required.")
 
+    clean_email = normalize_email(email) if email else None
     password_hash = hash_password(password)
 
     with connect() as conn:
         conn.execute(
             """
-            INSERT INTO users (username, password_hash, role, is_active, created_at)
-            VALUES (?, ?, ?, 1, ?)
+            INSERT INTO users (username, password_hash, role, is_active, created_at, email)
+            VALUES (?, ?, ?, 1, ?, ?)
             """,
-            (username, password_hash, role, iso(utc_now())),
+            (username, password_hash, role, iso(utc_now()), clean_email),
         )
         conn.commit()
 
@@ -149,8 +173,33 @@ def get_user_by_username(username):
     return dict(row) if row else None
 
 
+def get_user_by_email(email):
+    init_auth_db()
+    email = normalize_email(email)
+    if not email:
+        return None
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE email = ? AND is_active = 1",
+            (email,),
+        ).fetchone()
+
+    return dict(row) if row else None
+
+
+def get_user_by_username_or_email(identifier):
+    """Find active user by username first, then by email if identifier contains @."""
+    user = get_user_by_username(identifier)
+    if user:
+        return user
+    if "@" in identifier:
+        return get_user_by_email(identifier)
+    return None
+
+
 def authenticate_user(username, password):
-    user = get_user_by_username(username)
+    user = get_user_by_username_or_email(username)
 
     if not user:
         return None
@@ -392,3 +441,124 @@ def login_clear_failures(client_host, username):
 
 def user_exists(username):
     return get_user_by_username(username) is not None
+
+
+def email_exists(email):
+    return get_user_by_email(email) is not None
+
+
+# === PASSWORD RESET START ===
+RESET_TOKEN_MINUTES = 60
+
+
+def _ensure_reset_tokens_table():
+    init_auth_db()
+
+
+def create_reset_token(identifier):
+    """Return (raw_token, user) for a valid account, or (None, None) if not found."""
+    user = get_user_by_username_or_email(identifier)
+    if not user:
+        return None, None
+
+    _ensure_reset_tokens_table()
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    now = utc_now()
+    expires = now + timedelta(minutes=RESET_TOKEN_MINUTES)
+
+    with connect() as conn:
+        conn.execute(
+            "UPDATE password_reset_tokens SET used = 1 WHERE user_id = ? AND used = 0",
+            (user["id"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO password_reset_tokens (user_id, token_hash, created_at, expires_at, used)
+            VALUES (?, ?, ?, ?, 0)
+            """,
+            (user["id"], token_hash, iso(now), iso(expires)),
+        )
+        conn.commit()
+
+    return raw_token, user
+
+
+def get_user_for_reset_token(raw_token):
+    """Validate a reset token. Returns the user dict, or None if invalid/expired/used."""
+    _ensure_reset_tokens_table()
+
+    if not raw_token:
+        return None
+
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT password_reset_tokens.expires_at,
+                   password_reset_tokens.used,
+                   users.id AS user_id,
+                   users.username,
+                   users.role
+            FROM password_reset_tokens
+            JOIN users ON users.id = password_reset_tokens.user_id
+            WHERE password_reset_tokens.token_hash = ?
+              AND users.is_active = 1
+            """,
+            (token_hash,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    if row["used"]:
+        return None
+
+    if datetime.fromisoformat(row["expires_at"]) < utc_now():
+        return None
+
+    return {
+        "id": row["user_id"],
+        "username": row["username"],
+        "role": row["role"],
+    }
+
+
+def consume_reset_token(raw_token):
+    """Mark all reset tokens for this user as used, preventing any further reuse."""
+    if not raw_token:
+        return
+
+    _ensure_reset_tokens_table()
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM password_reset_tokens WHERE token_hash = ?",
+            (token_hash,),
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE password_reset_tokens SET used = 1 WHERE user_id = ?",
+                (row["user_id"],),
+            )
+        conn.commit()
+
+
+def set_user_password(user_id, new_password):
+    """Hash and store a new password for the given user_id."""
+    init_auth_db()
+    new_hash = hash_password(new_password)
+
+    with connect() as conn:
+        cursor = conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (new_hash, user_id),
+        )
+        conn.commit()
+
+    if cursor.rowcount == 0:
+        raise ValueError(f"Password update failed: no user found with id={user_id}.")
+# === PASSWORD RESET END ===

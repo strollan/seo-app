@@ -1671,6 +1671,7 @@ async def home(request: Request):
         context={
             "request": request,
             "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
         },
     )
 
@@ -1958,7 +1959,15 @@ async def report_history(request: Request):
 
 @app.get("/compare")
 async def compare_page(request: Request):
-    return templates.TemplateResponse(request, "compare.html", {"request": request})
+    return templates.TemplateResponse(
+        request,
+        "compare.html",
+        {
+            "request": request,
+            "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
+        },
+    )
 
 
 @app.get("/analyze")
@@ -2364,6 +2373,7 @@ async def analyze(
 
     context = {
             "request": request,
+            "user": auth_current_user(request),
             "site": site,
             "competitors": competitors_sorted,
             "analysis_html": final_report_phrase_polish(polish_client_report_phrases(enforce_single_seo_action_plan(final_single_analysis_filter(clean_client_facing_report_text(clean_analysis_html_output(analysis)))))),
@@ -6246,6 +6256,26 @@ a[href*="/lead-bot/my-leads"] {
 }
 /* === LEADBOT LIVE ZERO RESULTS EMPTY STATE END === */
 
+
+.auth-brand-text {
+    text-align: center;
+    margin-bottom: 16px;
+}
+.auth-brand-name {
+    display: inline-block;
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+}
+.auth-brand-subtitle {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 650;
+}
+
 </style>
 """
 
@@ -8627,7 +8657,7 @@ async def vast_blocked_client_access_page_middleware(request, call_next):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vast SEO Crawl Access Check</title>
+<title>LeadMeLeads Crawl Access Check</title>
 <style>
 body {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -8783,7 +8813,7 @@ body {{
     <div class="header">
         <div>
             <h1>Crawl Access Check</h1>
-            <p>Vast SEO could not fully read the client page, so this is not a normal competitor report.</p>
+            <p>LeadMeLeads could not fully read the client page, so this is not a normal competitor report.</p>
         </div>
         <div class="actions">
             <a href="/">← Home</a>
@@ -8843,7 +8873,7 @@ body {{
             <p style="line-height:1.7;font-size:16px;">Without a readable client page, the app cannot fairly score SEO basics, compare keyword coverage, or produce reliable next-step recommendations. This access check prevents a broken crawl from looking like a finished client report.</p>
         </div>
 
-        <div class="footer">Courtesy of Vast SEO</div>
+        <div class="footer">Courtesy of LeadMeLeads</div>
     </div>
 </div>
 </body>
@@ -10317,15 +10347,92 @@ def auth_current_user(request):
     return get_user_from_token(token)
 # === AUTH CURRENT USER COMPAT END ===
 
-def auth_login_page(error=""):
+
+# === PASSWORD TOGGLE SHARED CSS/JS START ===
+# Single reusable implementation, interpolated into each auth page below.
+_PASSWORD_TOGGLE_STYLE = """
+.password-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    margin-top: 7px;
+}
+.password-row input {
+    min-width: 0;
+    margin-top: 0;
+    height: 54px;
+    min-height: 54px;
+    padding-top: 0;
+    padding-bottom: 0;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+.password-toggle {
+    width: auto;
+    min-width: 72px;
+    height: 54px;
+    min-height: 54px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-weight: 850;
+    font-size: 14px;
+    cursor: pointer;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.password-toggle:hover {
+    background: #dbeafe;
+}
+.password-toggle:focus-visible {
+    outline: 2px solid #1e3a8a;
+    outline-offset: 2px;
+}
+@media (max-width: 340px) {
+    .password-toggle {
+        min-width: 64px;
+        padding: 0 8px;
+        font-size: 12px;
+    }
+}
+"""
+
+_PASSWORD_TOGGLE_SCRIPT = """
+<script>
+document.addEventListener("click", function (event) {
+    const button = event.target.closest("[data-password-toggle]");
+    if (!button) return;
+
+    const input = document.getElementById(button.dataset.passwordToggle);
+    if (!input) return;
+
+    const shouldShow = input.type === "password";
+    input.type = shouldShow ? "text" : "password";
+    button.textContent = shouldShow ? "Hide" : "Show";
+    button.setAttribute("aria-label", shouldShow ? "Hide password" : "Show password");
+});
+</script>
+"""
+# === PASSWORD TOGGLE SHARED CSS/JS END ===
+
+
+def auth_login_page(error="", message=""):
     error_html = f'<div class="auth-error">{error}</div>' if error else ""
+    message_html = f'<div class="auth-success">{message}</div>' if message else ""
 
     return AuthHTMLResponse(f"""
 <!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Login | Vast SEO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login | LeadMeLeads</title>
 <style>
 body {{
     margin: 0;
@@ -10342,6 +10449,7 @@ body {{
     border-radius: 20px;
     padding: 28px;
     box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{
     margin: 0 0 8px;
@@ -10364,6 +10472,7 @@ input {{
     border-radius: 12px;
     border: 1px solid #cbd5e1;
     font-size: 16px;
+    box-sizing: border-box;
 }}
 button {{
     width: 100%;
@@ -10375,11 +10484,21 @@ button {{
     color: white;
     font-weight: 950;
     cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2;
     color: #991b1b;
     border: 1px solid #fecaca;
+    border-radius: 12px;
+    padding: 11px 13px;
+    margin-bottom: 14px;
+    font-weight: 800;
+}}
+.auth-success {{
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
     border-radius: 12px;
     padding: 11px 13px;
     margin-bottom: 14px;
@@ -10394,27 +10513,99 @@ button {{
     font-weight: 800;
     text-decoration: none;
 }}
+{_PASSWORD_TOGGLE_STYLE}
+@media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
+    .auth-card {{
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
+    }}
+    input {{
+        min-height: 54px;
+        font-size: 16px;
+        padding: 14px 14px;
+    }}
+    button {{
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
+    }}
+}}
 </style>
 </head>
 <body>
     <form class="auth-card" method="post" action="/login">
-        <h1>Vast SEO Login</h1>
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/create-account">Create Account</a>
+</div>
+
+<h1>LeadMeLeads Login</h1>
         <p>Sign in to access protected tools.</p>
         {error_html}
+        {message_html}
         <label>Username or Email</label>
         <input name="username" autocomplete="username" maxlength="254" required>
         <label>Password</label>
-        <input name="password" type="password" autocomplete="current-password" maxlength="256" required>
+        <div class="password-row">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="login-password" aria-label="Show password">Show</button>
+        </div>
         <button type="submit">Log In</button>
-        <div class="auth-links"><a href="/">Back to Home</a> &nbsp;|&nbsp; <a href="/create-account">Create Account</a></div>
+        <div class="auth-links">
+            <a href="/">Back to Home</a> &nbsp;|&nbsp;
+            <a href="/forgot-password">Forgot password?</a> &nbsp;|&nbsp;
+            <a href="/create-account">Create Account</a>
+        </div>
     </form>
+{_PASSWORD_TOGGLE_SCRIPT}
 </body>
 </html>
 """)
 
 
 @app.get("/login", response_class=AuthHTMLResponse)
-def auth_login_get():
+def auth_login_get(reset: str = AuthQuery("")):
+    if str(reset).strip() == "1":
+        return auth_login_page(message="Password reset successfully. You can now log in.")
     return auth_login_page()
 
 
@@ -10478,18 +10669,20 @@ def auth_logout(request: AuthRequest):
 
 
 # === SIGNUP ROUTES START ===
-def signup_page(error="", username=""):
+def signup_page(error="", username="", email=""):
     import html as signup_html
 
     error_html = f'<div class="auth-error">{signup_html.escape(error)}</div>' if error else ""
     username_value = signup_html.escape(username or "")
+    email_value = signup_html.escape(email or "")
 
     return AuthHTMLResponse(f"""
 <!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Create Account | Vast SEO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account | LeadMeLeads</title>
 <style>
 body {{
     margin: 0;
@@ -10506,6 +10699,7 @@ body {{
     border-radius: 20px;
     padding: 28px;
     box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
 }}
 h1 {{
     margin: 0 0 8px;
@@ -10528,6 +10722,7 @@ input {{
     border-radius: 12px;
     border: 1px solid #cbd5e1;
     font-size: 16px;
+    box-sizing: border-box;
 }}
 button {{
     width: 100%;
@@ -10539,6 +10734,7 @@ button {{
     color: white;
     font-weight: 950;
     cursor: pointer;
+    box-sizing: border-box;
 }}
 .auth-error {{
     background: #fee2e2;
@@ -10564,22 +10760,95 @@ button {{
     font-size: 13px;
     line-height: 1.45;
 }}
+{_PASSWORD_TOGGLE_STYLE}
+@media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
+    .auth-card {{
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
+    }}
+    input {{
+        min-height: 54px;
+        font-size: 16px;
+        padding: 14px 14px;
+    }}
+    button {{
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
+    }}
+    .small-note {{
+        font-size: 14px;
+    }}
+}}
 </style>
 </head>
 <body>
     <form class="auth-card" method="post" action="/signup">
-        <h1>Create Account</h1>
-        <p>Create a standard Vast SEO account.</p>
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/login">Login</a>
+</div>
+
+<h1>Create Account</h1>
+        <p>Create a standard LeadMeLeads account.</p>
         {error_html}
 
-        <label>Email / Username</label>
-        <input name="username" autocomplete="username" value="{username_value}" required>
+        <label>Username</label>
+        <input name="username" type="text" autocomplete="username" value="{username_value}" maxlength="150" required>
+
+        <label>Email</label>
+        <input name="email" type="email" autocomplete="email" value="{email_value}" maxlength="254" required>
 
         <label>Password</label>
-        <input name="password" type="password" autocomplete="new-password" required>
+        <div class="password-row">
+            <input id="signup-password" name="password" type="password" autocomplete="new-password" required>
+            <button type="button" class="password-toggle" data-password-toggle="signup-password" aria-label="Show password">Show</button>
+        </div>
 
         <label>Confirm Password</label>
-        <input name="confirm_password" type="password" autocomplete="new-password" required>
+        <div class="password-row">
+            <input id="signup-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required>
+            <button type="button" class="password-toggle" data-password-toggle="signup-confirm-password" aria-label="Show password">Show</button>
+        </div>
 
         <div class="small-note">Password must be at least 12 characters.</div>
 
@@ -10589,6 +10858,7 @@ button {{
             <a href="/login">Log In</a> &nbsp;|&nbsp; <a href="/">Back to Home</a>
         </div>
     </form>
+{_PASSWORD_TOGGLE_SCRIPT}
 </body>
 </html>
 """)
@@ -10607,29 +10877,37 @@ def create_account_get():
 @app.post("/signup")
 def signup_post(
     username: str = AuthForm(...),
+    email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
 ):
-    from agents.auth_agent import create_user, user_exists
+    from agents.auth_agent import create_user, user_exists, email_exists
 
     clean_username = str(username or "").strip().lower()
+    clean_email = str(email or "").strip().lower()
 
-    if "@" not in clean_username or "." not in clean_username:
-        return signup_page("Use a valid email address.", username=clean_username)
+    if not clean_username:
+        return signup_page("Username is required.", username=clean_username, email=clean_email)
+
+    if "@" not in clean_email or "." not in clean_email:
+        return signup_page("Use a valid email address.", username=clean_username, email=clean_email)
 
     if password != confirm_password:
-        return signup_page("Passwords do not match.", username=clean_username)
+        return signup_page("Passwords do not match.", username=clean_username, email=clean_email)
 
     if len(password or "") < 12:
-        return signup_page("Password must be at least 12 characters.", username=clean_username)
+        return signup_page("Password must be at least 12 characters.", username=clean_username, email=clean_email)
 
     if user_exists(clean_username):
-        return signup_page("An account with that email already exists. Log in instead.", username=clean_username)
+        return signup_page("That username is already taken.", username=clean_username, email=clean_email)
+
+    if email_exists(clean_email):
+        return signup_page("An account with that email already exists. Log in instead.", username=clean_username, email=clean_email)
 
     try:
-        create_user(clean_username, password, role="standard")
+        create_user(clean_username, password, role="standard", email=clean_email)
     except Exception as exc:
-        return signup_page(f"Could not create account: {str(exc)}", username=clean_username)
+        return signup_page(f"Could not create account: {str(exc)}", username=clean_username, email=clean_email)
 
     return AuthRedirectResponse(url="/login", status_code=303)
 
@@ -10637,11 +10915,470 @@ def signup_post(
 @app.post("/create-account")
 def create_account_post(
     username: str = AuthForm(...),
+    email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
 ):
-    return signup_post(username=username, password=password, confirm_password=confirm_password)
+    return signup_post(username=username, email=email, password=password, confirm_password=confirm_password)
 # === SIGNUP ROUTES END ===
+
+
+# === PASSWORD RESET ROUTES START ===
+_SMTP_PLACEHOLDERS = frozenset({
+    "smtp.yourmailprovider.com",
+    "smtp.example.com",
+    "your-smtp-host",
+    "mail.example.com",
+})
+
+_BASE_URL_PLACEHOLDERS = frozenset({
+    "https://yourdomain.com",
+    "http://yourdomain.com",
+    "https://example.com",
+    "http://example.com",
+})
+
+
+def _is_dev_mode():
+    """Dev mode when SMTP_HOST is blank or a known placeholder."""
+    host = os.getenv("SMTP_HOST", "").strip().lower()
+    return not host or host in _SMTP_PLACEHOLDERS
+
+
+def _show_dev_reset_link():
+    """Return True only when SHOW_DEV_RESET_LINK=1 is explicitly set.
+    Must never be True in production. Controls both on-page link and console output."""
+    return os.getenv("SHOW_DEV_RESET_LINK", "").strip() == "1"
+
+
+def _get_base_url(request):
+    """Return base URL for reset links, ignoring placeholder env values."""
+    configured = os.getenv("APP_BASE_URL", "").rstrip("/")
+    if configured and configured not in _BASE_URL_PLACEHOLDERS:
+        return configured
+    try:
+        derived = str(request.base_url).rstrip("/")
+        if derived:
+            return derived
+    except Exception:
+        pass
+    return "http://127.0.0.1:8000"
+
+
+def _send_reset_email(to_email, reset_url):
+    import smtplib
+    from email.mime.text import MIMEText
+    from datetime import timezone
+
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    from_email = os.getenv("SMTP_FROM", smtp_user).strip()
+
+    requested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    body = (
+        f"You requested a password reset for your LeadMeLeads account.\n\n"
+        f"Click the link below to set a new password:\n\n{reset_url}\n\n"
+        f"This link expires in 60 minutes. If you did not request a reset, ignore this email.\n\n"
+        f"Requested at: {requested_at}"
+    )
+
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = f"Reset your LeadMeLeads password — {requested_at}"
+    msg["From"] = from_email
+    msg["To"] = to_email
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+
+def forgot_password_page(message="", error="", dev_link=""):
+    import html as _html
+
+    error_html = f'<div class="auth-error">{_html.escape(error)}</div>' if error else ""
+    message_html = f'<div class="auth-success">{_html.escape(message)}</div>' if message else ""
+    dev_link_html = ""
+    if dev_link:
+        safe_link = _html.escape(dev_link)
+        dev_link_html = (
+            f'<div class="dev-link-box"><strong>Dev mode &mdash; reset link:</strong><br>'
+            f'<a href="{safe_link}" style="word-break:break-all;">{safe_link}</a></div>'
+        )
+
+    return AuthHTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forgot Password | LeadMeLeads</title>
+<style>
+body {{
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}}
+.auth-card {{
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
+}}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+p {{ margin: 0 0 18px; color: #64748b; }}
+label {{ display: block; margin-top: 14px; font-weight: 900; color: #334155; }}
+input {{
+    width: 100%; margin-top: 7px; padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;
+}}
+button {{
+    width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
+    border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    color: white; font-weight: 950; cursor: pointer;
+    box-sizing: border-box;
+}}
+.auth-error {{
+    background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-success {{
+    background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-links {{ margin-top: 16px; text-align: center; }}
+.auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
+.dev-link-box {{
+    margin-top: 18px; padding: 12px 14px; background: #fef9c3;
+    border: 1px solid #fde047; border-radius: 12px; font-size: 13px; color: #713f12;
+}}
+@media (max-width: 700px) {{
+    body {{
+        padding: 14px;
+        align-items: flex-start;
+    }}
+    .auth-card {{
+        width: 100%;
+        max-width: 430px;
+        margin: 24px auto;
+        padding: 26px 20px;
+        border-radius: 20px;
+    }}
+    h1 {{
+        font-size: 26px;
+        line-height: 1.15;
+    }}
+    label {{
+        font-size: 15px;
+        margin-top: 16px;
+    }}
+    input {{
+        min-height: 54px;
+        font-size: 16px;
+        padding: 14px 14px;
+    }}
+    button {{
+        min-height: 56px;
+        font-size: 17px;
+        font-weight: 800;
+    }}
+    .auth-links {{
+        font-size: 15px;
+        line-height: 2.1;
+    }}
+    .auth-links a {{
+        display: inline-block;
+        padding: 6px 4px;
+    }}
+}}
+</style>
+</head>
+<body>
+    <form class="auth-card" method="post" action="/forgot-password">
+        
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+    <a href="/">Home</a> &nbsp;|&nbsp;
+    <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+    <a href="/compare">Compare URL</a> &nbsp;|&nbsp;
+    <a href="/login">Login</a>
+</div>
+
+<h1>Forgot Password</h1>
+        <p>Enter your username or email and we'll send you a reset link.</p>
+        {error_html}
+        {message_html}
+        {dev_link_html}
+        <label>Username or Email</label>
+        <input name="identifier" type="text" autocomplete="username" maxlength="254" required>
+        <button type="submit">Send Reset Link</button>
+        <div class="auth-links"><a href="/login">Back to Login</a></div>
+    </form>
+</body>
+</html>
+""")
+
+
+@app.get("/forgot-password", response_class=AuthHTMLResponse)
+def forgot_password_get():
+    return forgot_password_page()
+
+
+@app.post("/forgot-password")
+def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
+    from agents.auth_agent import create_reset_token
+
+    clean_identifier = str(identifier or "").strip().lower()[:254]
+    base_url = _get_base_url(request)
+
+    GENERIC_MSG = "If an account exists for that username or email, a reset link has been sent."
+
+    raw_token, user = create_reset_token(clean_identifier)
+
+    if _show_dev_reset_link():
+        if user:
+            print(f"\n[DEV FORGOT] User found — user_id={user['id']} username={user['username']} email={user.get('email')!r}", flush=True)
+            print(f"[DEV FORGOT] Reset token created: yes", flush=True)
+        else:
+            print(f"\n[DEV FORGOT] No user found for identifier: {clean_identifier!r}", flush=True)
+
+    if not user:
+        return forgot_password_page(message=GENERIC_MSG)
+
+    reset_url = f"{base_url}/reset-password?token={raw_token}"
+
+    if _show_dev_reset_link():
+        print(f"[DEV FORGOT] Reset URL: {reset_url}\n", flush=True)
+        return forgot_password_page(message=GENERIC_MSG, dev_link=reset_url)
+
+    if _is_dev_mode():
+        # No SMTP configured and dev link not enabled — return generic message, no output.
+        return forgot_password_page(message=GENERIC_MSG)
+
+    user_email = user.get("email")
+    if not user_email:
+        return forgot_password_page(message=GENERIC_MSG)
+
+    try:
+        _send_reset_email(user_email, reset_url)
+    except Exception as exc:
+        print(f"[ERROR] Failed to send reset email to {user_email}: {exc}", flush=True)
+
+    return forgot_password_page(message=GENERIC_MSG)
+
+
+def reset_password_page(token="", error=""):
+    import html as _html
+
+    error_html = f'<div class="auth-error">{_html.escape(error)}</div>' if error else ""
+    safe_token = _html.escape(token or "")
+
+    return AuthHTMLResponse(f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reset Password | LeadMeLeads</title>
+<style>
+body {{
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}}
+.auth-card {{
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
+}}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+p {{ margin: 0 0 18px; color: #64748b; }}
+label {{ display: block; margin-top: 14px; font-weight: 900; color: #334155; }}
+input {{
+    width: 100%; margin-top: 7px; padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;
+}}
+button {{
+    width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
+    border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    color: white; font-weight: 950; cursor: pointer;
+    box-sizing: border-box;
+}}
+.auth-error {{
+    background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-links {{ margin-top: 16px; text-align: center; }}
+.auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
+.small-note {{ margin-top: 10px; color: #64748b; font-size: 13px; }}
+{_PASSWORD_TOGGLE_STYLE}
+</style>
+</head>
+<body>
+    <form class="auth-card" method="post" action="/reset-password">
+        
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+<h1>Reset Password</h1>
+        <p>Enter your new password below.</p>
+        {error_html}
+        <input type="hidden" name="token" value="{safe_token}">
+        <label>New Password</label>
+        <div class="password-row">
+            <input id="reset-password-password" name="password" type="password" autocomplete="new-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-password" aria-label="Show password">Show</button>
+        </div>
+        <label>Confirm New Password</label>
+        <div class="password-row">
+            <input id="reset-password-confirm" name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
+            <button type="button" class="password-toggle" data-password-toggle="reset-password-confirm" aria-label="Show password">Show</button>
+        </div>
+        <div class="small-note">Password must be at least 12 characters.</div>
+        <button type="submit">Set New Password</button>
+        <div class="auth-links"><a href="/login">Back to Login</a></div>
+    </form>
+{_PASSWORD_TOGGLE_SCRIPT}
+</body>
+</html>
+""")
+
+
+def reset_password_invalid_page():
+    return AuthHTMLResponse("""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invalid Reset Link | LeadMeLeads</title>
+<style>
+body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}
+.auth-card {
+    width: min(420px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    text-align: center;
+    box-sizing: border-box;
+}
+h1 { margin: 0 0 12px; font-size: 26px; }
+p { color: #64748b; margin: 0 0 14px; }
+a { color: #1e3a8a; font-weight: 800; text-decoration: none; }
+</style>
+</head>
+<body>
+    <div class="auth-card">
+
+<div style="text-align:center; margin:0 0 16px;">
+    <a href="/" style="display:inline-block; text-decoration:none;">
+        <img
+            src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+            alt="LeadMeLeads"
+            style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+        >
+    </a>
+    <p style="margin:8px 0 0; color:#64748b; font-size:14px; line-height:1.4; font-weight:600;">
+        Find local leads worth contacting.
+    </p>
+</div>
+
+        <h1>Link Expired or Invalid</h1>
+        <p>This reset link has expired or has already been used.</p>
+        <p><a href="/forgot-password">Request a new reset link</a></p>
+    </div>
+</body>
+</html>
+""")
+
+
+@app.get("/reset-password", response_class=AuthHTMLResponse)
+def reset_password_get(token: str = AuthQuery("")):
+    from agents.auth_agent import get_user_for_reset_token
+
+    token = str(token or "").strip()
+    if not get_user_for_reset_token(token):
+        return reset_password_invalid_page()
+
+    return reset_password_page(token=token)
+
+
+@app.post("/reset-password")
+def reset_password_post(
+    token: str = AuthForm(...),
+    password: str = AuthForm(...),
+    confirm_password: str = AuthForm(...),
+):
+    from agents.auth_agent import (
+        get_user_for_reset_token,
+        consume_reset_token,
+        set_user_password,
+    )
+
+    token = str(token or "").strip()
+    password = str(password or "")[:256]
+    confirm_password = str(confirm_password or "")[:256]
+
+    user = get_user_for_reset_token(token)
+    if not user:
+        return reset_password_invalid_page()
+
+    if _show_dev_reset_link():
+        print(
+            f"\n[DEV RESET] Token valid — user_id={user['id']} username={user['username']}",
+            flush=True,
+        )
+
+    if password != confirm_password:
+        return reset_password_page(token=token, error="Passwords do not match.")
+
+    if len(password) < 12:
+        return reset_password_page(token=token, error="Password must be at least 12 characters.")
+
+    try:
+        set_user_password(user["id"], password)
+    except ValueError as exc:
+        if _show_dev_reset_link():
+            print(f"[DEV RESET] set_user_password FAILED: {exc}", flush=True)
+        return reset_password_page(token=token, error=str(exc))
+
+    if _show_dev_reset_link():
+        print(
+            f"[DEV RESET] Password updated — user_id={user['id']} username={user['username']}",
+            flush=True,
+        )
+
+    consume_reset_token(token)
+
+    return AuthRedirectResponse(url="/login?reset=1", status_code=303)
+# === PASSWORD RESET ROUTES END ===
 
 
 
@@ -11280,7 +12017,8 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
 <html>
 <head>
 <meta charset="utf-8">
-<title>LeadBot Live Scan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lead Finder Live Scan</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{
@@ -11660,11 +12398,12 @@ body.leadbot-live-final .live-progress-bar {{
     <section class="hero">
         <div class="hero-row">
             <div>
-                <h1>LeadBot Live Scan</h1>
+                <h1>Lead Finder Live Scan</h1>
                 <p>Leads appear as they are found. Contact details fill in as cache/enrichment runs.</p>
             </div>
             <nav class="nav">
-                <a href="/lead-bot">LeadBot</a>
+                <a href="/lead-bot">Lead Finder</a>
+                <a href="/compare">Compare URL</a>
                 <a href="/">Home</a>
                 <a href="/logout">Logout</a>
             </nav>
@@ -11686,7 +12425,7 @@ body.leadbot-live-final .live-progress-bar {{
                 <span class="live-dot"></span>
             </div>
             <div class="live-console-body">
-                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing LeadBot crawler...</span></div>
+                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing Lead Finder crawler...</span></div>
                 <div class="live-line"><strong>serp</strong><span id="liveConsoleLine2">Finding page 1–4 opportunities...</span></div>
                 <div class="live-line"><strong>data</strong><span id="liveConsoleLine3">Contacts will appear as they are enriched.</span></div>
                 <div class="live-progress-rail"><div class="live-progress-bar"></div></div>
@@ -11873,7 +12612,7 @@ async function poll() {{
         const liveLine2 = document.getElementById("liveConsoleLine2");
         const liveLine3 = document.getElementById("liveConsoleLine3");
 
-        if (liveLine1) liveLine1.textContent = job.message || "LeadBot is scanning...";
+        if (liveLine1) liveLine1.textContent = job.message || "Lead Finder is scanning...";
         if (liveLine2) liveLine2.textContent = "Found " + String(counts.found || 0) + " of " + String(params.limit || "—") + " target leads.";
         if (liveLine3) liveLine3.textContent = String(counts.cached || 0) + " cache hits · " + String(counts.enriched || 0) + " enriched · " + String(counts.needs_research || 0) + " need research.";
 
@@ -11894,7 +12633,7 @@ async function poll() {{
                 empty.className = "leadbot-zero-results-empty";
                 empty.innerHTML = `
                     <h3>No leads found.</h3>
-                    <p>LeadBot finished the scan, but no usable local business leads made it through search and filtering.</p>
+                    <p>Lead Finder finished the scan, but no usable local business leads made it through search and filtering.</p>
                     <ul>
                         <li>Include city and state, like <b>Santa Barbara CA</b>.</li>
                         <li>Try a broader business type.</li>
@@ -12001,7 +12740,7 @@ def leadbot_real_manual_add_domain(
         )
     except Exception as e:
         return LeadBotHTMLResponse(
-            f"<h1>Could not add domain</h1><p>{str(e)}</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            f"<h1>Could not add domain</h1><p>{str(e)}</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
@@ -12674,13 +13413,13 @@ def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = 
 
     if not safe_name or safe_name == "leadbot_master.csv":
         return LeadBotHTMLResponse(
-            "<h1>Cannot delete from this export.</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Cannot delete from this export.</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -12688,7 +13427,7 @@ def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = 
 
     if not export_path or not export_path.exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -12766,7 +13505,7 @@ def leadbot_update_address(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot update address</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot update address</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
@@ -12787,7 +13526,7 @@ def leadbot_update_address(
                 flush=True,
             )
             return LeadBotHTMLResponse(
-                "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=403,
             )
 
@@ -12796,7 +13535,7 @@ def leadbot_update_address(
 
     if not export_path or not Path(export_path).exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -12949,7 +13688,7 @@ def leadbot_update_address(
 
     if updated == 0:
         return LeadBotHTMLResponse(
-            "<h1>Address not saved</h1><p>The app could not match this card to a row in the selected export. Open the export from the Exports list and try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Address not saved</h1><p>The app could not match this card to a row in the selected export. Open the export from the Exports list and try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
@@ -13010,7 +13749,7 @@ def leadbot_complete_details(filename: str, request: Request):
     try:
         if not leadbot_user_can_access_export(safe_name, request):
             return LeadBotHTMLResponse(
-                "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=403,
             )
     except Exception:
@@ -13539,13 +14278,13 @@ def leadbot_update_contact_fields(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot update contact fields</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot update contact fields</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -13554,7 +14293,7 @@ def leadbot_update_contact_fields(
 
     if not export_path or not export_path.exists():
         return LeadBotHTMLResponse(
-            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not found</h1><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -13607,7 +14346,7 @@ def leadbot_update_contact_fields(
 
     if not updated:
         return LeadBotHTMLResponse(
-            "<h1>Lead not found</h1><p>Could not match that domain in this export.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Lead not found</h1><p>Could not match that domain in this export.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=404,
         )
 
@@ -13669,13 +14408,13 @@ def leadbot_save_details_combined(
             export_path = recovered_path
         else:
             return LeadBotHTMLResponse(
-                "<h1>Cannot save details</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+                "<h1>Cannot save details</h1><p>No editable export was found for this lead. Open the specific export from the Exports list, then try again.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
                 status_code=400,
             )
 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
-            "<h1>Export not available</h1><p>You can only edit your own LeadBot exports.</p><p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -13827,8 +14566,8 @@ def lead_bot_export(filename: str, request: AuthRequest):
     if not _leadbot_export_visible_to_user(path, current_user=user):
         return LeadBotHTMLResponse(
             "<h1>Export not available</h1>"
-            "<p>You can only download your own LeadBot exports.</p>"
-            "<p><a href='/lead-bot'>Back to LeadBot</a></p>",
+            "<p>You can only download your own Lead Finder exports.</p>"
+            "<p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=403,
         )
 
@@ -13886,7 +14625,7 @@ def leadbot_open_desktop():
 
     except Exception as exc:
         return PlainTextResponse(
-            f"Could not open LeadBot exports folder.\n\nFolder: {exports_dir}\nError: {exc}",
+            f"Could not open Lead Finder exports folder.\n\nFolder: {exports_dir}\nError: {exc}",
             status_code=500,
         )
 
