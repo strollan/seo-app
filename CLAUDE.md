@@ -353,3 +353,40 @@ Be cautious with irreversible work.
 Do not waste the user's time with unnecessary permission questions.
 
 Do not confuse autonomy with recklessness.
+
+
+## Avoid unnecessary permission prompts
+
+When a task does not require user confirmation:
+
+- Do not prefix commands with `cd /mnt/c/Users/scott/ai-project/seo-app &&` when already inside the repo.
+- Run simple commands directly from the current working directory.
+- Avoid shell constructs that trigger Claude Code's "expansion obfuscation" safety classifier.
+- Avoid brace expansion mixed with quoted strings.
+- Avoid unnecessarily complex one-line shell commands.
+- Prefer simple sequential commands over dense compound Bash expressions.
+- Prefer Python scripts or straightforward file edits when a shell command would require nested quoting, brace expansion, command substitution, or obfuscated-looking syntax.
+- Do not ask for approval merely to run harmless read-only repo inspection commands when an equivalent simpler allowed command can be used.
+- For routine git inspection, use direct commands such as:
+  - git status --short
+  - git diff --name-only
+  - git diff --stat
+  - git log -1 --oneline
+  - git branch --show-current
+- For routine compile checks, run the command directly without wrapping it in cd &&, eval, sh -c, or bash -c.
+
+## Use Superpowers Selectively
+
+Use available superpowers, advanced tools, agents, browser automation, screenshots, MCP capabilities, or other high-leverage features when they materially improve the task.
+
+Do not use superpowers merely because they are available.
+
+Prefer the simplest effective method:
+- Use direct file inspection for simple questions.
+- Use shell commands for straightforward repo checks.
+- Use browser automation or screenshots only when visual verification matters.
+- Use agents/subagents only when parallel investigation or specialized reasoning adds real value.
+- Use heavier tools only when a simpler method would be slower, less reliable, or insufficient.
+
+When superpowers are genuinely useful, use them decisively.
+When they are unnecessary, skip them.
