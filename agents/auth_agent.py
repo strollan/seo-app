@@ -85,6 +85,21 @@ def init_auth_db():
             conn.execute("ALTER TABLE sessions ADD COLUMN csrf_token_hash TEXT")
             conn.commit()
 
+        reset_token_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(password_reset_tokens)").fetchall()
+        }
+        if "used" not in reset_token_columns:
+            conn.execute(
+                "ALTER TABLE password_reset_tokens ADD COLUMN used INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+        if "used_at" in reset_token_columns:
+            conn.execute(
+                "UPDATE password_reset_tokens SET used = 1 WHERE used_at IS NOT NULL AND used = 0"
+            )
+            conn.commit()
+
 
 def normalize_username(username):
     return str(username or "").strip().lower()
@@ -283,6 +298,15 @@ def delete_session(token):
 
     with connect() as conn:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+        conn.commit()
+
+
+def delete_all_sessions_for_user(user_id):
+    if not user_id:
+        return
+
+    with connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.commit()
 
 
