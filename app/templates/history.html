@@ -245,6 +245,32 @@
     box-shadow: none;
 }
 
+/* static/css/styles.css forces .logo to height:81px + max-width:180px
+   !important (same bug fixed on /compare): object-fit:contain then
+   shrinks this logo's actual visible content to ~44px tall, since this
+   asset's aspect ratio needs ~330px width at 81px height. Page-scoped
+   selector (.history-page) so this beats that shared rule on specificity
+   alone, regardless of document order, and matches /lead-bot's actual
+   58px logo size. */
+.history-page .logo,
+.history-page .header .logo,
+.history-page .logo-link img {
+    height: 58px !important;
+    width: auto !important;
+    max-width: none !important;
+}
+
+/* static/css/styles.css also forces .header to a fixed height:94px
+   !important. That's harmless while content fits, but silently clips
+   anything taller (long titles, wrapped subtitles) since height (unlike
+   min-height) is a hard cap. /lead-bot never has this problem because it
+   doesn't share this stylesheet. Page-scoped so it beats the shared rule
+   on specificity, matching the height:auto fix already applied on
+   /compare. */
+.history-page .header {
+    height: auto !important;
+    min-height: auto !important;
+}
 
 </style>
     <link rel="icon" href="/static/favicon.ico?v=2">

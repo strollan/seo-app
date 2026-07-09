@@ -554,6 +554,28 @@
     height: 78px !important;
 }
 
+/* static/css/styles.css forces .logo to height:81px + max-width:180px
+   !important, and .header to a fixed height:94px !important (same bugs
+   fixed on /compare). Both ties above (min-height:130px and the 78px
+   logo height) lose to styles.css's rules because this page has no
+   trailing <style> block after the shared stylesheet's <link> to win the
+   cascade on document order (unlike /compare) -- report.html's own
+   overrides above are silently overridden. Scoping with .report-page
+   bumps specificity so these win unconditionally, regardless of order,
+   and matches /lead-bot's actual 58px logo size. */
+.report-page .logo,
+.report-page .header .logo,
+.report-page .logo-link img {
+    height: 58px !important;
+    width: auto !important;
+    max-width: none !important;
+}
+
+.report-page .header {
+    height: auto !important;
+    min-height: auto !important;
+}
+
 .site-card,
 .site-card.winner-card {
     background: #ffffff !important;
@@ -847,7 +869,7 @@
 
 </style>
 
-<link rel="stylesheet" href="/static/css/styles.css">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-07-08-report-nav-fix">
 </head>
 <body class="report-page">
 
