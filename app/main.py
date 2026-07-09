@@ -31,6 +31,7 @@ import os
 import json
 import base64
 import re
+import secrets
 import tempfile
 
 import requests
@@ -1408,16 +1409,30 @@ def load_report_history():
         return []
 
 
+def _write_history_atomic(history):
+    path = history_file_path()
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(path), prefix=".history_", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
 def save_report_history_item(item: dict):
     history = load_report_history()
     history.insert(0, item)
     history = history[:100]
 
-    with open(history_file_path(), "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2)
+    _write_history_atomic(history)
 
 
-def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list):
+def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list, owner_id=None):
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     site_slug = slugify_report_part(site.get("clean_domain", "site"))
     comp_slug = slugify_report_part(competitor.get("clean_domain", "competitor"))
@@ -1452,6 +1467,7 @@ def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, vol
         "volume_opportunities": volume_data[:8] if volume_data else [],
         "saved_report": f"/reports/saved/{filename}",
         "saved_path": file_path,
+        "owner_id": owner_id,
     }
 
     save_report_history_item(history_item)
@@ -1722,6 +1738,39 @@ def _admin_only_response(request: Request):
     return None
 
 
+def _login_required_user_or_response(request: Request):
+    from fastapi.responses import RedirectResponse
+
+    user = auth_current_user(request)
+    if not user:
+        return None, RedirectResponse(url="/login", status_code=303)
+
+    return user, None
+
+
+# CSRF token state is stored server-side in the sessions table
+# (agents.auth_agent: sessions.csrf_token_hash), keyed by the session's own
+# token_hash -- never as a raw value in memory or in the database. A fresh
+# token is issued on every GET /history render (overwriting the prior hash),
+# since a stored hash cannot be reversed to reuse a previously issued raw
+# token across separate requests.
+def _get_or_create_csrf_token(request: Request):
+    from agents.auth_agent import issue_csrf_token
+
+    session_token = request.cookies.get(AUTH_COOKIE_NAME)
+    if not session_token:
+        return None
+
+    return issue_csrf_token(session_token)
+
+
+def _csrf_token_valid(request: Request, submitted_token: str) -> bool:
+    from agents.auth_agent import verify_csrf_token
+
+    session_token = request.cookies.get(AUTH_COOKIE_NAME)
+    return verify_csrf_token(session_token, submitted_token)
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     admin_block = _admin_only_response(request)
@@ -1741,16 +1790,27 @@ async def settings_page(request: Request):
             "custom_location_list": location_sets["custom"],
             "saved": False,
             "leadbot_dataforseo_enabled": leadbot_get_dataforseo_enabled(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
 @app.post("/settings/leadbot-dataforseo", response_class=HTMLResponse)
-async def leadbot_dataforseo_settings_switch(request: Request, enabled: str = Form("0")):
+async def leadbot_dataforseo_settings_switch(
+    request: Request,
+    enabled: str = Form("0"),
+    csrf_token: str = Form(""),
+):
     from fastapi.responses import RedirectResponse
 
     admin_block = _admin_only_response(request)
     if admin_block:
         return admin_block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     value = leadbot_set_dataforseo_enabled(str(enabled).strip() == "1")
 
@@ -1763,10 +1823,20 @@ async def leadbot_dataforseo_settings_switch(request: Request, enabled: str = Fo
 
 
 @app.post("/save-settings", response_class=HTMLResponse)
-async def save_settings(request: Request, locations: str = Form(...)):
+async def save_settings(
+    request: Request,
+    locations: str = Form(...),
+    csrf_token: str = Form(""),
+):
     admin_block = _admin_only_response(request)
     if admin_block:
         return admin_block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     file_path = location_terms_file_path()
 
@@ -1795,20 +1865,45 @@ async def save_settings(request: Request, locations: str = Form(...)):
             "custom_location_list": location_sets["custom"],
             "saved": True,
             "leadbot_dataforseo_enabled": leadbot_get_dataforseo_enabled(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
 
 @app.post("/history/delete")
-async def delete_saved_report(index: int = Form(...)):
+async def delete_saved_report(
+    request: Request,
+    saved_report: str = Form(...),
+    csrf_token: str = Form(""),
+):
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
+    is_admin = _admin_role_from_user(user) == "admin"
     history = load_report_history()
 
-    if 0 <= index < len(history):
-        item = history.pop(index)
+    match_index = None
+    for i, entry in enumerate(history):
+        if entry.get("saved_report") != saved_report:
+            continue
+
+        entry_owner_id = entry.get("owner_id")
+        if is_admin or (entry_owner_id is not None and entry_owner_id == user["id"]):
+            match_index = i
+        break
+
+    if match_index is not None:
+        item = history.pop(match_index)
 
         try:
-            saved_report = item.get("saved_report", "")
-            filename = os.path.basename(saved_report)
+            filename = os.path.basename(item.get("saved_report", ""))
             saved_path = os.path.join(reports_dir_path(), "saved", filename)
 
             if os.path.isfile(saved_path):
@@ -1816,8 +1911,7 @@ async def delete_saved_report(index: int = Form(...)):
         except Exception as e:
             print("Saved report delete failed:", e)
 
-        with open(history_file_path(), "w", encoding="utf-8") as f:
-            json.dump(history, f, indent=2)
+        _write_history_atomic(history)
 
     return RedirectResponse(url="/history", status_code=303)
 
@@ -1840,13 +1934,24 @@ async def rerun_saved_report(request: Request, saved_report: str):
 
 @app.get("/history", response_class=HTMLResponse)
 async def report_history(request: Request):
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    is_admin = _admin_role_from_user(user) == "admin"
+    history = load_report_history()
+
+    if not is_admin:
+        history = [entry for entry in history if entry.get("owner_id") == user["id"]]
+
     return templates.TemplateResponse(
         request=request,
         name="history.html",
         context={
             "request": request,
-            "history": load_report_history(),
+            "history": history,
             "logo_url": safe_logo_url(),
+            "csrf_token": _get_or_create_csrf_token(request),
         },
     )
 
@@ -2300,7 +2405,9 @@ async def analyze(
     try:
         html = templates.env.get_template("report.html").render(context)
         html = final_polish_report_html(html)
-        save_report_snapshot(html, site, competitor, gap, volume_data)
+        owner_user = auth_current_user(request)
+        owner_id = owner_user["id"] if owner_user else None
+        save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id)
     except Exception as e:
         print("Report history save failed:", e)
 
@@ -6173,7 +6280,7 @@ a[href*="/lead-bot/my-leads"] {
 """
 
     if ".target-quickwins-grid" not in html:
-        html = html.replace("</head>", extra_css + "\n</head>", 1)
+        html = html.replace("</head>", css + "\n</head>", 1)
 def final_fix_priority_recommendations_layout_retry_html(html):
     import re
 
@@ -11144,12 +11251,12 @@ button {{
         <input type="hidden" name="token" value="{safe_token}">
         <label>New Password</label>
         <div class="password-row">
-            <input id="reset-password-password" name="password" type="password" autocomplete="new-password" maxlength="256" required>
+            <input id="reset-password-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required>
             <button type="button" class="password-toggle" data-password-toggle="reset-password-password" aria-label="Show password">Show</button>
         </div>
         <label>Confirm New Password</label>
         <div class="password-row">
-            <input id="reset-password-confirm" name="confirm_password" type="password" autocomplete="new-password" maxlength="256" required>
+            <input id="reset-password-confirm" name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required>
             <button type="button" class="password-toggle" data-password-toggle="reset-password-confirm" aria-label="Show password">Show</button>
         </div>
         <div class="small-note">Password must be at least 12 characters.</div>
@@ -11233,6 +11340,7 @@ def reset_password_post(
         get_user_for_reset_token,
         consume_reset_token,
         set_user_password,
+        delete_all_sessions_for_user,
     )
 
     token = str(token or "").strip()
@@ -11269,6 +11377,7 @@ def reset_password_post(
         )
 
     consume_reset_token(token)
+    delete_all_sessions_for_user(user["id"])
 
     return AuthRedirectResponse(url="/login?reset=1", status_code=303)
 # === PASSWORD RESET ROUTES END ===
@@ -14721,4 +14830,5 @@ def leadbot_delete_export(filename: str, request: AuthRequest):
 
     print(f"LEADBOT DELETE EXPORT deleted={deleted}", flush=True)
     return AuthRedirectResponse(url="/lead-bot?deleted=1", status_code=303)
+
 

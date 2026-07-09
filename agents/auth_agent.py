@@ -78,6 +78,28 @@ def init_auth_db():
 
         conn.commit()
 
+        session_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "csrf_token_hash" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN csrf_token_hash TEXT")
+            conn.commit()
+
+        reset_token_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(password_reset_tokens)").fetchall()
+        }
+        if "used" not in reset_token_columns:
+            conn.execute(
+                "ALTER TABLE password_reset_tokens ADD COLUMN used INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.commit()
+        if "used_at" in reset_token_columns:
+            conn.execute(
+                "UPDATE password_reset_tokens SET used = 1 WHERE used_at IS NOT NULL AND used = 0"
+            )
+            conn.commit()
+
 
 def normalize_username(username):
     return str(username or "").strip().lower()
@@ -277,6 +299,83 @@ def delete_session(token):
     with connect() as conn:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
         conn.commit()
+
+
+def delete_all_sessions_for_user(user_id):
+    if not user_id:
+        return
+
+    with connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+
+def _active_session_row(conn, session_token_hash, columns):
+    return conn.execute(
+        f"""
+        SELECT {columns}
+        FROM sessions
+        JOIN users ON users.id = sessions.user_id
+        WHERE sessions.token_hash = ?
+          AND users.is_active = 1
+        """,
+        (session_token_hash,),
+    ).fetchone()
+
+
+def issue_csrf_token(raw_session_token):
+    """Generate a fresh CSRF token for the exact active session identified by
+    raw_session_token, storing only its hash, and return the raw value once.
+    Returns None if the session is missing, inactive, or expired."""
+    init_auth_db()
+
+    if not raw_session_token:
+        return None
+
+    session_token_hash = hash_token(raw_session_token)
+
+    with connect() as conn:
+        row = _active_session_row(conn, session_token_hash, "sessions.id, sessions.expires_at")
+        if not row:
+            return None
+
+        if datetime.fromisoformat(row["expires_at"]) < utc_now():
+            return None
+
+        raw_csrf_token = secrets.token_urlsafe(32)
+        conn.execute(
+            "UPDATE sessions SET csrf_token_hash = ? WHERE id = ?",
+            (hash_token(raw_csrf_token), row["id"]),
+        )
+        conn.commit()
+
+    return raw_csrf_token
+
+
+def verify_csrf_token(raw_session_token, submitted_csrf_token):
+    """Validate a submitted CSRF token against the exact active session
+    identified by raw_session_token. Fails closed on any missing/expired/
+    mismatched input."""
+    init_auth_db()
+
+    if not raw_session_token or not submitted_csrf_token:
+        return False
+
+    session_token_hash = hash_token(raw_session_token)
+
+    with connect() as conn:
+        row = _active_session_row(
+            conn, session_token_hash, "sessions.csrf_token_hash, sessions.expires_at"
+        )
+
+    if not row or not row["csrf_token_hash"]:
+        return False
+
+    if datetime.fromisoformat(row["expires_at"]) < utc_now():
+        return False
+
+    submitted_hash = hash_token(submitted_csrf_token)
+    return secrets.compare_digest(row["csrf_token_hash"], submitted_hash)
 
 
 def is_admin(user):
