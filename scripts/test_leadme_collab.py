@@ -803,6 +803,7 @@ class StartBlockerTests(unittest.TestCase, IsolatedDirsMixin):
         self.assertIn("primary repo on main", buf.getvalue())
 
     def test_dirty_tree_blocks_start(self):
+        """Dirty UNSTAGED tracked file blocks start."""
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -814,6 +815,87 @@ class StartBlockerTests(unittest.TestCase, IsolatedDirsMixin):
                 rc = lc.cmd_start(self._args())
         self.assertEqual(rc, 1)
         self.assertIn("primary tracked tree clean", buf.getvalue())
+        self.assertIn("[FAIL] primary tracked tree clean", buf.getvalue())
+
+    def test_staged_dirty_tracked_file_blocks_start(self):
+        """Dirty STAGED (but uncommitted) tracked file also blocks start."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            (repo / "README.md").write_text("staged change\n", encoding="utf-8")
+            res = ld.run_local(["git", "add", "README.md"], cwd=repo, timeout=15)
+            self.assertTrue(res.ok, res.stderr)
+            self.isolate(tmp_path, repo_path=repo)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_start(self._args())
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] primary tracked tree clean", buf.getvalue())
+
+    def test_clean_tracked_tree_passes_preflight(self):
+        """A genuinely clean tree gets past the tracked-tree-clean check
+        (proceeds to later phases rather than stopping here)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(lc, "discover_claude",
+                                    return_value={"available": False, "path": None, "version": None, "print_mode": False}):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    lc.cmd_start(self._args())
+        out = buf.getvalue()
+        self.assertIn("[PASS] primary tracked tree clean", out)
+
+    def test_known_untracked_files_remain_non_blocking_at_start(self):
+        """.claude/, CLAUDE.md.backup-*, reset_local_password.py must not
+        block start even though the tracked tree check runs regardless."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            (repo / ".claude").mkdir()
+            (repo / ".claude" / "settings.json").write_text("{}", encoding="utf-8")
+            (repo / "reset_local_password.py").write_text("# scratch\n", encoding="utf-8")
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(lc, "discover_claude",
+                                    return_value={"available": False, "path": None, "version": None, "print_mode": False}):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_start(self._args())
+        out = buf.getvalue()
+        self.assertIn("[PASS] primary tracked tree clean", out)
+        self.assertIn("known untracked (ignored)", out)
+        self.assertNotIn("[FAIL] primary tracked tree clean", out)
+        # It proceeded well past the tree-clean check (blocked later only on
+        # the mocked-unavailable claude CLI), proving untracked files never
+        # blocked preflight itself.
+        self.assertEqual(rc, 1)
+        self.assertIn("claude", out.lower())
+
+    def test_tracked_tree_clean_none_prints_visible_reason_not_silent_exit(self):
+        """This is the exact bug report: tracked_tree_clean() returning None
+        must never short-circuit past r.step() and exit silently — it must
+        print a visible [FAIL] with a reason."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(ld, "tracked_tree_clean", return_value=None):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_start(self._args())
+        out = buf.getvalue()
+        self.assertEqual(rc, 1)
+        # The previous bug: `clean is None or not r.step(...)` short-circuits
+        # on `or`, so r.step() is never called and nothing prints past the
+        # prior two [PASS] lines. Assert the failure is now visible with a
+        # concrete reason, not just silence after "primary repo on main".
+        self.assertIn("[FAIL] primary tracked tree clean", out)
+        self.assertIn("could not determine", out)
 
     def test_diverged_main_blocks_start(self):
         import tempfile

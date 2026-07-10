@@ -1134,7 +1134,10 @@ def cmd_start(args):
         return 1
 
     clean = ld.tracked_tree_clean(REPO_PATH)
-    if clean is None or not r.step("primary tracked tree clean", bool(clean)):
+    if clean is None:
+        r.step("primary tracked tree clean", False, "could not determine (git error) — see git status manually")
+        return 1
+    if not r.step("primary tracked tree clean", clean):
         return 1
 
     known, unexpected = ld.classify_untracked(REPO_PATH)
