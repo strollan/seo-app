@@ -777,6 +777,66 @@ def delete_branch(branch, force=True):
 
 
 # ---------------------------------------------------------------------------
+# Promote helpers: detect + copy a task worktree's result into the primary
+# repo. Kept deliberately separate from capture_diff() (which is used for
+# review prompts) because promote also needs untracked and gitignore-hidden
+# files — exactly the case that required a manual git add -f during the
+# /history Run Again ownership fix, where a new test_*.py file was blocked by
+# a .gitignore rule and Codex correctly flagged it as present but undiffed.
+# ---------------------------------------------------------------------------
+
+def worktree_change_inventory(worktree_path):
+    """Return (tracked, untracked, ignored) describing everything a task
+    worktree has changed relative to its own base commit.
+
+    tracked: list of (status, path) from `git diff HEAD --name-status`
+             (status is one of A/M/D; renames are split into a D + A pair).
+    untracked: paths git sees but does not ignore (new files never git-added).
+    ignored: paths matched by a .gitignore rule (e.g. `test_*.py`) — these
+             need `git add -f` to ever become tracked.
+    """
+    tracked = []
+    diff_res = git(["diff", "HEAD", "--name-status"], cwd=worktree_path, timeout=30)
+    if diff_res.ok:
+        for line in diff_res.stdout.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            status = parts[0]
+            if status.startswith("R") and len(parts) == 3:
+                tracked.append(("D", parts[1]))
+                tracked.append(("A", parts[2]))
+            else:
+                tracked.append((status[0], parts[-1]))
+
+    untracked, ignored = [], []
+    status_res = git(
+        ["status", "--porcelain", "--untracked-files=all", "--ignored=matching"],
+        cwd=worktree_path, timeout=30,
+    )
+    if status_res.ok:
+        for line in status_res.stdout.splitlines():
+            if line.startswith("?? "):
+                untracked.append(line[3:].strip())
+            elif line.startswith("!! "):
+                ignored.append(line[3:].strip())
+    return tracked, untracked, ignored
+
+
+def _copy_path_into_primary(worktree_path, primary_path, rel_path):
+    src = Path(worktree_path) / rel_path
+    dest = Path(primary_path) / rel_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+
+
+def _remove_path_from_primary(primary_path, rel_path):
+    dest = Path(primary_path) / rel_path
+    if dest.exists():
+        dest.unlink()
+
+
+# ---------------------------------------------------------------------------
 # Verification (compile changed .py files with the same interpreter leadme-deploy uses)
 # ---------------------------------------------------------------------------
 
@@ -1862,6 +1922,165 @@ def cmd_list(args):
 
 
 # ---------------------------------------------------------------------------
+# promote
+# ---------------------------------------------------------------------------
+
+def cmd_promote(args):
+    """Apply a completed/reviewed task worktree's result into the primary
+    repo without manual patch juggling. Never pushes, never deploys, and
+    never commits unless --commit is passed explicitly. Default behavior
+    applies changes and stages them, ready for a human `git diff --cached`.
+    """
+    r = Reporter()
+    r.title("LeadMe Collab Promote")
+
+    r.section("preflight")
+    if not r.step("primary repo exists", ld.repo_exists(REPO_PATH), str(REPO_PATH)):
+        return 1
+
+    branch = ld.current_branch(REPO_PATH)
+    if not r.step("primary repo on main", branch == PRIMARY_BRANCH, branch or "unknown"):
+        r.note("  (promote only applies to the primary repo while it's on main)")
+        return 1
+
+    clean = ld.tracked_tree_clean(REPO_PATH)
+    if clean is None:
+        r.step("primary tracked tree clean", False, "could not determine (git error) — see git status manually")
+        return 1
+    if not r.step("primary tracked tree clean", clean):
+        r.note("  (commit, stash, or discard local changes before promoting a task)")
+        return 1
+
+    known, unexpected = ld.classify_untracked(REPO_PATH)
+    if known:
+        r.note(f"  known untracked (ignored): {', '.join(known)}")
+    if unexpected:
+        r.warn("unexpected untracked files present (not blocking)", ", ".join(unexpected))
+
+    r.section("task")
+    tid = resolve_task_id(args.task_id)
+    if not r.step("task specified or resolvable", tid is not None, "no tasks found"):
+        return 1
+    r.note(f"  task id: {tid}")
+
+    state = read_task_state(tid)
+    if not r.step("task state readable", state is not None, f"no state.json for {tid}"):
+        return 1
+
+    wt = Path(state["worktree"])
+    if not r.step("task worktree exists", wt.is_dir(), str(wt)):
+        return 1
+
+    r.note(f"  phase: {state.get('phase')}")
+    r.note(f"  final: {state.get('final') or '(in progress)'}")
+    if state.get("phase") not in TERMINAL_PHASES:
+        r.warn(
+            "task has not reached a terminal phase yet",
+            f"phase={state.get('phase')} — promoting anyway since a task id was given explicitly",
+        )
+    elif state.get("final") != "READY FOR HUMAN REVIEW":
+        r.warn("task's final status was not READY FOR HUMAN REVIEW", str(state.get("final")))
+
+    r.section("task changes")
+    tracked, untracked, ignored = worktree_change_inventory(wt)
+    if not (tracked or untracked or ignored):
+        r.step(
+            "task has changes to promote", False,
+            "no tracked, untracked, or ignored changes found in the worktree",
+        )
+        return 1
+
+    for status, path in tracked:
+        r.note(f"  tracked   [{status}] {path}")
+    for path in untracked:
+        r.note(f"  untracked     {path}")
+    for path in ignored:
+        r.warn(
+            "ignored file is part of the task result",
+            f"{path} — will require force-add (git add -f) to be tracked",
+        )
+
+    r.section("apply")
+    applied = []
+    for status, path in tracked:
+        if status == "D":
+            _remove_path_from_primary(REPO_PATH, path)
+        else:
+            _copy_path_into_primary(wt, REPO_PATH, path)
+        applied.append(path)
+    for path in untracked + ignored:
+        _copy_path_into_primary(wt, REPO_PATH, path)
+        applied.append(path)
+    r.step("task changes applied to primary repo", True, f"{len(applied)} path(s)")
+    for path in applied:
+        r.note(f"    {path}")
+
+    staged = False
+    r.section("staging")
+    if not args.no_stage:
+        add_res = git(["add", "-f", "--"] + applied, cwd=REPO_PATH, timeout=30)
+        staged = r.step(
+            "promoted files staged", add_res.ok,
+            (add_res.stdout + add_res.stderr).strip() if not add_res.ok else "",
+        )
+    else:
+        r.note("  --no-stage passed — leaving promoted files unstaged")
+        if ignored:
+            r.warn(
+                "ignored files were copied but not staged",
+                "they will not appear in `git status` without --ignored; "
+                "run `git add -f -- <path>` manually before committing",
+            )
+
+    r.section("safety checks")
+    diff_check = git(["diff", "--check"], cwd=REPO_PATH, timeout=30)
+    r.step(
+        "git diff --check", diff_check.ok,
+        (diff_check.stdout + diff_check.stderr).strip() if not diff_check.ok else "",
+    )
+    if staged:
+        cached_check = git(["diff", "--cached", "--check"], cwd=REPO_PATH, timeout=30)
+        r.step(
+            "git diff --cached --check", cached_check.ok,
+            (cached_check.stdout + cached_check.stderr).strip() if not cached_check.ok else "",
+        )
+
+    if getattr(args, "commit", False):
+        r.section("commit")
+        if not staged:
+            r.step("commit requested", False, "nothing staged — drop --no-stage or stage manually first")
+            return 1
+        message = getattr(args, "message", None)
+        if not message:
+            r.step("commit message provided", False, 'pass -m "message" together with --commit')
+            return 1
+        commit_res = git(["commit", "-m", message], cwd=REPO_PATH, timeout=30)
+        r.step(
+            "committed", commit_res.ok,
+            (commit_res.stdout + commit_res.stderr).strip() if not commit_res.ok else "",
+        )
+
+    r.section("primary repo status")
+    status_res = git(["status", "--short"], cwd=REPO_PATH, timeout=15)
+    r.note(status_res.stdout.rstrip() or "  (clean)")
+
+    r.section("diff stat")
+    stat_res = git(["diff", "HEAD", "--stat"], cwd=REPO_PATH, timeout=30)
+    r.note(stat_res.stdout.rstrip() or "  (none)")
+
+    r.note("")
+    r.note("Push: none")
+    r.note("Deploy: none")
+
+    log_event(
+        tid, "promoted",
+        f"files={len(applied)} staged={staged} commit={getattr(args, 'commit', False)}",
+    )
+
+    return 0 if not r.failed else 1
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1894,6 +2113,20 @@ def build_parser():
 
     sub.add_parser("list", help="list recent tasks")
 
+    p_promote = sub.add_parser(
+        "promote", help="apply a completed/reviewed task worktree's changes into the primary repo",
+    )
+    p_promote.add_argument("task_id", nargs="?", default=None)
+    p_promote.add_argument(
+        "--no-stage", action="store_true",
+        help="apply changes but leave them unstaged (default stages promoted files)",
+    )
+    p_promote.add_argument(
+        "--commit", action="store_true",
+        help="commit staged changes after promoting (requires -m/--message; never pushes or deploys)",
+    )
+    p_promote.add_argument("-m", "--message", default=None, help="commit message, used with --commit")
+
     return parser
 
 
@@ -1915,6 +2148,8 @@ def main(argv=None):
         return cmd_abort(args)
     if args.command == "list":
         return cmd_list(args)
+    if args.command == "promote":
+        return cmd_promote(args)
 
     parser.print_help()
     return 1

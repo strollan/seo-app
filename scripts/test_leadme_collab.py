@@ -1322,6 +1322,234 @@ class DoctorReviewerModeTests(unittest.TestCase, IsolatedDirsMixin):
         self.assertIn("not authenticated", out)
 
 
+def bootstrap_promotable_task(test_case, tmp_path, tid="20260709-000000-promote-test",
+                               gitignore_text=None, phase="done", final="READY FOR HUMAN REVIEW"):
+    """Like bootstrap_review_task, but lets the caller commit a .gitignore
+    into the base repo before the task worktree branches off it (needed to
+    reproduce the test_*.py-hidden-file scenario), and defaults to a
+    terminal, ready-to-promote state."""
+    repo = make_temp_git_repo(tmp_path)
+    if gitignore_text is not None:
+        (repo / ".gitignore").write_text(gitignore_text, encoding="utf-8")
+        ld.run_local(["git", "add", ".gitignore"], cwd=repo, timeout=15)
+        res = ld.run_local(["git", "commit", "-m", "add gitignore"], cwd=repo, timeout=15)
+        assert res.ok, res.stderr
+    test_case.isolate(tmp_path, repo_path=repo)
+    base_sha = ld.head_sha(repo)
+    lc.create_safety_ref(base_sha, tid)
+    ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+    test_case.assertTrue(ok, err)
+    state = {
+        "task_id": tid,
+        "task_description": "promote test task",
+        "repo": str(repo),
+        "base_branch": "main",
+        "base_commit": base_sha,
+        "safety_ref": lc.safety_ref_name(tid),
+        "worktree": str(wt_path),
+        "branch": branch,
+        "phase": phase,
+        "cycle": 1,
+        "max_review_cycles": 3,
+        "reviewer_mode": "file-handoff",
+        "created_at": lc.utc_now_iso(),
+        "updated_at": lc.utc_now_iso(),
+        "final": final,
+    }
+    lc.write_task_state(tid, state)
+    return tid, repo, wt_path
+
+
+def promote_args(task_id=None, no_stage=False, commit=False, message=None):
+    return argparse.Namespace(task_id=task_id, no_stage=no_stage, commit=commit, message=message)
+
+
+class PromoteTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_promote_refuses_dirty_primary_tracked_tree(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (repo / "README.md").write_text("dirty\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+        self.assertEqual(rc, 1)
+        self.assertIn("[FAIL] primary tracked tree clean", buf.getvalue())
+
+    def test_promote_refuses_missing_task(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id="does-not-exist"))
+        self.assertEqual(rc, 1)
+        self.assertIn("task state readable", buf.getvalue())
+
+    def test_promote_refuses_when_no_tasks_exist_at_all(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args())
+        self.assertEqual(rc, 1)
+        self.assertIn("no tasks found", buf.getvalue())
+
+    def test_promote_refuses_task_with_no_changes(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+        self.assertEqual(rc, 1)
+        self.assertIn("task has changes to promote", buf.getvalue())
+
+    def test_promote_applies_tracked_modified_file_and_stages_by_default(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertEqual((repo / "README.md").read_text(encoding="utf-8"), "hello\nworld\n")
+            status = ld.run_local(["git", "status", "--short"], cwd=repo, timeout=15)
+            self.assertIn("M  README.md", status.stdout)
+
+    def test_promote_includes_untracked_task_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "NOTES.txt").write_text("new file\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertIn("untracked", out)
+            self.assertTrue((repo / "NOTES.txt").exists())
+            status = ld.run_local(["git", "status", "--short"], cwd=repo, timeout=15)
+            self.assertIn("A  NOTES.txt", status.stdout)
+
+    def test_promote_includes_ignored_task_file_and_force_adds_it(self):
+        """Reproduces the /history Run Again ownership scenario: a new
+        test_*.py file is hidden by .gitignore, promote must still copy it,
+        warn that it needs force-add, and actually force-add it by default."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path, gitignore_text="test_*.py\n")
+            (wt_path / "test_new_thing.py").write_text("def test_x():\n    assert True\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertIn("ignored file is part of the task result", out)
+            self.assertIn("force-add", out)
+            self.assertTrue((repo / "test_new_thing.py").exists())
+            status = ld.run_local(["git", "status", "--short"], cwd=repo, timeout=15)
+            self.assertIn("A  test_new_thing.py", status.stdout)
+
+    def test_promote_no_stage_leaves_ignored_file_unstaged_with_warning(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path, gitignore_text="test_*.py\n")
+            (wt_path / "test_new_thing.py").write_text("def test_x():\n    assert True\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid, no_stage=True))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertIn("were copied but not staged", out)
+            self.assertTrue((repo / "test_new_thing.py").exists())
+            status = ld.run_local(
+                ["git", "status", "--short", "--ignored=matching"], cwd=repo, timeout=15,
+            )
+            self.assertIn("!! test_new_thing.py", status.stdout)
+
+    def test_promote_leaves_understandable_status_output(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertIn("PRIMARY REPO STATUS", out)
+            self.assertIn("DIFF STAT", out)
+            self.assertIn("README.md", out)
+
+    def test_promote_commit_flag_commits_staged_changes(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid, commit=True, message="Promote task"))
+            out = buf.getvalue()
+            self.assertEqual(rc, 0, out)
+            self.assertIn("[PASS] committed", out)
+            log = ld.run_local(["git", "log", "-1", "--pretty=%s"], cwd=repo, timeout=15)
+            self.assertEqual(log.stdout.strip(), "Promote task")
+            self.assertTrue(ld.tracked_tree_clean(repo))
+
+    def test_promote_commit_without_message_refuses(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_promote(promote_args(task_id=tid, commit=True, message=None))
+            self.assertEqual(rc, 1)
+            self.assertIn("commit message provided", buf.getvalue())
+
+    def test_promote_does_not_push(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(self, tmp_path)
+            (wt_path / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            with mock.patch.object(ld, "push_origin", side_effect=AssertionError("must not push")):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_promote(promote_args(task_id=tid, commit=True, message="Promote task"))
+                self.assertEqual(rc, 0, buf.getvalue())
+                ld.push_origin.assert_not_called()
+
+    def test_promote_source_never_pushes_or_deploys(self):
+        """Static check mirroring NoAutoGitFinalizationTests: cmd_promote
+        itself must never contain a push or deploy invocation — only the
+        "Push: none" / "Deploy: none" report lines."""
+        import inspect
+        src = inspect.getsource(lc.cmd_promote)
+        self.assertNotIn("push_origin", src)
+        self.assertNotIn("systemctl", src)
+        self.assertNotIn("leadme_deploy.cmd_deploy", src)
+        self.assertIn("Push: none", src)
+        self.assertIn("Deploy: none", src)
+
+
 class ArgumentParsingTests(unittest.TestCase):
     def test_requires_a_subcommand(self):
         parser = lc.build_parser()
@@ -1337,6 +1565,7 @@ class ArgumentParsingTests(unittest.TestCase):
         self.assertEqual(parser.parse_args(["inspect"]).command, "inspect")
         self.assertEqual(parser.parse_args(["abort"]).command, "abort")
         self.assertEqual(parser.parse_args(["list"]).command, "list")
+        self.assertEqual(parser.parse_args(["promote"]).command, "promote")
 
     def test_start_accepts_task_file_flag(self):
         parser = lc.build_parser()
@@ -1348,6 +1577,17 @@ class ArgumentParsingTests(unittest.TestCase):
         args = parser.parse_args(["abort", "some-id", "--cleanup"])
         self.assertTrue(args.cleanup)
         self.assertEqual(args.task_id, "some-id")
+
+    def test_promote_accepts_flags(self):
+        parser = lc.build_parser()
+        args = parser.parse_args(["promote", "some-id", "--no-stage"])
+        self.assertEqual(args.task_id, "some-id")
+        self.assertTrue(args.no_stage)
+        self.assertFalse(args.commit)
+
+        args2 = parser.parse_args(["promote", "some-id", "--commit", "-m", "msg"])
+        self.assertTrue(args2.commit)
+        self.assertEqual(args2.message, "msg")
 
 
 if __name__ == "__main__":

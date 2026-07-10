@@ -23,7 +23,10 @@ bus in between. If Codex isn't available, the same loop still runs, just
 with a pause at each review step for a file-handoff reviewer.
 
 V1 never pushes, merges, commits on your behalf, or deploys. It hands you a
-branch in a worktree and a summary; you review it and decide.
+branch in a worktree and a summary; you review it and decide — `promote`
+(below) applies that decision into the primary repo without manual patch
+juggling, but still never commits unless you pass `--commit` explicitly, and
+never pushes or deploys.
 
 ## Architecture
 
@@ -174,6 +177,57 @@ safety ref and state directory are still kept either way).
 
 Every task under the state root: ID, one-line task summary, phase, cycle,
 created time, worktree path.
+
+### `leadme-collab promote [task-id] [--no-stage] [--commit -m "message"]`
+
+Applies a completed/reviewed task worktree's result into the primary repo
+without the manual copy/`git add -f` dance that a new, `.gitignore`-hidden
+test file used to require (this is exactly what happened during the
+`/history` Run Again ownership fix: `scripts/test_history_rerun_ownership.py`
+matched the `test_*.py` rule, so it existed in the worktree but wasn't part
+of any diff Codex could see, and Codex correctly blocked on it).
+
+Preflight (same shape as `start`): refuses unless the primary repo exists,
+is on `main`, and has a clean tracked tree — known untracked files (`.claude/`,
+`CLAUDE.md.backup-*`, `reset_local_password.py`) are still non-blocking.
+Then it locates the task by ID (defaults to the most recently
+started/resumed task, like `status`/`resume`/`inspect`), and refuses if the
+task has no state, no worktree, or no changes to promote.
+
+It inspects the worktree three ways:
+
+- **tracked** modifications — `git diff HEAD --name-status` (added/modified/
+  deleted files already known to git)
+- **untracked** — new files git sees but was never told to track
+- **ignored** — new files hidden by a `.gitignore` rule; each one gets a
+  `[WARN] ignored file is part of the task result` line explaining it needs
+  `git add -f`
+
+Every changed path is copied into the primary repo at the exact same
+relative path (deletions are applied as deletions). By default the promoted
+paths are then staged with `git add -f` — which also force-adds any ignored
+files, so you don't have to do it by hand — leaving them ready for a human
+`git diff --cached` before committing. `git diff --check` (and
+`git diff --cached --check` when staged) run automatically, and the final
+report shows `git status --short` plus a diff stat.
+
+```
+leadme-collab promote 20260710-153458-fix-the-history-run-again-ownership-isol
+leadme-collab promote 20260710-153458-fix-the-history-run-again-ownership-isol --no-stage
+leadme-collab promote 20260710-153458-fix-the-history-run-again-ownership-isol --commit -m "Fix /history Run Again ownership isolation"
+```
+
+- **`--no-stage`** — applies the files but leaves them unstaged. Ignored
+  files are still copied to disk, but a `[WARN]` explains they won't show up
+  in plain `git status` (only `git status --ignored`) until you `git add -f`
+  them yourself.
+- **`--commit -m "..."`** — optional; commits the staged promotion in one
+  step. Requires staging to have happened (i.e. not combined with
+  `--no-stage`) and a message. Still never pushes and never deploys —
+  identical guarantee to every other command in this tool.
+
+Promote never touches the task's worktree, safety ref, or branch — those are
+still cleaned up (or not) via `abort --cleanup`, same as always.
 
 ## Reviewer verdicts and the repair loop
 
