@@ -229,6 +229,13 @@ leadme-collab promote 20260710-153458-fix-the-history-run-again-ownership-isol -
 Promote never touches the task's worktree, safety ref, or branch — those are
 still cleaned up (or not) via `abort --cleanup`, same as always.
 
+If you've already decided a task is ready to ship — not just to promote and
+inspect — see **`docs/leadme-ship.md`**: `leadme-ship <task-id> -m "..."`
+runs this exact promote step and then tests, commit, push, and deploy in
+one explicit, human-invoked command. `leadme-collab` itself never chains
+into it; a `PASS` verdict here only ever ends a task at
+`READY FOR HUMAN REVIEW`.
+
 ## Reviewer verdicts and the repair loop
 
 The reviewer's response must start with exactly one of:
