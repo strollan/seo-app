@@ -12476,7 +12476,10 @@ async function cancelScan() {{
         if (data.status === "cancelled") {{
             cancelScanBtn.textContent = "Scan Cancelled";
             const msg = document.getElementById("message");
-            if (msg) msg.textContent = data.message || "Scan cancelled.";
+            if (msg) {{
+                msg.style.display = "";
+                msg.textContent = data.message || "Scan cancelled.";
+            }}
             if (cancelNote) cancelNote.textContent = "Scan cancelled.";
         }} else {{
             cancelScanBtn.textContent = "Cancel Requested";
@@ -12594,9 +12597,18 @@ async function poll() {{
         const job = await res.json();
 
         const isFinalLiveStatus = (job.status === "done" || job.status === "cancelled" || job.status === "error");
+        const hasLeadCards = (job.leads || []).length > 0;
 
-        document.getElementById("message").innerHTML =
-            (isFinalLiveStatus ? "" : '<span class="pulse"></span>') + esc(job.message || job.status || "");
+        const messageEl = document.getElementById("message");
+        if (messageEl) {{
+            if (hasLeadCards && !isFinalLiveStatus) {{
+                messageEl.style.display = "none";
+            }} else {{
+                messageEl.style.display = "";
+                messageEl.innerHTML =
+                    (isFinalLiveStatus ? "" : '<span class="pulse"></span>') + esc(job.message || job.status || "");
+            }}
+        }}
 
         const counts = job.counts || {{}};
         document.getElementById("found").textContent = counts.found || 0;
