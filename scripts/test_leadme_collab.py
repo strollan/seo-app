@@ -14,7 +14,9 @@ none touch the real primary repo.
 import argparse
 import io
 import json
+import subprocess
 import sys
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -197,18 +199,33 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(info["print_mode"])
 
 
+def fake_monitored_result(stdout="", stderr="", returncode=0, elapsed_seconds=1.0, pid=999, timed_out=False):
+    return {
+        "returncode": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "elapsed_seconds": elapsed_seconds,
+        "pid": pid,
+        "timed_out": timed_out,
+    }
+
+
 class ClaudeAdapterCommandTests(unittest.TestCase):
+    """run_claude()/run_codex_review() delegate to run_monitored() for the
+    actual subprocess lifecycle (heartbeat/timeout/PID tracking), so
+    command-construction tests mock run_monitored, not a lower-level
+    primitive — see RunMonitoredTests below for real-subprocess coverage of
+    run_monitored itself."""
+
     def test_run_claude_builds_expected_argv(self):
         captured = {}
 
-        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
-            captured["args"] = args
-            captured["cwd"] = cwd
-            captured["timeout"] = timeout
-            return ld.CmdResult(0, json.dumps({"result": "ok", "is_error": False, "total_cost_usd": 0.01}), "")
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            captured.update(args=args, cwd=cwd, timeout=timeout, role_label=role_label, tid=tid)
+            return fake_monitored_result(stdout=json.dumps({"result": "ok", "is_error": False, "total_cost_usd": 0.01}))
 
-        with mock.patch.object(ld, "run_local", fake_run_local):
-            result = lc.run_claude("do the thing", cwd="/some/worktree", timeout=42)
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_claude("do the thing", cwd="/some/worktree", timeout=42, tid="t1")
 
         self.assertEqual(captured["args"][0], "claude")
         self.assertIn("-p", captured["args"])
@@ -220,6 +237,8 @@ class ClaudeAdapterCommandTests(unittest.TestCase):
         self.assertIn("--disallowedTools", captured["args"])
         self.assertEqual(captured["cwd"], "/some/worktree")
         self.assertEqual(captured["timeout"], 42)
+        self.assertEqual(captured["tid"], "t1")
+        self.assertEqual(captured["role_label"], "Claude implementer")
         self.assertFalse(result["is_error"])
         self.assertEqual(result["result_text"], "ok")
 
@@ -227,51 +246,64 @@ class ClaudeAdapterCommandTests(unittest.TestCase):
         for forbidden in ("git push", "git commit", "git merge", "sudo", "pip install", "npm install", "apt-get"):
             self.assertIn(forbidden, lc.DISALLOWED_TOOLS)
 
-    def test_run_claude_surfaces_timeout_as_error_not_a_hang(self):
-        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
-            return ld.CmdResult(124, "", f"TIMEOUT after {timeout}s")
+    def test_run_claude_surfaces_timeout_as_error_with_reason(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(returncode=-9, timed_out=True, elapsed_seconds=5.0)
 
-        with mock.patch.object(ld, "run_local", fake_run_local):
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
             result = lc.run_claude("slow task", cwd="/x", timeout=5)
-        self.assertEqual(result["returncode"], 124)
+        self.assertTrue(result["timed_out"])
         self.assertTrue(result["is_error"])
+        self.assertIn("timed out", result["reason"])
+        self.assertIn("5s", result["reason"])
 
-    def test_run_claude_makes_exactly_one_subprocess_call(self):
+    def test_run_claude_makes_exactly_one_monitored_call(self):
         calls = []
 
-        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
             calls.append(args)
-            return ld.CmdResult(0, json.dumps({"result": "ok", "is_error": False}), "")
+            return fake_monitored_result(stdout=json.dumps({"result": "ok", "is_error": False}))
 
-        with mock.patch.object(ld, "run_local", fake_run_local):
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
             lc.run_claude("task", cwd="/x")
         self.assertEqual(len(calls), 1)
+
+    def test_run_claude_nonzero_exit_without_json_has_reason(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(returncode=1, stdout="not json")
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_claude("task", cwd="/x")
+        self.assertTrue(result["is_error"])
+        self.assertTrue(result["reason"])
 
 
 class CodexAdapterCommandTests(unittest.TestCase):
     """run_codex_review writes its result via `-o <file>`, so the fake
-    run_local must simulate that side effect the same way the real `codex`
-    binary would, or output_path.exists() never becomes true."""
+    run_monitored must simulate that side effect the same way the real
+    `codex` binary would, or output_path.exists() never becomes true."""
 
-    def _fake_run_local_writing_output(self, output_text, returncode=0, stderr="", stdout=""):
+    def _fake_run_monitored_writing_output(self, output_text, returncode=0, stderr="", stdout="",
+                                            elapsed_seconds=1.0, timed_out=False):
         captured = {}
 
-        def fake(args, cwd=None, timeout=None, input_text=None):
-            captured["args"] = args
-            captured["cwd"] = cwd
-            captured["timeout"] = timeout
-            captured["input_text"] = input_text
+        def fake(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            captured.update(args=args, cwd=cwd, timeout=timeout, role_label=role_label,
+                             input_text=input_text, tid=tid)
             if output_text is not None and "-o" in args:
                 idx = args.index("-o")
                 Path(args[idx + 1]).write_text(output_text, encoding="utf-8")
-            return ld.CmdResult(returncode, stdout, stderr)
+            return fake_monitored_result(
+                stdout=stdout, stderr=stderr, returncode=returncode,
+                elapsed_seconds=elapsed_seconds, timed_out=timed_out,
+            )
 
         return fake, captured
 
     def test_run_codex_review_builds_expected_argv(self):
-        fake, captured = self._fake_run_local_writing_output("VERDICT: PASS\nlooks good")
-        with mock.patch.object(ld, "run_local", fake):
-            result = lc.run_codex_review("review this diff", cwd="/some/worktree", timeout=42)
+        fake, captured = self._fake_run_monitored_writing_output("VERDICT: PASS\nlooks good")
+        with mock.patch.object(lc, "run_monitored", fake):
+            result = lc.run_codex_review("review this diff", cwd="/some/worktree", timeout=42, tid="t1")
 
         self.assertEqual(captured["args"][0], "codex")
         self.assertIn("exec", captured["args"])
@@ -282,6 +314,8 @@ class CodexAdapterCommandTests(unittest.TestCase):
         self.assertIn("-", captured["args"])  # prompt delivered via stdin, not argv
         self.assertEqual(captured["cwd"], "/some/worktree")
         self.assertEqual(captured["timeout"], 42)
+        self.assertEqual(captured["tid"], "t1")
+        self.assertEqual(captured["role_label"], "Codex reviewer")
         self.assertEqual(captured["input_text"], "review this diff")
         self.assertEqual(result["result_text"], "VERDICT: PASS\nlooks good")
         self.assertFalse(result["is_error"])
@@ -295,36 +329,378 @@ class CodexAdapterCommandTests(unittest.TestCase):
             self.assertNotIn(forbidden, body)
 
     def test_run_codex_review_captures_stdout_and_stderr(self):
-        fake, captured = self._fake_run_local_writing_output(
+        fake, captured = self._fake_run_monitored_writing_output(
             "VERDICT: PASS\nfine", stderr="progress noise", stdout="raw stdout"
         )
-        with mock.patch.object(ld, "run_local", fake):
+        with mock.patch.object(lc, "run_monitored", fake):
             result = lc.run_codex_review("prompt", cwd="/x")
         self.assertEqual(result["stderr"], "progress noise")
         self.assertEqual(result["stdout"], "raw stdout")
 
-    def test_run_codex_review_nonzero_exit_is_error(self):
-        fake, _ = self._fake_run_local_writing_output(None, returncode=2, stderr="error: bad args")
-        with mock.patch.object(ld, "run_local", fake):
+    def test_run_codex_review_nonzero_exit_is_error_with_reason(self):
+        fake, _ = self._fake_run_monitored_writing_output(None, returncode=2, stderr="error: bad args")
+        with mock.patch.object(lc, "run_monitored", fake):
             result = lc.run_codex_review("prompt", cwd="/x")
         self.assertTrue(result["is_error"])
         self.assertIsNone(result["result_text"])
+        self.assertIn("exited 2", result["reason"])
 
-    def test_run_codex_review_timeout_is_error_not_a_hang(self):
-        def fake(args, cwd=None, timeout=None, input_text=None):
-            return ld.CmdResult(124, "", f"TIMEOUT after {timeout}s")
-
-        with mock.patch.object(ld, "run_local", fake):
+    def test_run_codex_review_timeout_is_error_with_reason(self):
+        fake, _ = self._fake_run_monitored_writing_output(
+            None, returncode=-9, timed_out=True, elapsed_seconds=5.0,
+        )
+        with mock.patch.object(lc, "run_monitored", fake):
             result = lc.run_codex_review("slow review", cwd="/x", timeout=5)
-        self.assertEqual(result["returncode"], 124)
+        self.assertTrue(result["timed_out"])
         self.assertTrue(result["is_error"])
+        self.assertIn("timed out", result["reason"])
 
-    def test_run_codex_review_missing_output_file_is_error_not_a_silent_pass(self):
-        fake, _ = self._fake_run_local_writing_output(None, returncode=0)  # "succeeds" but writes nothing
-        with mock.patch.object(ld, "run_local", fake):
+    def test_run_codex_review_missing_output_file_is_error_with_reason(self):
+        fake, _ = self._fake_run_monitored_writing_output(None, returncode=0)  # "succeeds" but writes nothing
+        with mock.patch.object(lc, "run_monitored", fake):
             result = lc.run_codex_review("prompt", cwd="/x")
         self.assertTrue(result["is_error"])
         self.assertIsNone(result["result_text"])
+        self.assertIn("no output", result["reason"])
+
+
+class RunMonitoredTests(unittest.TestCase, IsolatedDirsMixin):
+    """run_monitored() is the fix for the first-real-use failure (suspended
+    process group + zero output looked identical to a hang). These use real
+    short-lived subprocesses — sleep/exit behavior can't be proven by
+    mocking subprocess.Popen away."""
+
+    def test_captures_stdout_stderr_and_returncode(self):
+        result = lc.run_monitored(
+            [sys.executable, "-c", "import sys; print('hello'); print('oops', file=sys.stderr); sys.exit(3)"],
+            cwd=None, timeout=10, role_label="test-role",
+        )
+        self.assertEqual(result["returncode"], 3)
+        self.assertIn("hello", result["stdout"])
+        self.assertIn("oops", result["stderr"])
+        self.assertFalse(result["timed_out"])
+        self.assertIsNotNone(result["pid"])
+
+    def test_heartbeat_prints_while_waiting(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            result = lc.run_monitored(
+                [sys.executable, "-c", "import time; time.sleep(0.6)"],
+                cwd=None, timeout=10, role_label="sleepy-role",
+                heartbeat_interval=0.15, poll_interval=0.05,
+            )
+        self.assertFalse(result["timed_out"])
+        self.assertIn("[RUNNING] sleepy-role", buf.getvalue())
+
+    def test_heartbeat_not_spammed_faster_than_interval(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            lc.run_monitored(
+                [sys.executable, "-c", "import time; time.sleep(0.6)"],
+                cwd=None, timeout=10, role_label="r",
+                heartbeat_interval=0.3, poll_interval=0.05,
+            )
+        count = buf.getvalue().count("[RUNNING]")
+        # ~0.6s / 0.3s interval -> a couple of heartbeats, never one per poll
+        # tick (which would be ~12 at a 0.05s poll interval).
+        self.assertGreaterEqual(count, 1)
+        self.assertLessEqual(count, 4)
+
+    def test_kills_process_and_leaves_no_orphan_on_timeout(self):
+        result = lc.run_monitored(
+            [sys.executable, "-c", "import time; time.sleep(20)"],
+            cwd=None, timeout=0.5, role_label="slow-role",
+            poll_interval=0.05,
+        )
+        self.assertTrue(result["timed_out"])
+        time.sleep(0.5)
+        self.assertFalse(lc.process_is_alive(result["pid"]))
+
+    def test_process_is_alive_reflects_real_process_state(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"])
+        try:
+            self.assertTrue(lc.process_is_alive(proc.pid))
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+        self.assertFalse(lc.process_is_alive(proc.pid))
+
+    def test_active_process_recorded_during_run_and_cleared_after(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "t-heartbeat"
+            lc.write_task_state(tid, {"task_id": tid, "phase": "isolated"})
+
+            real_set = lc._set_active_process
+            real_heartbeat = lc._touch_active_process_heartbeat
+            real_clear = lc._clear_active_process
+            calls = {"set": 0, "heartbeat": 0, "clear": 0}
+
+            def spy_set(*a, **kw):
+                calls["set"] += 1
+                return real_set(*a, **kw)
+
+            def spy_heartbeat(*a, **kw):
+                calls["heartbeat"] += 1
+                return real_heartbeat(*a, **kw)
+
+            def spy_clear(*a, **kw):
+                calls["clear"] += 1
+                return real_clear(*a, **kw)
+
+            with mock.patch.object(lc, "_set_active_process", spy_set), \
+                 mock.patch.object(lc, "_touch_active_process_heartbeat", spy_heartbeat), \
+                 mock.patch.object(lc, "_clear_active_process", spy_clear):
+                lc.run_monitored(
+                    [sys.executable, "-c", "import time; time.sleep(0.6)"],
+                    cwd=None, timeout=10, role_label="tracked-role",
+                    tid=tid, heartbeat_interval=0.15, poll_interval=0.05,
+                )
+
+            self.assertEqual(calls["set"], 1)
+            self.assertGreaterEqual(calls["heartbeat"], 1)
+            self.assertEqual(calls["clear"], 1)
+            self.assertNotIn("active_process", lc.read_task_state(tid))
+
+
+class DuplicateActiveTaskTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_normalize_task_text_collapses_whitespace_and_case(self):
+        self.assertEqual(
+            lc.normalize_task_text("  Fix   THE\nThing  "),
+            "fix the thing",
+        )
+
+    def test_finds_active_duplicate_by_normalized_description(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            lc.write_task_state("t1", {
+                "task_id": "t1", "phase": "isolated",
+                "task_description": "Fix the thing",
+            })
+            tid, state = lc.find_active_duplicate("  fix   THE thing  ")
+            self.assertEqual(tid, "t1")
+
+    def test_terminal_phase_task_is_not_treated_as_duplicate(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            lc.write_task_state("t1", {
+                "task_id": "t1", "phase": "done",
+                "task_description": "Fix the thing",
+            })
+            tid, state = lc.find_active_duplicate("Fix the thing")
+            self.assertIsNone(tid)
+
+    def test_cmd_start_blocks_on_active_duplicate(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            lc.write_task_state("t1", {
+                "task_id": "t1", "phase": "isolated",
+                "task_description": "fix the history route",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            })
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_start(argparse.Namespace(
+                    task="Fix the history route", task_file=None, force_new=False,
+                ))
+            self.assertEqual(rc, 1)
+            out = buf.getvalue()
+            self.assertIn("already exists", out)
+            self.assertIn("t1", out)
+            # Confirms it never even reached preflight for a new task.
+            self.assertNotIn("PREFLIGHT", out)
+
+    def test_force_new_bypasses_duplicate_block(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            lc.write_task_state("t1", {
+                "task_id": "t1", "phase": "isolated",
+                "task_description": "fix the history route",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            })
+
+            with mock.patch.object(lc, "discover_claude", return_value={"available": False, "path": None, "version": None, "print_mode": False}):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_start(argparse.Namespace(
+                        task="Fix the history route", task_file=None, force_new=True,
+                    ))
+            out = buf.getvalue()
+            # It should have proceeded past duplicate-detection into real
+            # preflight/isolation (and then hit the (mocked) missing-claude
+            # needs_human path) rather than being blocked outright.
+            self.assertIn("PREFLIGHT", out)
+            self.assertNotIn("already exists", out)
+
+
+class StaleProcessAndResumeTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_check_no_concurrent_process_blocks_when_pid_alive(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"])
+        try:
+            state = {"active_process": {"role": "Claude implementer", "pid": proc.pid,
+                                         "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso()}}
+            r = lc.Reporter(stream=False)
+            ok = lc._check_no_concurrent_process("t1", state, r)
+            self.assertFalse(ok)
+            self.assertTrue(r.failed)
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    def test_check_no_concurrent_process_clears_stale_dead_pid(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "t-stale"
+            # A PID essentially guaranteed not to be alive: spawn and reap one.
+            proc = subprocess.Popen([sys.executable, "-c", "pass"])
+            proc.wait(timeout=5)
+            dead_pid = proc.pid
+
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "isolated",
+                "active_process": {"role": "Claude implementer", "pid": dead_pid,
+                                    "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso()},
+            })
+            state = lc.read_task_state(tid)
+            r = lc.Reporter(stream=False)
+            ok = lc._check_no_concurrent_process(tid, state, r)
+            self.assertTrue(ok)
+            self.assertNotIn("active_process", lc.read_task_state(tid))
+
+    def test_resume_explains_stale_implementer_start(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            base_sha = ld.head_sha(repo)
+            tid = "t-resume-stale"
+            lc.create_safety_ref(base_sha, tid)
+            ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+            self.assertTrue(ok, err)
+
+            proc = subprocess.Popen([sys.executable, "-c", "pass"])
+            proc.wait(timeout=5)
+            dead_pid = proc.pid
+
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "isolated", "worktree": str(wt_path), "branch": branch,
+                "cycle": 1, "max_review_cycles": 3, "reviewer_mode": "file-handoff",
+                "active_process": {"role": "Claude implementer", "pid": dead_pid,
+                                    "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso()},
+            })
+            lc.write_artifact(tid, "task.md", "# Task\n\nsomething\n")
+
+            with mock.patch.object(lc, "discover_claude", return_value={"available": False, "path": None, "version": None, "print_mode": False}):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    lc.cmd_resume(argparse.Namespace(task_id=tid))
+            out = buf.getvalue()
+            self.assertIn("no longer running", out)
+            self.assertIn("retrying", out)
+
+
+class StatusDisplayTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_status_shows_active_process_elapsed_and_heartbeat(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "t-status-active"
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "implementing", "cycle": 1, "max_review_cycles": 3,
+                "worktree": "/nonexistent", "branch": "collab/x", "reviewer_mode": "codex", "final": None,
+                "active_process": {
+                    "role": "Claude implementer", "pid": 999999,
+                    "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso(),
+                    "timeout_seconds": 600,
+                },
+            })
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lc.cmd_status(argparse.Namespace(task_id=tid))
+            out = buf.getvalue()
+            self.assertIn("process:", out)
+            self.assertIn("Claude implementer", out)
+            self.assertIn("elapsed:", out)
+            self.assertIn("last heartbeat:", out)
+            self.assertIn("timeout:", out)
+            self.assertIn("pid:", out)
+
+    def test_status_warns_when_recorded_process_is_not_actually_running(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "t-status-stale"
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "implementing", "cycle": 1, "max_review_cycles": 3,
+                "worktree": "/nonexistent", "branch": "collab/x", "reviewer_mode": "codex", "final": None,
+                "active_process": {
+                    "role": "Claude implementer", "pid": 999999,  # not a real running pid
+                    "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso(),
+                    "timeout_seconds": 600,
+                },
+            })
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lc.cmd_status(argparse.Namespace(task_id=tid))
+            out = buf.getvalue()
+            self.assertIn("no child process is active", out)
+
+
+class AbortKillsLiveProcessTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_abort_kills_recorded_live_process_leaving_no_orphan(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            base_sha = ld.head_sha(repo)
+            tid = "t-abort-live"
+            ok_ref, ref, _ = lc.create_safety_ref(base_sha, tid)
+            ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+            self.assertTrue(ok, err)
+
+            proc = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                start_new_session=True,
+            )
+            try:
+                lc.write_task_state(tid, {
+                    "task_id": tid, "phase": "isolated", "worktree": str(wt_path), "branch": branch,
+                    "safety_ref": ref, "final": None,
+                    "active_process": {"role": "Claude implementer", "pid": proc.pid,
+                                        "started_at": lc.utc_now_iso(), "last_heartbeat_at": lc.utc_now_iso()},
+                })
+                self.assertTrue(lc.process_is_alive(proc.pid))
+
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_abort(argparse.Namespace(task_id=tid, cleanup=False))
+                self.assertEqual(rc, 0)
+
+                # cmd_abort kills by PID (not via a Popen handle, since it only
+                # ever has a PID from state.json), so the killed process is a
+                # zombie until its actual parent (this test) reaps it — exactly
+                # like a real orchestrator process would eventually reap its
+                # own child. Reap, then confirm nothing is left running.
+                proc.wait(timeout=5)
+                self.assertFalse(lc.process_is_alive(proc.pid))
+                self.assertNotIn("active_process", lc.read_task_state(tid))
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
 
 
 class VerdictParsingTests(unittest.TestCase):
@@ -531,10 +907,11 @@ class ReviewLoopTests(unittest.TestCase, IsolatedDirsMixin):
             lc._advance_task(tid, lc.Reporter())  # -> awaiting_review
             (lc.task_dir(tid) / "review.md").write_text("VERDICT: NEEDS FIX\nfix the thing\n", encoding="utf-8")
 
-            def fake_run_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS):
+            def fake_run_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
                 return {
                     "returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
                     "result_text": "fixed", "is_error": False, "total_cost_usd": 0.01, "parsed": {},
+                    "timed_out": False, "pid": 1234, "reason": "",
                 }
 
             with mock.patch.object(lc, "discover_claude", return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
@@ -562,10 +939,11 @@ class ReviewLoopTests(unittest.TestCase, IsolatedDirsMixin):
 
             claude_calls = []
 
-            def fake_run_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS):
+            def fake_run_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
                 claude_calls.append(prompt)
                 return {"returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
-                        "result_text": "x", "is_error": False, "total_cost_usd": 0.0, "parsed": {}}
+                        "result_text": "x", "is_error": False, "total_cost_usd": 0.0, "parsed": {},
+                        "timed_out": False, "pid": 1234, "reason": ""}
 
             with mock.patch.object(lc, "run_claude", fake_run_claude):
                 r = lc.Reporter()
@@ -606,6 +984,9 @@ def fake_codex_result(verdict_text, returncode=0):
         "elapsed_seconds": 3.2,
         "result_text": verdict_text,
         "is_error": returncode != 0 or not verdict_text,
+        "timed_out": False,
+        "pid": 4321,
+        "reason": "" if (returncode == 0 and verdict_text) else "codex failed",
     }
 
 
@@ -643,15 +1024,16 @@ class CodexReviewLoopTests(unittest.TestCase, IsolatedDirsMixin):
 
             codex_calls = []
 
-            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS):
+            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
                 codex_calls.append(prompt)
                 if len(codex_calls) == 1:
                     return fake_codex_result("VERDICT: NEEDS FIX\nmissing null check")
                 return fake_codex_result("VERDICT: PASS\nfixed")
 
-            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS):
+            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
                 return {"returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
-                        "result_text": "repaired", "is_error": False, "total_cost_usd": 0.01, "parsed": {}}
+                        "result_text": "repaired", "is_error": False, "total_cost_usd": 0.01, "parsed": {},
+                        "timed_out": False, "pid": 1234, "reason": ""}
 
             with mock.patch.object(lc, "discover_codex", return_value=self._usable_codex_info()), \
                  mock.patch.object(lc, "discover_claude", return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
@@ -673,13 +1055,14 @@ class CodexReviewLoopTests(unittest.TestCase, IsolatedDirsMixin):
 
             codex_calls = []
 
-            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS):
+            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
                 codex_calls.append(prompt)
                 return fake_codex_result("VERDICT: NEEDS FIX\nstill broken")
 
-            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS):
+            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
                 return {"returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
-                        "result_text": "attempted fix", "is_error": False, "total_cost_usd": 0.0, "parsed": {}}
+                        "result_text": "attempted fix", "is_error": False, "total_cost_usd": 0.0, "parsed": {},
+                        "timed_out": False, "pid": 1234, "reason": ""}
 
             with mock.patch.object(lc, "discover_codex", return_value=self._usable_codex_info()), \
                  mock.patch.object(lc, "discover_claude", return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
