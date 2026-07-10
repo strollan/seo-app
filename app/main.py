@@ -1918,16 +1918,27 @@ async def delete_saved_report(
 
 @app.get("/history/rerun")
 async def rerun_saved_report(request: Request, saved_report: str):
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    is_admin = _admin_role_from_user(user) == "admin"
     history = load_report_history()
 
     for item in history:
-        if item.get("saved_report") == saved_report:
-            # Directly render analyze logic
-            return await analyze(
-                request,
-                url_1=item.get("site_url", ""),
-                url_2=item.get("competitor_url", "")
-            )
+        if item.get("saved_report") != saved_report:
+            continue
+
+        entry_owner_id = item.get("owner_id")
+        if not (is_admin or (entry_owner_id is not None and entry_owner_id == user["id"])):
+            break
+
+        # Directly render analyze logic
+        return await analyze(
+            request,
+            url_1=item.get("site_url", ""),
+            url_2=item.get("competitor_url", "")
+        )
 
     return RedirectResponse(url="/history", status_code=303)
 
