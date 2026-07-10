@@ -390,3 +390,43 @@ Prefer the simplest effective method:
 
 When superpowers are genuinely useful, use them decisively.
 When they are unnecessary, skip them.
+
+## Environment Modification Guardrail
+
+Do not modify the development or runtime environment merely to complete a small implementation, inspection, testing, or browser-verification task.
+
+The following actions require explicit user approval before proceeding:
+
+- installing Python packages
+- running `pip install`
+- running `pip uninstall`
+- bootstrapping or upgrading `pip`
+- installing or removing npm packages
+- modifying, recreating, repairing, or repointing the project virtual environment
+- downloading browsers, browser runtimes, Playwright browser bundles, or other large external binaries
+- installing operating-system packages
+- extracting package archives as dependency workarounds
+- changing Python interpreter versions
+- changing interpreter symlinks
+- modifying `pyvenv.cfg`
+- modifying `PATH`
+- modifying `LD_LIBRARY_PATH`
+- changing runtime loader configuration
+
+If browser automation, a required runtime, or a dependency is unavailable:
+
+1. Report the missing capability clearly.
+2. Explain the smallest environment change that would be required.
+3. Ask for explicit user approval before making that environment change.
+4. Do not silently repair or rebuild the environment.
+
+The following remain allowed when already available and permitted by configured permissions:
+
+- read-only repository inspection
+- existing tests
+- existing browser tooling
+- already-installed dependencies
+- existing project scripts
+- existing virtual-environment commands that do not mutate the environment
+
+Never broaden a small verification task into environment repair unless the user explicitly authorizes that repair.
