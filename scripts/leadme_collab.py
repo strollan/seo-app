@@ -31,6 +31,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
@@ -53,6 +54,7 @@ CURRENT_TASK_POINTER = STATE_ROOT / "current_task"
 MAX_REVIEW_CYCLES = 3
 CLAUDE_TIMEOUT_SECONDS = 900  # 15 minutes per Claude invocation
 CLAUDE_MAX_BUDGET_USD = "2.00"
+CODEX_TIMEOUT_SECONDS = 600  # 10 minutes per Codex review invocation
 
 DISALLOWED_TOOLS = (
     "Bash(git push:*) "
@@ -298,18 +300,41 @@ def discover_claude():
 
 
 def discover_codex():
+    """Prove Codex is actually usable, not just present on PATH.
+
+    "Usable" here means: the binary runs, and it's authenticated (`codex
+    login status` succeeds). This does NOT spend real API budget on every
+    doctor/start call by running a live review probe each time — that
+    tradeoff was deliberate (see docs/leadme-collab.md) — but it never
+    reports usable_noninteractive=True on `command -v codex` alone.
+    """
     path = shutil.which("codex")
     if not path:
-        return {"available": False, "path": None, "version": None, "usable_noninteractive": False}
+        return {
+            "available": False, "path": None, "version": None,
+            "authenticated": False, "usable_noninteractive": False,
+            "detail": "codex not found on PATH",
+        }
+
     version_res = ld.run_local([path, "--version"], timeout=15)
+    version = version_res.stdout.strip() if version_res.ok else None
+    if not version:
+        return {
+            "available": True, "path": path, "version": None,
+            "authenticated": False, "usable_noninteractive": False,
+            "detail": "codex --version failed",
+        }
+
+    status_res = ld.run_local([path, "login", "status"], timeout=15)
+    authenticated = status_res.ok and "not logged in" not in status_res.stdout.lower()
+
     return {
         "available": True,
         "path": path,
-        "version": version_res.stdout.strip() if version_res.ok else "unknown",
-        # Presence alone doesn't prove non-interactive safety; this is
-        # deliberately conservative until a real codex CLI's --help is
-        # inspected and a genuine adapter is wired up.
-        "usable_noninteractive": False,
+        "version": version,
+        "authenticated": authenticated,
+        "usable_noninteractive": authenticated,
+        "detail": "" if authenticated else "codex not authenticated (run: codex login --device-auth)",
     }
 
 
@@ -362,13 +387,58 @@ def run_claude(prompt_text, cwd, timeout=CLAUDE_TIMEOUT_SECONDS):
     }
 
 
-def codex_review_stub(*_args, **_kwargs):
-    raise NotImplementedError(
-        "No Codex CLI adapter is wired up. `codex` was not found on PATH in "
-        "this environment (or its --help was never inspected), so no CLI "
-        "flags have been guessed. Install/inspect a real Codex CLI and wire "
-        "this function up deliberately before relying on it."
-    )
+def run_codex_review(prompt_text, cwd, timeout=CODEX_TIMEOUT_SECONDS):
+    """Invoke the real Codex CLI as a read-only, non-interactive reviewer.
+
+    Uses plain `codex exec --sandbox read-only` — deliberately NOT the
+    specialized `codex exec review` subcommand, which has its own built-in
+    PR-comment-style formatting (`[P1] ... — file:line`) that ignores a
+    custom "first line must be VERDICT: ..." instruction entirely (verified
+    live: it produced zero VERDICT line across repeated probes). Plain
+    `codex exec` with a custom prompt honored the verdict-line contract
+    reliably in the same probes.
+
+    `--sandbox read-only` is Codex's own enforcement layer (not just a
+    prompt instruction): verified live that a review under this flag makes
+    zero file changes and needs no approval (`approval: never`, no hang),
+    even though the prompt never disables its ability to try. cwd is the
+    task's worktree, so Codex can read surrounding source for context; it
+    cannot write there.
+
+    The prompt is piped via stdin (`-`) rather than passed as an argv
+    string, to avoid ARG_MAX limits on large diffs. The final message is
+    captured via `-o <file>` into a private temp file rather than parsed
+    out of `--json` event-stream noise.
+    """
+    with tempfile.TemporaryDirectory(prefix="leadme-collab-codex-out-") as tmp:
+        output_path = Path(tmp) / "codex-output.txt"
+        args = [
+            "codex", "exec",
+            "--sandbox", "read-only",
+            "--ephemeral",
+            "-o", str(output_path),
+            "-",
+        ]
+        start = time.monotonic()
+        res = ld.run_local(args, cwd=cwd, timeout=timeout, input_text=prompt_text)
+        elapsed = time.monotonic() - start
+
+        result_text = None
+        if output_path.exists():
+            try:
+                result_text = output_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                result_text = None
+
+    is_error = res.returncode != 0 or not result_text
+    return {
+        "returncode": res.returncode,
+        "stdout": res.stdout,
+        "stderr": res.stderr,
+        "elapsed_seconds": round(elapsed, 1),
+        "result_text": result_text,
+        "is_error": is_error,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -544,18 +614,19 @@ Additional instructions:
 """
 
 
-def build_review_prompt(task_md_text, diff_info, verification_text):
+def build_review_prompt(task_md_text, diff_info, verification_text, reviewer_mode="file-handoff"):
     changed = "\n".join(f"- {f}" for f in diff_info["changed_files"]) or "(no files changed)"
     patch = diff_info["patch"]
     if len(patch) > 20000:
         patch = patch[:20000] + "\n...[diff truncated at 20000 chars]...\n"
     dims = "\n".join(f"- {d}" for d in [
         "correctness",
+        "task fulfillment (does the diff actually do what the task asked?)",
         "regressions",
         "scope creep",
         "security",
         "auth/session impact",
-        "database impact",
+        "database/schema impact",
         "route behavior",
         "mobile/desktop impact when relevant",
         "missing tests",
@@ -563,9 +634,23 @@ def build_review_prompt(task_md_text, diff_info, verification_text):
         "secrets/debug leftovers",
         "deployment risk",
     ])
+
+    if reviewer_mode == "codex":
+        delivery = (
+            "Your entire response is captured programmatically as the review "
+            "— do not attempt to write or edit any file yourself."
+        )
+    else:
+        delivery = (
+            "Save your full response as review.md in this task's state "
+            "directory, then run: leadme-collab resume"
+        )
+
     return f"""You are an INDEPENDENT, READ-ONLY reviewer in an automated
-implement/review/repair pipeline (leadme-collab). Do not edit any files —
-only produce a written review.
+implement/review/repair pipeline (leadme-collab). Review only — do not edit
+any files, and do not propose broad refactors unless the task explicitly
+requires one. Distinguish real blockers from non-blocking follow-up
+suggestions, and cite exact files/functions/lines where possible.
 
 {task_md_text}
 
@@ -596,9 +681,10 @@ VERDICT: NEEDS FIX
 VERDICT: FAIL
 VERDICT: NEEDS HUMAN
 
-After that line, list concrete findings (or state there are none). Save your
-full response as review.md in this task's state directory, then run:
-leadme-collab resume
+After that line, list concrete findings (or state there are none). For each
+finding, mark it as a BLOCKER (must fix before this can pass) or FOLLOW-UP
+(non-blocking, worth noting but not disqualifying), and cite the file (and
+function/line, if applicable). {delivery}
 """
 
 
@@ -692,21 +778,26 @@ def cmd_doctor(args):
 
     r.section("implementer (claude)")
     claude = discover_claude()
-    r.step("claude CLI present", claude["available"], claude["path"] or "not found")
+    claude_ok = r.step("claude implementer", claude["available"] and claude["print_mode"],
+                        claude["path"] or "not found")
     if claude["available"]:
-        r.step("claude version readable", claude["version"] is not None, claude["version"] or "")
-        r.step("claude supports -p/--print (non-interactive)", claude["print_mode"])
+        r.note(f"  version: {claude['version']}")
 
     r.section("reviewer")
     mode, codex = choose_reviewer_mode()
-    r.note(f"  codex CLI present: {codex['available']}")
     if codex["available"]:
+        r.note(f"  codex path: {codex['path']}")
         r.note(f"  codex version: {codex.get('version')}")
-    r.note(f"  reviewer adapter in use: {mode}")
-    if mode == "file-handoff":
+        r.note(f"  codex authenticated: {codex.get('authenticated')}")
+    else:
+        r.note("  codex CLI: not found on PATH")
+
+    if mode == "codex":
+        r.step("codex reviewer", True)
+    else:
         r.warn(
-            "no automated reviewer available",
-            "review will pause for a human/external reviewer to write review.md",
+            "Codex unavailable — file-handoff fallback",
+            codex.get("detail", "") + " (review will pause for a human/external reviewer to write review.md)",
         )
 
     r.note()
@@ -929,22 +1020,50 @@ def _start_review_cycle(tid, r):
 
     r.section(f"review cycle {state['cycle']}")
 
-    if state["reviewer_mode"] == "codex":
-        # Not reachable today (discover_codex() gates this), kept honest.
-        try:
-            codex_review_stub(task_md_text, diff_info, verification_text)
-        except NotImplementedError as exc:
-            r.step("codex review", False, str(exc))
-            _write_state_update(tid, phase="needs_human", final="NEEDS HUMAN")
-            write_artifact(tid, "summary.md", _build_summary(tid))
-            return "needs_human"
-
-    prompt = build_review_prompt(task_md_text, diff_info, verification_text)
+    prompt = build_review_prompt(task_md_text, diff_info, verification_text, reviewer_mode=state["reviewer_mode"])
     write_artifact(tid, "review-prompt.md", prompt)
     review_path = task_dir(tid) / "review.md"
     if review_path.exists():
         review_path.unlink()
 
+    if state["reviewer_mode"] == "codex":
+        codex_info = discover_codex()
+        if not codex_info["usable_noninteractive"]:
+            # Was usable when the task started; auth/availability changed
+            # mid-task. Fail closed rather than silently downgrading.
+            r.step("codex reviewer available", False, codex_info.get("detail", "unavailable"))
+            _write_state_update(tid, phase="needs_human", final="NEEDS HUMAN")
+            write_artifact(tid, "summary.md", _build_summary(tid))
+            log_event(tid, "codex_unavailable_mid_task", codex_info.get("detail", ""))
+            return "needs_human"
+
+        log_event(tid, "codex_review_start", f"cycle={state['cycle']}")
+        result = run_codex_review(prompt, cwd=wt)
+        write_artifact(
+            tid, "codex-raw-output.md",
+            f"returncode: {result['returncode']}\n"
+            f"elapsed_seconds: {result['elapsed_seconds']}\n\n"
+            f"## Result text\n\n{result['result_text'] or '(none captured)'}\n\n"
+            f"## stdout\n\n{result['stdout']}\n\n"
+            f"## stderr\n\n{result['stderr']}\n",
+        )
+        r.step(
+            "codex review completed",
+            not result["is_error"],
+            f"{result['elapsed_seconds']}s" if not result["is_error"] else "see codex-raw-output.md",
+        )
+        log_event(
+            tid, "codex_review_done",
+            f"cycle={state['cycle']} returncode={result['returncode']} elapsed={result['elapsed_seconds']}s",
+        )
+        # Preserve full review text regardless of outcome — never silently
+        # upgrade a missing/malformed result into anything resembling PASS.
+        write_artifact(tid, "review.md", result["result_text"] or "(no output captured from Codex)")
+
+        _write_state_update(tid, phase="awaiting_review")
+        return _try_resume_review(tid, r)
+
+    # file-handoff fallback
     _write_state_update(tid, phase="awaiting_review")
     log_event(tid, "awaiting_review", f"cycle={state['cycle']}")
 

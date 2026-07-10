@@ -11,10 +11,16 @@ start "task description"
   -> isolated worktree + safety ref + dedicated branch (primary repo never touched)
   -> Claude implements the task in that worktree, non-interactively
   -> diff + compile verification captured
-  -> an independent reviewer reads the diff and returns PASS / NEEDS FIX / FAIL / NEEDS HUMAN
-  -> NEEDS FIX -> Claude repairs (up to 3 cycles) -> re-review
+  -> Codex reviews the diff (read-only sandbox) and returns PASS / NEEDS FIX / FAIL / NEEDS HUMAN
+  -> NEEDS FIX -> Claude repairs (up to 3 cycles) -> Codex re-reviews, automatically
   -> PASS -> "READY FOR HUMAN REVIEW" — you decide what happens next
 ```
+
+When Codex is installed and authenticated (the common case now — see below),
+the entire Claude → Codex → Claude repair → Codex re-review loop runs inside
+a single `leadme-collab start` invocation, with no pause for a human message
+bus in between. If Codex isn't available, the same loop still runs, just
+with a pause at each review step for a file-handoff reviewer.
 
 V1 never pushes, merges, commits on your behalf, or deploys. It hands you a
 branch in a worktree and a summary; you review it and decide.
@@ -31,18 +37,78 @@ branch in a worktree and a summary; you review it and decide.
 
 ### Adapters actually available in this environment
 
-Checked by read-only discovery (`command -v claude`, `claude --version`,
-`command -v codex`) before anything was built:
-
 | Adapter | Status | Notes |
 |---|---|---|
-| Claude implementer | **Real, wired up** | `claude` is installed (`2.1.206`), supports `-p/--print` non-interactive mode with `--output-format json`, `--permission-mode acceptEdits`, `--disallowedTools`. Verified with a live throwaway probe before wiring it in. |
-| Codex reviewer | **Not available** | `codex` is not installed anywhere on `PATH` in this environment. `discover_codex()` reports this honestly; `codex_review_stub()` raises `NotImplementedError` rather than guessing invented CLI flags. If a real Codex CLI is installed later, inspect its `--help` and wire up a genuine adapter — do not assume the stub's shape is right. |
-| File-handoff reviewer | **Real, wired up** | The fallback when Codex isn't usable. Writes a self-contained `review-prompt.md` (task + diff + verification + required response format) and pauses. Paste it into whatever reviewer you're using (ChatGPT, Codex web, another Claude session, yourself) and save the verdict as `review.md`; then run `leadme-collab resume`. |
+| Claude implementer | **Real, wired up** | `claude` is installed, supports `-p/--print` non-interactive mode with `--output-format json`, `--permission-mode acceptEdits`, `--disallowedTools`. Verified with a live throwaway probe before wiring it in. |
+| Codex reviewer | **Real, wired up** | Official Codex CLI (`curl -fsSL https://chatgpt.com/codex/install.sh \| sh`), installed to `~/.local/bin/codex`, authenticated via `codex login --device-auth` (ChatGPT sign-in). Verified with live probes against a disposable throwaway repo before wiring it in — see "Why plain `codex exec`, not `codex exec review`" below. |
+| File-handoff reviewer | **Real, wired up** | Automatic fallback whenever `doctor`'s live usability check (install + auth, not just `command -v`) says Codex isn't usable right now. Writes a self-contained `review-prompt.md` (task + diff + verification + required response format) and pauses. Paste it into whatever reviewer you're using (ChatGPT, Codex web, another Claude session, yourself) and save the verdict as `review.md`; then run `leadme-collab resume`. |
 
 Claude Code's own cloud `ultrareview` was **not** used as the reviewer here —
 it's a separate, billed, user-triggered feature that this session is not
 permitted to invoke on your behalf.
+
+### Why plain `codex exec`, not `codex exec review`
+
+Codex ships a purpose-built `codex exec review` subcommand (`--uncommitted`,
+`--base`, `--commit`) that sounded like the obvious fit. Two things ruled
+it out after live testing against a disposable throwaway repo:
+
+1. `--uncommitted`/`--base`/`--commit` cannot be combined with a custom
+   `[PROMPT]` — the CLI rejects it outright (`error: the argument
+   '--uncommitted' cannot be used with '[PROMPT]'`), so there's no way to
+   attach our task context or verdict-format contract to it.
+2. Without a custom prompt, `codex exec review`'s built-in review mode
+   produces its own PR-comment-style output (`- [P1] ... — file.py:12`)
+   with **no `VERDICT:` line at all**, in every probe run. It's a fine
+   format for a human, but not machine-parseable against our contract.
+
+Plain `codex exec --sandbox read-only` with our own custom prompt (piped via
+stdin, cwd set to the task worktree) reliably produced the exact
+`VERDICT: ...` first line we need, in every probe — including a PASS
+verdict for an innocuous change and a NEEDS FIX verdict (citing the correct
+line) for a deliberately broken one. That's the adapter that got wired in.
+
+### Read-only safety
+
+`--sandbox read-only` is Codex's own enforcement layer, not just a prompt
+request — confirmed live: `stderr` reports `sandbox: read-only` and
+`approval: never` for every invocation (no interactive hang is possible),
+and repeated probes against a throwaway repo showed zero file changes even
+though the model was never told it *couldn't* try. `run_codex_review()`
+never passes `workspace-write`, `danger-full-access`,
+`--dangerously-bypass-approvals-and-sandbox`, or any other write-capable
+flag — enforced by a static test
+(`test_run_codex_review_never_requests_a_write_capable_sandbox`).
+
+Codex runs with the task's **worktree** as its working directory (not an
+isolated "reviewer package" outside it) — deliberately, per the stronger
+architecture note in the original design: since the CLI *can* guarantee
+read-only behavior (verified above), giving it read access to the real
+worktree lets it inspect surrounding source for context, while remaining
+provably unable to write there.
+
+### Install / auth
+
+Installed with the official installer:
+
+```
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+which places `codex` in `~/.local/bin` and its config/session state under
+`~/.codex`. Authenticated with:
+
+```
+codex login --device-auth
+```
+
+— the documented path for headless/remote machines (plain `codex login`
+opens a local OAuth callback server on `localhost:1455`, which doesn't work
+without port access to a browser on the same host). Device-auth prints a
+one-time code and a `https://auth.openai.com/codex/device` URL; sign in on
+any device and it completes in the background. Check status any time with
+`codex login status` (prints only `Logged in using ChatGPT` or
+`Not logged in` — never a token). `codex logout` clears it.
 
 ## Commands
 
@@ -50,16 +116,34 @@ permitted to invoke on your behalf.
 
 Diagnoses the whole pipeline: primary repo, git, worktree support, state/
 worktree directory writability, Python runtime, Claude CLI presence/version/
-print-mode, Codex presence, and which reviewer adapter is actually in play.
-No mutation beyond harmless state-directory creation if it doesn't exist yet.
+print-mode, and Codex reviewer usability. Reports one of:
+
+```
+[PASS] codex reviewer
+```
+or
+```
+[WARN] Codex unavailable — file-handoff fallback
+```
+
+The Codex check proves usability (installed **and** authenticated via
+`codex login status`), not just `command -v codex`. It does not spend real
+API budget running a live review probe on every `doctor` call — that
+tradeoff is deliberate (see Limitations). No mutation beyond harmless
+state-directory creation if it doesn't exist yet.
 
 ### `leadme-collab start "task description"` (or `--task-file path.md`)
 
-Runs phases 1–5 automatically: pre-flight, isolation (safety ref + worktree +
-branch), state directory + `task.md`, and the Claude implementation step.
-Then it either runs an automated review (if a real Codex adapter is ever
-wired up) or — today — writes `review-prompt.md` and **pauses**, printing
-exactly what to do next.
+Runs the whole pipeline in one call when Codex is usable: pre-flight,
+isolation (safety ref + worktree + branch), state directory + `task.md`,
+Claude implementation, verification, Codex review, and — automatically, with
+no separate command needed — repair + re-review cycles up to
+`max_review_cycles` (3). Ends at `READY FOR HUMAN REVIEW`, `NEEDS HUMAN`, or
+`FAILED`.
+
+If Codex isn't usable, the same phases run up through the first review step,
+which instead writes `review-prompt.md` and **pauses**, printing exactly
+what to do next (file-handoff).
 
 ### `leadme-collab status [task-id]`
 
@@ -127,8 +211,10 @@ For a task started at commit `<base>`:
   isolation is created, and the tool fails loudly if that check doesn't
   hold.
 
-Claude only ever runs with that worktree directory as its working
-directory — it never edits the primary checkout.
+Claude and Codex both only ever run with that worktree directory as their
+working directory — neither ever touches the primary checkout. Claude runs
+with edit permissions scoped to the worktree; Codex runs `--sandbox
+read-only` and cannot write there at all.
 
 ## State files
 
@@ -141,7 +227,8 @@ implementer-output.md  — Claude's result text + raw stdout/stderr + cost/timin
 diff.patch             — current diff of the worktree against its base
 verification.md        — compile results for every changed .py file
 review-prompt.md       — self-contained prompt for the independent reviewer
-review.md              — the reviewer's verdict + findings (you/they create this)
+review.md              — the reviewer's verdict + findings (Codex writes this automatically; a human/external reviewer does in file-handoff mode)
+codex-raw-output.md    — Codex's returncode/elapsed time/stdout/stderr for the cycle (only written in codex mode)
 review-cycle-N.md       — archived copy of each cycle's review
 repair-prompt.md        — prompt sent to Claude for a repair pass
 repair-output.md        — Claude's repair result
@@ -156,9 +243,17 @@ keys, SMTP secrets, or `.env` contents are ever written there.
 
 ## Limitations (V1)
 
-- **No real automated reviewer today.** Codex isn't installed, so every
-  review cycle currently pauses for a human/external reviewer. This is
-  reported honestly by `doctor` rather than faked.
+- **`doctor`'s Codex check doesn't run a live review probe.** It verifies
+  install + auth state (`codex --version`, `codex login status`), not a full
+  paid API round-trip, on every call. If Codex is installed+authenticated
+  but somehow broken in a way that only shows up mid-review (rate limit,
+  model outage), `_start_review_cycle()` still fails closed to
+  `NEEDS HUMAN` rather than hanging or guessing — just not until the first
+  real review attempt.
+- **Real reviews cost real API budget.** Every automated Codex review cycle
+  is a genuine paid call (same for Claude implementation/repair). There's no
+  dry-run/preview mode for the loop itself — use `doctor` to check
+  reachability without spending anything.
 - **No automatic test discovery.** Verification compiles every changed
   `.py` file; it does not guess which existing test file to run. Run
   relevant tests yourself before trusting a `PASS`.
@@ -166,7 +261,13 @@ keys, SMTP secrets, or `.env` contents are ever written there.
   human."
 - A repair cycle re-sends the **whole current diff** to Claude (truncated
   at 20,000 chars) rather than a minimal patch context — fine for small/
-  medium changes, not ideal for huge diffs.
+  medium changes, not ideal for huge diffs. The same 20,000-char truncation
+  applies to what Codex sees in the review prompt.
+- Codex is invoked once per review step; a Codex-side failure (timeout,
+  nonzero exit, empty output) is not retried automatically — it's preserved
+  verbatim in `review.md`/`codex-raw-output.md` and fails closed to
+  `NEEDS HUMAN` on the next `parse_verdict()` pass, consistent with "never
+  silently convert malformed output into PASS."
 - `leadme-collab start` currently requires the primary repo to already be on
   `main`; it does not create tasks from other starting branches.
 
