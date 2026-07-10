@@ -101,11 +101,13 @@ need to roll back.
    | `/reset-password?token=leadme-deploy-invalid-token` | 200, 302, 303, 400 |
    | `/compare` | 200, 302, 303 |
    | `/lead-bot` | 200, 302, 303 |
-   | `/history` | 200, 302, 303 |
+   | `/history` | 302, 303 (must redirect to `/login`) |
    | `/settings` | 200, 302, 303 |
 
    Auth-gated routes accept a redirect since production may send an
-   unauthenticated request to `/login`. No forms are submitted, no accounts
+   unauthenticated request to `/login`. `/history` requires login, so an
+   anonymous request must redirect to `/login` and a 200 is treated as a
+   failure. No forms are submitted, no accounts
    created, no passwords reset, no history deleted, no scans started, no
    settings changed.
 9. **Final report** — PASS/FAIL summary, previous/current commit, backup

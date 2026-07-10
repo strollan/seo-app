@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -83,9 +84,17 @@ SMOKE_ROUTES = [
     ("/reset-password?token=leadme-deploy-invalid-token", {200, 302, 303, 400}),
     ("/compare", {200, 302, 303}),
     ("/lead-bot", {200, 302, 303}),
-    ("/history", {200, 302, 303}),
+    # /history requires login; an anonymous request must redirect to /login,
+    # never render 200. Accepting 200 here previously masked a stale deploy
+    # that predated the login-required gate on this route.
+    ("/history", {302, 303}),
     ("/settings", {200, 302, 303}),
 ]
+
+# Routes whose redirect target must be validated, not just its status code.
+REQUIRED_REDIRECT_LOCATIONS = {
+    "/history": "/login",
+}
 
 JOURNAL_ERROR_PATTERNS = [
     re.compile(r"Traceback \(most recent call last\)"),
@@ -471,13 +480,64 @@ def curl_status_code(url, timeout=CURL_TIMEOUT):
     return None, f"unexpected curl output: {raw!r}"
 
 
+def curl_status_and_location(url, timeout=CURL_TIMEOUT):
+    """Single request: return (status_code_int_or_None, location_or_None, error_detail).
+
+    Fetches headers and the status code from the same curl invocation so a
+    redirect check can never mix the status from one response with the
+    Location header from another.
+    """
+    res = run_local(
+        ["curl", "-s", "-o", "/dev/null", "-D", "-", "-w", "\n%{http_code}", "--max-time", str(timeout), url],
+        timeout=timeout + 5,
+    )
+    if not res.ok:
+        return None, None, (res.stderr or "curl failed").strip()
+    lines = res.stdout.splitlines()
+    if not lines:
+        return None, None, "empty curl output"
+    status_raw = lines[-1].strip()
+    location = None
+    for line in lines[:-1]:
+        if line.lower().startswith("location:"):
+            location = line.split(":", 1)[1].strip()
+    if not status_raw.isdigit():
+        return None, None, f"unexpected curl output: {status_raw!r}"
+    return int(status_raw), location, ""
+
+
+def _redirect_location_matches(location, expected_path, request_url):
+    """True only if location's path is exactly expected_path (same-site if absolute)."""
+    if not location:
+        return False
+    parsed = urlparse(location)
+    if parsed.path != expected_path:
+        return False
+    if parsed.netloc and parsed.netloc != urlparse(request_url).netloc:
+        return False
+    return True
+
+
 def run_smoke_tests(base_url=LIVE_SITE, routes=None, reporter=None):
     routes = routes if routes is not None else SMOKE_ROUTES
     results = []
     for path, acceptable in routes:
         url = base_url.rstrip("/") + path
-        status, detail = curl_status_code(url)
-        ok = status is not None and status in acceptable
+        required_location = REQUIRED_REDIRECT_LOCATIONS.get(path)
+
+        if required_location is not None:
+            status, location, detail = curl_status_and_location(url)
+            ok = status is not None and status in acceptable
+            if ok and not _redirect_location_matches(location, required_location, url):
+                ok = False
+                detail = (
+                    f"redirected but Location {location!r} did not match "
+                    f"expected path {required_location!r}"
+                ).strip()
+        else:
+            status, detail = curl_status_code(url)
+            ok = status is not None and status in acceptable
+
         results.append((path, status, ok, detail))
         if reporter is not None:
             label = path if path != "/" else "/"

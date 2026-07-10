@@ -180,8 +180,6 @@ class DivergenceTests(unittest.TestCase):
 
 class SmokeAcceptanceTests(unittest.TestCase):
     def test_status_within_acceptable_set_passes(self):
-        router = FakeRouter()
-
         def fake_curl(url, timeout=ld.CURL_TIMEOUT):
             if "reset-password" in url:
                 return 303, ""
@@ -189,20 +187,63 @@ class SmokeAcceptanceTests(unittest.TestCase):
                 return 303, ""
             return 200, ""
 
-        with mock.patch.object(ld, "curl_status_code", fake_curl):
+        def fake_curl_and_location(url, timeout=ld.CURL_TIMEOUT):
+            return 303, "/login", ""
+
+        with mock.patch.object(ld, "curl_status_code", fake_curl), \
+             mock.patch.object(ld, "curl_status_and_location", fake_curl_and_location):
             results = ld.run_smoke_tests()
         for path, status, ok, detail in results:
             self.assertTrue(ok, f"{path} unexpectedly failed with status {status}: {detail}")
 
     def test_unexpected_status_fails(self):
-        with mock.patch.object(ld, "curl_status_code", lambda url, timeout=ld.CURL_TIMEOUT: (500, "")):
+        with mock.patch.object(ld, "curl_status_code", lambda url, timeout=ld.CURL_TIMEOUT: (500, "")), \
+             mock.patch.object(ld, "curl_status_and_location", lambda url, timeout=ld.CURL_TIMEOUT: (500, None, "")):
             results = ld.run_smoke_tests()
         self.assertTrue(all(not ok for _, _, ok, _ in results))
 
     def test_unreachable_counts_as_failure_not_silent_pass(self):
-        with mock.patch.object(ld, "curl_status_code", lambda url, timeout=ld.CURL_TIMEOUT: (None, "timeout")):
+        with mock.patch.object(ld, "curl_status_code", lambda url, timeout=ld.CURL_TIMEOUT: (None, "timeout")), \
+             mock.patch.object(ld, "curl_status_and_location", lambda url, timeout=ld.CURL_TIMEOUT: (None, None, "timeout")):
             results = ld.run_smoke_tests()
         self.assertTrue(all(not ok for _, _, ok, _ in results))
+
+    def test_history_redirect_to_wrong_location_fails(self):
+        def fake_curl_and_location(url, timeout=ld.CURL_TIMEOUT):
+            return 303, "/some-other-page", ""
+
+        with mock.patch.object(ld, "curl_status_and_location", fake_curl_and_location):
+            results = ld.run_smoke_tests(routes=[("/history", {302, 303})])
+        [(path, status, ok, detail)] = results
+        self.assertFalse(ok)
+        self.assertIn("Location", detail)
+
+    def test_history_redirect_to_suffix_matching_path_fails(self):
+        """A Location like /foo/login must not be accepted just because it ends in /login."""
+
+        def fake_curl_and_location(url, timeout=ld.CURL_TIMEOUT):
+            return 303, "/foo/login", ""
+
+        with mock.patch.object(ld, "curl_status_and_location", fake_curl_and_location):
+            results = ld.run_smoke_tests(routes=[("/history", {302, 303})])
+        [(path, status, ok, detail)] = results
+        self.assertFalse(ok)
+        self.assertIn("Location", detail)
+
+    def test_history_redirect_to_exact_login_path_passes(self):
+        def fake_curl_and_location(url, timeout=ld.CURL_TIMEOUT):
+            return 303, "/login", ""
+
+        with mock.patch.object(ld, "curl_status_and_location", fake_curl_and_location):
+            results = ld.run_smoke_tests(routes=[("/history", {302, 303})])
+        [(path, status, ok, detail)] = results
+        self.assertTrue(ok, detail)
+
+    def test_history_200_still_fails(self):
+        with mock.patch.object(ld, "curl_status_and_location", lambda url, timeout=ld.CURL_TIMEOUT: (200, None, "")):
+            results = ld.run_smoke_tests(routes=[("/history", {302, 303})])
+        [(path, status, ok, detail)] = results
+        self.assertFalse(ok)
 
 
 class DoctorCheckDryRunTests(unittest.TestCase):
