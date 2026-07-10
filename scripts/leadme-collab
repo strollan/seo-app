@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Thin exec wrapper so leadme-collab can be run directly from the repo.
+# The user-local command at ~/.local/bin/leadme-collab execs this file.
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    TARGET="$(readlink "$SOURCE")"
+    case "$TARGET" in
+        /*) SOURCE="$TARGET" ;;
+        *) SOURCE="$(dirname "$SOURCE")/$TARGET" ;;
+    esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+
+PYTHON_BIN="$HOME/.venvs/leadmeleads/bin/python"
+if [ ! -x "$PYTHON_BIN" ]; then
+    PYTHON_BIN="$(command -v python3)"
+fi
+
+exec "$PYTHON_BIN" "$SCRIPT_DIR/leadme_collab.py" "$@"
