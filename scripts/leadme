@@ -59,7 +59,7 @@ run_task() {
   case "$lane" in
     fast)
       echo "LEADME LANE: FAST"
-      echo "Claude limit: 240 seconds / \$1.25"
+      echo "Claude limit: 1200 seconds / $10 hard ceiling"
       echo
       LEADME_CLAUDE_TIMEOUT_SECONDS=240 \
       LEADME_CLAUDE_MAX_BUDGET_USD=1.25 \
@@ -71,7 +71,7 @@ run_task() {
       echo "Claude limit: 1200 seconds / effectively uncapped"
       echo
       LEADME_CLAUDE_TIMEOUT_SECONDS=1200 \
-      LEADME_CLAUDE_MAX_BUDGET_USD=100.00 \
+      LEADME_CLAUDE_MAX_BUDGET_USD=10.00 \
       exec "$COLLAB" start "$task"
       ;;
 
