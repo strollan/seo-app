@@ -17,9 +17,11 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -33,6 +35,13 @@ from urllib.parse import urlparse
 
 REPO_PATH = Path("/mnt/c/Users/scott/ai-project/seo-app")
 PRIMARY_BRANCH = "main"
+
+# WSL drvfs mount prefix for the Windows C: drive. git operations whose cwd
+# lives under here are eligible to run through git.exe instead of Linux git
+# (see _select_git_binary below).
+WINDOWS_MOUNT_PREFIX = "/mnt/c"
+WINDOWS_GIT_EXE = "git.exe"
+LINUX_GIT = "git"
 
 PROD_HOST = "165.245.238.122"
 PROD_USER = "root"
@@ -128,8 +137,58 @@ class CmdResult:
         return self.returncode == 0
 
 
+def _is_windows_mount_path(path_str):
+    normalized = str(path_str).rstrip("/")
+    return normalized == WINDOWS_MOUNT_PREFIX or normalized.startswith(WINDOWS_MOUNT_PREFIX + "/")
+
+
+@functools.lru_cache(maxsize=1)
+def _git_exe_available():
+    return shutil.which(WINDOWS_GIT_EXE) is not None
+
+
+def _select_git_binary(cwd, args):
+    """Choose git.exe for /mnt/c repo operations, /usr/bin/git otherwise.
+
+    WSL's Linux git talks to a /mnt/c path through the 9p/drvfs translation
+    layer, paying a cross-boundary cost on every stat()-like call; git.exe
+    (reached via WSL interop, already on PATH when Git for Windows is
+    installed) talks to the same NTFS volume natively and is markedly
+    faster/more reliable there. Native /home paths get no such benefit and
+    keep using Linux git.
+
+    cwd alone is not sufficient: leadme-collab creates linked worktrees
+    under /home/scot from the /mnt/c primary repo (`git worktree add
+    <home-path> ...`), and git.exe cannot see native Linux filesystem paths
+    at all (WSL2's ext4 is not exposed to Windows). So any argument naming
+    a /home path forces Linux git even when cwd is under /mnt/c.
+
+    Falls back to Linux git whenever git.exe isn't discoverable (e.g. WSL
+    interop disabled) rather than failing the command outright — this is a
+    performance choice, not a correctness one, so failing closed here would
+    only make things worse.
+    """
+    if cwd is None or not _is_windows_mount_path(cwd):
+        return LINUX_GIT
+    for arg in args:
+        if isinstance(arg, str) and arg.startswith("/home/"):
+            return LINUX_GIT
+    return WINDOWS_GIT_EXE if _git_exe_available() else LINUX_GIT
+
+
 def run_local(args, cwd=None, timeout=GIT_TIMEOUT, input_text=None):
-    """Run a local command as an argv list. Never uses shell=True."""
+    """Run a local command as an argv list. Never uses shell=True.
+
+    If args[0] == "git", the actual binary invoked is chosen by cwd (and,
+    for worktree paths, by the other arguments too) via
+    _select_git_binary() — see that function for the WSL git.exe/Linux git
+    routing rationale. Every git call in this project's automation goes
+    through run_local (directly or via a thin git() wrapper), so this is
+    the single place the choice is made; no PATH shims or env var
+    overrides are needed anywhere else.
+    """
+    if args and args[0] == "git":
+        args = [_select_git_binary(cwd, args[1:])] + list(args[1:])
     try:
         proc = subprocess.run(
             args,

@@ -464,5 +464,120 @@ def argparse_namespace():
     return argparse.Namespace()
 
 
+class FakeCompletedProcess:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class GitBinaryRoutingTests(unittest.TestCase):
+    """run_local() must route git.exe vs. Linux git purely from cwd/args —
+    no PATH shims, env vars, or other runtime overrides required. These
+    tests mock subprocess.run() itself (not run_local) so the real
+    _select_git_binary() logic inside run_local runs and is verified."""
+
+    def setUp(self):
+        ld._git_exe_available.cache_clear()
+
+    def _mock_subprocess(self, returncode=0, stdout="", stderr=""):
+        patcher = mock.patch.object(
+            ld.subprocess, "run",
+            return_value=FakeCompletedProcess(returncode, stdout, stderr),
+        )
+        mocked = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mocked
+
+    def test_mnt_c_repo_uses_git_exe_when_available(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(["git", "status", "--porcelain"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args[0], "git.exe")
+        self.assertEqual(called_args[1:], ["status", "--porcelain"])
+
+    def test_mnt_c_repo_falls_back_to_linux_git_when_git_exe_missing(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=False):
+            ld.run_local(["git", "status", "--porcelain"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args[0], "git")
+
+    def test_home_worktree_uses_linux_git_even_when_git_exe_available(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(
+                ["git", "diff", "HEAD", "--stat"],
+                cwd="/home/scot/.local/share/leadme-collab/worktrees/20260711-000000-example",
+            )
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args[0], "git")
+
+    def test_worktree_add_targeting_home_path_forces_linux_git_despite_mnt_c_cwd(self):
+        """`git worktree add <path>` runs with cwd on the /mnt/c primary
+        repo but creates the new worktree under /home/scot — git.exe
+        cannot see native Linux ext4 paths at all, so this must never be
+        routed to git.exe even though cwd alone would qualify."""
+        run_mock = self._mock_subprocess()
+        home_worktree = "/home/scot/.local/share/leadme-collab/worktrees/20260711-000000-example"
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(
+                ["git", "worktree", "add", "-q", home_worktree, "-b", "collab/example", "deadbeef"],
+                cwd="/mnt/c/Users/scott/ai-project/seo-app",
+            )
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args[0], "git")
+        self.assertEqual(called_args[1:], ["worktree", "add", "-q", home_worktree, "-b", "collab/example", "deadbeef"])
+
+    def test_non_git_commands_are_never_rewritten(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(["curl", "--version"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args, ["curl", "--version"])
+
+    def test_cwd_forwarded_unchanged_to_subprocess(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(["git", "rev-parse", "HEAD"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        self.assertEqual(run_mock.call_args.kwargs["cwd"], "/mnt/c/Users/scott/ai-project/seo-app")
+
+    def test_no_cwd_defaults_to_linux_git(self):
+        run_mock = self._mock_subprocess()
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            ld.run_local(["git", "--version"])
+        called_args = run_mock.call_args.args[0]
+        self.assertEqual(called_args[0], "git")
+
+    def test_command_failure_still_surfaces_as_failed_result_not_swallowed(self):
+        """Fail-closed regression: a real git.exe failure (non-zero exit)
+        must still come back as a failed CmdResult, not get masked by the
+        binary-selection rewrite."""
+        self._mock_subprocess(returncode=128, stdout="", stderr="fatal: not a git repository")
+        with mock.patch.object(ld, "_git_exe_available", return_value=True):
+            result = ld.run_local(["git", "status"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.returncode, 128)
+        self.assertIn("not a git repository", result.stderr)
+
+    def test_missing_binary_fails_closed_with_127(self):
+        with mock.patch.object(ld.subprocess, "run", side_effect=FileNotFoundError("git.exe")):
+            with mock.patch.object(ld, "_git_exe_available", return_value=True):
+                result = ld.run_local(["git", "status"], cwd="/mnt/c/Users/scott/ai-project/seo-app")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.returncode, 127)
+
+    def test_timeout_fails_closed_with_124(self):
+        with mock.patch.object(
+            ld.subprocess, "run",
+            side_effect=ld.subprocess.TimeoutExpired(cmd=["git", "status"], timeout=5),
+        ):
+            with mock.patch.object(ld, "_git_exe_available", return_value=True):
+                result = ld.run_local(["git", "status"], cwd="/mnt/c/Users/scott/ai-project/seo-app", timeout=5)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.returncode, 124)
+
+
 if __name__ == "__main__":
     unittest.main()
