@@ -243,20 +243,136 @@ class Reporter:
 # Task state (state.json) + events.log
 # ---------------------------------------------------------------------------
 
-def _scan_for_secrets(value):
-    """Recursively refuse anything secret-shaped, including inside nested
-    dicts/lists (e.g. the "active_process" sub-object)."""
-    if isinstance(value, str):
-        if SECRET_LIKE_KEY_PATTERN.search(value):
-            raise ValueError("refusing to persist a value that looks secret-shaped")
-    elif isinstance(value, dict):
-        for key, sub_value in value.items():
-            if SECRET_LIKE_KEY_PATTERN.search(str(key)):
-                raise ValueError(f"refusing to persist unexpected/secret-shaped state key: {key}")
-            _scan_for_secrets(sub_value)
-    elif isinstance(value, list):
-        for item in value:
-            _scan_for_secrets(item)
+def _scan_for_secrets(value, path="value"):
+    """Reject values that strongly resemble real credentials.
+
+    Ordinary prose may mention words such as password, token, secret, API key,
+    or password reset. Those words alone are not credentials and must not
+    prevent a task description from being persisted.
+
+    This scanner intentionally fails closed on:
+    - PEM private keys
+    - well-known provider token formats
+    - explicit key/password/token assignments containing credential-like data
+    - nested secrets inside dictionaries and sequences
+    """
+    import re
+
+    if value is None:
+        return
+
+    if isinstance(value, dict):
+        for key, nested_value in value.items():
+            _scan_for_secrets(
+                nested_value,
+                path=f"{path}.{key}",
+            )
+        return
+
+    if isinstance(value, (list, tuple, set)):
+        for index, nested_value in enumerate(value):
+            _scan_for_secrets(
+                nested_value,
+                path=f"{path}[{index}]",
+            )
+        return
+
+    if not isinstance(value, str):
+        return
+
+    candidate_text = value.strip()
+    if not candidate_text:
+        return
+
+    strong_patterns = (
+        (
+            "private key",
+            re.compile(
+                r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"
+            ),
+        ),
+        (
+            "OpenAI/compatible API key",
+            re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+        ),
+        (
+            "Anthropic API key",
+            re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b"),
+        ),
+        (
+            "GitHub token",
+            re.compile(
+                r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|"
+                r"github_pat_[A-Za-z0-9_]{20,})\b"
+            ),
+        ),
+        (
+            "Slack token",
+            re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+        ),
+        (
+            "AWS access key",
+            re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+        ),
+        (
+            "Google API key",
+            re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),
+        ),
+    )
+
+    for label, secret_pattern in strong_patterns:
+        if secret_pattern.search(candidate_text):
+            raise ValueError(
+                f"refusing to persist {path}: looks like a {label}"
+            )
+
+    assignment_pattern = re.compile(
+        r"""(?ix)
+        (?<![A-Za-z0-9])
+        (?:[A-Za-z0-9]+[_-])*
+        (
+            api[_-]?key
+            | secret(?:[_-]?key)?
+            | password
+            | passwd
+            | token
+            | access[_-]?token
+            | refresh[_-]?token
+            | private[_-]?key
+            | client[_-]?secret
+        )
+        \s*[:=]\s*
+        ["']?
+        ([^\s"'`]{12,})
+        """
+    )
+
+    safe_markers = {
+        "example",
+        "placeholder",
+        "dummy",
+        "redacted",
+        "changeme",
+        "change-me",
+        "not-set",
+        "not_set",
+        "unset",
+        "none",
+        "null",
+        "test-value",
+        "test-placeholder",
+    }
+
+    for match in assignment_pattern.finditer(candidate_text):
+        secret_value = match.group(2).strip().lower()
+
+        if any(marker in secret_value for marker in safe_markers):
+            continue
+
+        raise ValueError(
+            f"refusing to persist {path}: "
+            f"looks like an explicit credential assignment"
+        )
 
 
 def write_task_state(tid, data):

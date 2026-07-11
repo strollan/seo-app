@@ -101,7 +101,7 @@ class StateFileTests(unittest.TestCase, IsolatedDirsMixin):
         with tempfile.TemporaryDirectory() as tmp:
             self.isolate(Path(tmp))
             with self.assertRaises(ValueError):
-                lc.write_task_state("t1", {"note": "password=hunter2"})
+                lc.write_task_state("t1", {"note": "password=VeryRealPasswordValue123!"})
 
     def test_current_task_pointer_roundtrip(self):
         import tempfile
@@ -1718,6 +1718,83 @@ class ClaudeBudgetRecoveryTests(unittest.TestCase):
                 True,
             )
         )
+
+
+class SecretScannerPrecisionTests(unittest.TestCase):
+    def test_registration_task_description_is_allowed(self):
+        task = (
+            "Implement V1 registration protection for LeadMeLeads. "
+            "Reject duplicate usernames and duplicate email addresses "
+            "case-insensitively. Preserve login, sessions, password reset, "
+            "admin behavior, roles, existing users, and database records. "
+            "Add honeypot protection and signup rate limiting."
+        )
+
+        lc._scan_for_secrets(task)
+
+    def test_security_prose_is_allowed(self):
+        lc._scan_for_secrets(
+            "Audit API keys, passwords, access tokens, private keys, "
+            "and password reset behavior without exposing credentials."
+        )
+
+    def test_task_id_and_worktree_path_are_allowed(self):
+        lc._scan_for_secrets(
+            "20260711-154335-implement-v1-registration-protection-for"
+        )
+        lc._scan_for_secrets(
+            "/home/scot/.local/share/leadme-collab/worktrees/"
+            "20260711-154335-implement-v1-registration-protection-for"
+        )
+
+    def test_explicit_password_assignment_is_blocked(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "explicit credential assignment",
+        ):
+            lc._scan_for_secrets(
+                "SMTP_PASSWORD=VeryRealPasswordValue123!"
+            )
+
+    def test_known_api_key_format_is_blocked(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "API key",
+        ):
+            lc._scan_for_secrets(
+                "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+            )
+
+    def test_private_key_is_blocked(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "private key",
+        ):
+            lc._scan_for_secrets(
+                "-----BEGIN OPENSSH PRIVATE KEY-----"
+            )
+
+    def test_nested_secret_is_blocked_and_reports_path(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"state\.config\.password",
+        ):
+            lc._scan_for_secrets(
+                {
+                    "task": "Preserve password reset behavior.",
+                    "config": {
+                        "password": (
+                            "password=ExtremelySecretPassword123!"
+                        ),
+                    },
+                },
+                path="state",
+            )
+
+    def test_placeholders_are_allowed(self):
+        lc._scan_for_secrets("API_KEY=test-placeholder")
+        lc._scan_for_secrets("PASSWORD=changeme-example")
+        lc._scan_for_secrets("TOKEN=redacted-placeholder")
 
 if __name__ == "__main__":
     unittest.main()
