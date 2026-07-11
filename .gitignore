@@ -175,3 +175,4 @@ run_roofing_leads.sh
 scripts/*.DISABLED.*.py
 test_*.py
 !scripts/test_history_gap_polish_scope.py
+!scripts/test_history_snapshot_uniqueness.py

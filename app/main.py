@@ -1433,16 +1433,48 @@ def save_report_history_item(item: dict):
 
 
 def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list, owner_id=None):
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    now = datetime.now()
+    timestamp_base = now.strftime("%Y-%m-%d_%H-%M-%S-%f")
     site_slug = slugify_report_part(site.get("clean_domain", "site"))
     comp_slug = slugify_report_part(competitor.get("clean_domain", "competitor"))
 
-    filename = f"{timestamp}_{site_slug}_vs_{comp_slug}.html"
     saved_dir = os.path.join(reports_dir_path(), "saved")
-    file_path = os.path.join(saved_dir, filename)
+    os.makedirs(saved_dir, exist_ok=True)
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    # O_EXCL makes filename allocation atomic. Even if two requests receive
+    # the exact same datetime value, only one can claim the base filename;
+    # later saves receive a deterministic -2, -3, ... suffix.
+    collision_index = 1
+    while True:
+        timestamp = (
+            timestamp_base
+            if collision_index == 1
+            else f"{timestamp_base}-{collision_index}"
+        )
+        filename = f"{timestamp}_{site_slug}_vs_{comp_slug}.html"
+        file_path = os.path.join(saved_dir, filename)
+
+        try:
+            fd = os.open(
+                file_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o644,
+            )
+        except FileExistsError:
+            collision_index += 1
+            continue
+
+        break
+
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(html)
+    except Exception:
+        try:
+            os.unlink(file_path)
+        except OSError:
+            pass
+        raise
 
     missing_terms = []
     if isinstance(gap, dict):
@@ -1454,7 +1486,16 @@ def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, vol
                     missing_terms.append(term)
 
     history_item = {
-        "date": datetime.now().strftime("%B %d, %Y %I:%M %p"),
+        # Keep the date readable while retaining a compact identifier for
+        # same-millisecond saves. An exact timestamp collision also receives
+        # the same -2, -3, ... suffix used by the saved filename.
+        "date": (
+            now.strftime("%B %d, %Y %I:%M:%S")
+            + f".{now.microsecond // 1000:03d} "
+            + now.strftime("%p")
+            + f" · ID {now.microsecond % 1000:03d}"
+            + (f"-{collision_index}" if collision_index > 1 else "")
+        ),
         "timestamp": timestamp,
         "site_url": site.get("url", ""),
         "competitor_url": competitor.get("url", ""),
