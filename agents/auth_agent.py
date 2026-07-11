@@ -78,6 +78,25 @@ def init_auth_db():
 
         conn.commit()
 
+        try:
+            # Enforces case-insensitive email uniqueness at the DB layer so
+            # two concurrent signups can't both insert the same normalized
+            # email -- the app-level email_exists() check alone has a
+            # check-then-insert race. Multiple NULL/blank emails remain
+            # allowed via the WHERE clause. If legacy duplicate emails
+            # already exist in this database, index creation is skipped
+            # (best effort); email_exists() still protects new signups.
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_nocase
+                ON users(email COLLATE NOCASE)
+                WHERE email IS NOT NULL AND email <> ''
+                """
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+
         session_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
         }
@@ -464,11 +483,46 @@ def login_clear_failures(client_host, username):
 
 
 def user_exists(username):
-    return get_user_by_username(username) is not None
+    """Case-insensitive username collision check for signup.
+
+    Unlike get_user_by_username(), this checks *all* rows (not just
+    is_active = 1) and compares case-insensitively against the stored
+    value, so it also catches legacy mixed-case and inactive records that
+    a normalized, active-only lookup would miss.
+    """
+    init_auth_db()
+    username = normalize_username(username)
+    if not username:
+        return False
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM users WHERE LOWER(username) = ? LIMIT 1",
+            (username,),
+        ).fetchone()
+
+    return row is not None
 
 
 def email_exists(email):
-    return get_user_by_email(email) is not None
+    """Case-insensitive email collision check for signup.
+
+    See user_exists() for why this checks all rows case-insensitively
+    instead of reusing get_user_by_email()'s active-only, case-sensitive
+    lookup.
+    """
+    init_auth_db()
+    email = normalize_email(email)
+    if not email:
+        return False
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM users WHERE email IS NOT NULL AND LOWER(email) = ? LIMIT 1",
+            (email,),
+        ).fetchone()
+
+    return row is not None
 
 
 # === PASSWORD RESET START ===

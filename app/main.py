@@ -33,6 +33,8 @@ import base64
 import re
 import secrets
 import tempfile
+import threading
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -10928,6 +10930,11 @@ button {{
 
         <div class="small-note">Password must be at least 12 characters.</div>
 
+        <div aria-hidden="true" style="position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden;">
+            <label for="signup-website">Leave this field blank</label>
+            <input id="signup-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
         <button type="submit">Create Account</button>
 
         <div class="auth-links">
@@ -10938,6 +10945,61 @@ button {{
 </body>
 </html>
 """)
+
+
+SIGNUP_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    r"(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
+    r"@[A-Za-z0-9]"
+    r"(?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+)
+
+# Generic on purpose: does not reveal whether the username or the email was
+# the one already in use.
+SIGNUP_DUPLICATE_MESSAGE = (
+    "Could not create account with that information. "
+    "If you already have an account, log in instead."
+)
+
+SIGNUP_MAX_USERNAME_LENGTH = 150
+SIGNUP_MAX_EMAIL_LENGTH = 254
+
+# In-process rate limiting for the current single-server deployment. This is
+# intentionally separate from the DB-backed login rate limiter in
+# agents.auth_agent -- signup abuse (account-creation spam) is throttled
+# per-process here rather than persisted, since it doesn't need to survive
+# restarts or be shared across servers.
+SIGNUP_RATE_LIMIT_MAX_ATTEMPTS = 5
+SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+
+_signup_rate_limit_lock = threading.Lock()
+_signup_rate_limit_attempts = {}
+
+
+def _signup_rate_limit_key(client_host):
+    return str(client_host or "").strip()[:80] or "unknown"
+
+
+def signup_is_rate_limited(client_host):
+    key = _signup_rate_limit_key(client_host)
+    cutoff = time.time() - SIGNUP_RATE_LIMIT_WINDOW_SECONDS
+
+    with _signup_rate_limit_lock:
+        attempts = [t for t in _signup_rate_limit_attempts.get(key, []) if t >= cutoff]
+        _signup_rate_limit_attempts[key] = attempts
+        return len(attempts) >= SIGNUP_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def signup_record_attempt(client_host):
+    key = _signup_rate_limit_key(client_host)
+    now = time.time()
+    cutoff = now - SIGNUP_RATE_LIMIT_WINDOW_SECONDS
+
+    with _signup_rate_limit_lock:
+        attempts = [t for t in _signup_rate_limit_attempts.get(key, []) if t >= cutoff]
+        attempts.append(now)
+        _signup_rate_limit_attempts[key] = attempts
 
 
 @app.get("/signup", response_class=AuthHTMLResponse)
@@ -10952,20 +11014,53 @@ def create_account_get():
 
 @app.post("/signup")
 def signup_post(
+    request: AuthRequest,
     username: str = AuthForm(...),
     email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
+    website: str = AuthForm(""),
 ):
-    from agents.auth_agent import create_user, user_exists, email_exists
+    import sqlite3
 
-    clean_username = str(username or "").strip().lower()
-    clean_email = str(email or "").strip().lower()
+    from agents.auth_agent import (
+        create_user,
+        email_exists,
+        normalize_email,
+        normalize_username,
+        user_exists,
+    )
+
+    clean_username = normalize_username(username)
+    clean_email = normalize_email(email)
+
+    client_host = ""
+    try:
+        client_host = request.client.host if request.client else ""
+    except Exception:
+        client_host = ""
+
+    if signup_is_rate_limited(client_host):
+        return signup_page("Too many signup attempts. Try again in a few minutes.", username=clean_username, email=clean_email)
+
+    signup_record_attempt(client_host)
+
+    # Honeypot: this field is hidden from real users via CSS. Any bot that
+    # fills it in gets a fake success so it doesn't learn it was detected,
+    # but no account is created.
+    if str(website or "").strip():
+        return AuthRedirectResponse(url="/login", status_code=303)
 
     if not clean_username:
         return signup_page("Username is required.", username=clean_username, email=clean_email)
 
-    if "@" not in clean_email or "." not in clean_email:
+    if len(clean_username) > SIGNUP_MAX_USERNAME_LENGTH:
+        return signup_page("Username is too long.", username=clean_username, email=clean_email)
+
+    if len(clean_email) > SIGNUP_MAX_EMAIL_LENGTH:
+        return signup_page("Email address is too long.", username=clean_username, email=clean_email)
+
+    if not SIGNUP_EMAIL_RE.match(clean_email):
         return signup_page("Use a valid email address.", username=clean_username, email=clean_email)
 
     if password != confirm_password:
@@ -10974,28 +11069,38 @@ def signup_post(
     if len(password or "") < 12:
         return signup_page("Password must be at least 12 characters.", username=clean_username, email=clean_email)
 
-    if user_exists(clean_username):
-        return signup_page("That username is already taken.", username=clean_username, email=clean_email)
-
-    if email_exists(clean_email):
-        return signup_page("An account with that email already exists. Log in instead.", username=clean_username, email=clean_email)
+    if user_exists(clean_username) or email_exists(clean_email):
+        return signup_page(SIGNUP_DUPLICATE_MESSAGE, username=clean_username, email=clean_email)
 
     try:
         create_user(clean_username, password, role="standard", email=clean_email)
-    except Exception as exc:
-        return signup_page(f"Could not create account: {str(exc)}", username=clean_username, email=clean_email)
+    except sqlite3.IntegrityError:
+        # A duplicate slipped in between the exists-checks and the insert
+        # (concurrent signups). Same generic message as the normal case.
+        return signup_page(SIGNUP_DUPLICATE_MESSAGE, username=clean_username, email=clean_email)
+    except Exception:
+        return signup_page("Could not create account. Please try again.", username=clean_username, email=clean_email)
 
     return AuthRedirectResponse(url="/login", status_code=303)
 
 
 @app.post("/create-account")
 def create_account_post(
+    request: AuthRequest,
     username: str = AuthForm(...),
     email: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
+    website: str = AuthForm(""),
 ):
-    return signup_post(username=username, email=email, password=password, confirm_password=confirm_password)
+    return signup_post(
+        request=request,
+        username=username,
+        email=email,
+        password=password,
+        confirm_password=confirm_password,
+        website=website,
+    )
 # === SIGNUP ROUTES END ===
 
 
