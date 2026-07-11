@@ -68,7 +68,7 @@ run_task() {
 
     deep)
       echo "LEADME LANE: DEEP"
-      echo "Claude limit: 1200 seconds / effectively uncapped"
+      echo "Claude limit: 1200 seconds / $10 hard ceiling"
       echo
       LEADME_CLAUDE_TIMEOUT_SECONDS=1200 \
       LEADME_CLAUDE_MAX_BUDGET_USD=10.00 \
