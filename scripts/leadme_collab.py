@@ -785,15 +785,35 @@ def delete_branch(branch, force=True):
 # a .gitignore rule and Codex correctly flagged it as present but undiffed.
 # ---------------------------------------------------------------------------
 
+PROMOTION_RUNTIME_EXCLUDES = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "settings_data",
+}
+
+
+def _is_runtime_artifact_path(rel_path):
+    """Return True for generated/runtime paths that must never be promoted."""
+    normalized = str(rel_path).replace("\\", "/").strip("/")
+    parts = [part for part in normalized.split("/") if part]
+
+    if any(part in PROMOTION_RUNTIME_EXCLUDES for part in parts):
+        return True
+
+    return normalized.endswith((".pyc", ".pyo"))
+
+
 def worktree_change_inventory(worktree_path):
-    """Return (tracked, untracked, ignored) describing everything a task
-    worktree has changed relative to its own base commit.
+    """Return (tracked, untracked, ignored) describing task-authored changes.
 
     tracked: list of (status, path) from `git diff HEAD --name-status`
              (status is one of A/M/D; renames are split into a D + A pair).
     untracked: paths git sees but does not ignore (new files never git-added).
-    ignored: paths matched by a .gitignore rule (e.g. `test_*.py`) — these
-             need `git add -f` to ever become tracked.
+    ignored: intentionally task-authored files matched by .gitignore, such as
+             a new test_*.py file. Generated caches and runtime data are
+             excluded and must never be copied or force-added.
     """
     tracked = []
     diff_res = git(["diff", "HEAD", "--name-status"], cwd=worktree_path, timeout=30)
@@ -819,7 +839,9 @@ def worktree_change_inventory(worktree_path):
             if line.startswith("?? "):
                 untracked.append(line[3:].strip())
             elif line.startswith("!! "):
-                ignored.append(line[3:].strip())
+                ignored_path = line[3:].strip()
+                if not _is_runtime_artifact_path(ignored_path):
+                    ignored.append(ignored_path)
     return tracked, untracked, ignored
 
 

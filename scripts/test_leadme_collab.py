@@ -1463,6 +1463,44 @@ class PromoteTests(unittest.TestCase, IsolatedDirsMixin):
             status = ld.run_local(["git", "status", "--short"], cwd=repo, timeout=15)
             self.assertIn("A  test_new_thing.py", status.stdout)
 
+    def test_inventory_excludes_runtime_junk_but_keeps_ignored_task_file(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tid, repo, wt_path = bootstrap_promotable_task(
+                self,
+                tmp_path,
+                gitignore_text=(
+                    "test_*.py\n"
+                    "__pycache__/\n"
+                    "settings_data/\n"
+                    "*.pyc\n"
+                ),
+            )
+
+            (wt_path / "test_new_thing.py").write_text(
+                "def test_x():\n    assert True\n",
+                encoding="utf-8",
+            )
+
+            (wt_path / "__pycache__").mkdir()
+            (wt_path / "__pycache__" / "module.cpython-314.pyc").write_bytes(b"cache")
+
+            (wt_path / "settings_data").mkdir()
+            (wt_path / "settings_data" / "runtime.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+
+            tracked, untracked, ignored = lc.worktree_change_inventory(wt_path)
+
+        self.assertEqual(tracked, [])
+        self.assertEqual(untracked, [])
+        self.assertIn("test_new_thing.py", ignored)
+        self.assertFalse(any("__pycache__" in path for path in ignored))
+        self.assertFalse(any("settings_data" in path for path in ignored))
+        self.assertFalse(any(path.endswith(".pyc") for path in ignored))
+
     def test_promote_no_stage_leaves_ignored_file_unstaged_with_warning(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
