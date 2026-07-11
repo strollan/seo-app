@@ -12624,6 +12624,20 @@ function renderLead(lead) {{
     `;
 
     document.getElementById("leads").appendChild(div);
+
+    // A lead card is now visible, so the initial waiting message is stale.
+    const waitingMessageEl = document.getElementById("message");
+    if (waitingMessageEl) {{
+        waitingMessageEl.style.display = "none";
+    }}
+
+    const liveConsoleFirstLine = document.getElementById("liveConsoleLine1");
+    if (
+        liveConsoleFirstLine &&
+        /looking for the first lead cards/i.test(liveConsoleFirstLine.textContent || "")
+    ) {{
+        liveConsoleFirstLine.textContent = "Lead cards are appearing.";
+    }}
 }}
 
 async function poll() {{
