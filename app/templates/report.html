@@ -276,6 +276,7 @@
 
         .table-wrap {
             overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .score-table {
@@ -792,6 +793,69 @@
 }
 /* === REPORT HEADER LAYOUT FIX END === */
 
+/* === NARROW PHONE FIXES (375px / 320px) ===
+   .card already clips overflowing children (overflow:hidden), which stops
+   a too-wide child from forcing the whole page to scroll horizontally --
+   but that same clipping silently cuts off content that doesn't wrap on
+   its own (a table with no scroll wrapper, or a chip holding one long
+   unbroken keyword). These rules make that content wrap or scroll instead
+   of getting cut off, and trim padding/type sizes so more of it fits. */
+body.report-page {
+    overflow-x: hidden;
+}
+
+@media (max-width: 480px) {
+    .report-page .section,
+    .report-page .footer {
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+    }
+
+    .report-page .site-card {
+        padding: 16px !important;
+    }
+
+    .report-page .score {
+        font-size: 38px !important;
+    }
+
+    .report-page .site-url {
+        font-size: 19px !important;
+    }
+
+    .report-page .winner-badge {
+        top: 12px !important;
+        right: 12px !important;
+        padding: 6px 9px !important;
+        font-size: 10px !important;
+    }
+
+    .report-page .chip,
+    .report-page .chip-high,
+    .report-page .chip-medium,
+    .report-page .chip-shared,
+    .report-page .current-signal-chip {
+        max-width: 100% !important;
+        overflow-wrap: anywhere !important;
+        word-break: normal !important;
+        white-space: normal !important;
+        font-size: 12px !important;
+        padding: 6px 9px !important;
+    }
+
+    .report-page .score-table th,
+    .report-page .score-table td,
+    .report-page .volume-opportunity-table th,
+    .report-page .volume-opportunity-table td {
+        padding: 10px 10px !important;
+        font-size: 13px !important;
+    }
+
+    .report-page .keyword-box,
+    .report-page .keyword-strategy-intro {
+        padding: 16px !important;
+    }
+}
 </style>
     <link rel="icon" href="/static/favicon.ico?v=2">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
@@ -1098,6 +1162,7 @@
                     Use this section to prioritize the gaps that have measurable demand.
                 </p>
 
+                <div class="table-wrap">
                 <table class="volume-opportunity-table">
                     <thead>
                         <tr>
@@ -1118,6 +1183,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
         {% endif %}
