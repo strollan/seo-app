@@ -1628,5 +1628,96 @@ class ArgumentParsingTests(unittest.TestCase):
         self.assertEqual(args2.message, "msg")
 
 
+
+class ClaudeBudgetRecoveryTests(unittest.TestCase):
+    def test_run_claude_parses_budget_json_despite_nonzero_exit(self):
+        raw = json.dumps({
+            "type": "result",
+            "subtype": "error_max_budget_usd",
+            "is_error": True,
+            "total_cost_usd": 1.25,
+        })
+
+        monitored = {
+            "returncode": 1,
+            "stdout": raw,
+            "stderr": "",
+            "elapsed_seconds": 120.0,
+            "timed_out": False,
+            "pid": 12345,
+        }
+
+        with mock.patch.object(lc, "run_monitored", return_value=monitored):
+            result = lc.run_claude(
+                "perform a focused task",
+                cwd="/tmp",
+                timeout=240,
+            )
+
+        self.assertTrue(result["is_error"])
+        self.assertTrue(result["budget_exhausted"])
+        self.assertEqual(result["total_cost_usd"], 1.25)
+        self.assertEqual(
+            result["parsed"]["subtype"],
+            "error_max_budget_usd",
+        )
+        self.assertIn("budget", result["reason"].lower())
+
+    def test_verified_budget_result_can_continue(self):
+        result = {
+            "is_error": True,
+            "budget_exhausted": True,
+        }
+
+        self.assertTrue(
+            lc._verified_budget_result_can_continue(
+                result,
+                ["app/templates/report.html"],
+                True,
+            )
+        )
+
+    def test_budget_result_with_no_changes_fails_closed(self):
+        result = {
+            "is_error": True,
+            "budget_exhausted": True,
+        }
+
+        self.assertFalse(
+            lc._verified_budget_result_can_continue(
+                result,
+                [],
+                True,
+            )
+        )
+
+    def test_budget_result_with_failed_verification_fails_closed(self):
+        result = {
+            "is_error": True,
+            "budget_exhausted": True,
+        }
+
+        self.assertFalse(
+            lc._verified_budget_result_can_continue(
+                result,
+                ["app/main.py"],
+                False,
+            )
+        )
+
+    def test_non_budget_failure_never_continues(self):
+        result = {
+            "is_error": True,
+            "budget_exhausted": False,
+        }
+
+        self.assertFalse(
+            lc._verified_budget_result_can_continue(
+                result,
+                ["app/main.py"],
+                True,
+            )
+        )
+
 if __name__ == "__main__":
     unittest.main()

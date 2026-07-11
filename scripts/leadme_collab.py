@@ -68,8 +68,12 @@ WORKTREE_ROOT = Path.home() / ".local" / "share" / "leadme-collab" / "worktrees"
 CURRENT_TASK_POINTER = STATE_ROOT / "current_task"
 
 MAX_REVIEW_CYCLES = 3
-CLAUDE_TIMEOUT_SECONDS = 900  # 15 minutes per Claude invocation
-CLAUDE_MAX_BUDGET_USD = "2.00"
+CLAUDE_TIMEOUT_SECONDS = int(
+    os.getenv("LEADME_CLAUDE_TIMEOUT_SECONDS", "240")
+)  # default fast lane: 4 minutes
+CLAUDE_MAX_BUDGET_USD = os.getenv(
+    "LEADME_CLAUDE_MAX_BUDGET_USD", "1.25"
+)
 CODEX_TIMEOUT_SECONDS = 600  # 10 minutes per Codex review invocation
 
 HEARTBEAT_INTERVAL_SECONDS = 20  # how often [RUNNING] progress prints while waiting
@@ -606,16 +610,24 @@ def run_claude(prompt_text, cwd, timeout=CLAUDE_TIMEOUT_SECONDS, tid=None):
     result = run_monitored(args, cwd=cwd, timeout=timeout, role_label="Claude implementer", tid=tid)
 
     parsed = None
-    if not result["timed_out"] and result["returncode"] == 0:
+    if not result["timed_out"]:
         try:
             parsed = json.loads(result["stdout"])
         except (ValueError, TypeError):
             parsed = None
 
+    budget_exhausted = bool(
+        parsed and parsed.get("subtype") == "error_max_budget_usd"
+    )
+
     if result["timed_out"]:
         reason = f"Claude implementer timed out after {int(result['elapsed_seconds'])}s (limit: {timeout}s)"
     elif parsed is None:
         reason = f"Claude implementer exited {result['returncode']} without a parseable JSON result"
+    elif budget_exhausted:
+        reason = "Claude implementer reached the configured budget"
+    elif result["returncode"] != 0:
+        reason = f"Claude implementer exited {result['returncode']}"
     elif parsed.get("is_error"):
         reason = "Claude implementer reported is_error=true — see implementer-output.md"
     else:
@@ -630,10 +642,25 @@ def run_claude(prompt_text, cwd, timeout=CLAUDE_TIMEOUT_SECONDS, tid=None):
         "is_error": bool(reason),
         "total_cost_usd": parsed.get("total_cost_usd") if parsed else None,
         "parsed": parsed,
+        "budget_exhausted": budget_exhausted,
         "timed_out": result["timed_out"],
         "pid": result["pid"],
         "reason": reason,
     }
+
+
+def _verified_budget_result_can_continue(result, changed_files, verify_ok):
+    """Allow review to continue only when a budget-limited Claude run left
+    real changes and those changes passed verification.
+
+    Timeouts, malformed output, empty diffs, and failed verification remain
+    fail-closed.
+    """
+    return bool(
+        result.get("budget_exhausted")
+        and changed_files
+        and verify_ok
+    )
 
 
 def run_codex_review(prompt_text, cwd, timeout=CODEX_TIMEOUT_SECONDS, tid=None):
@@ -1422,16 +1449,30 @@ def _advance_task(tid, r=None):
         r.step("verification", verify_ok)
 
         if not ok:
-            reason = result.get("reason") or "Claude implementer failed"
-            _print_explanation(
-                r, reason,
-                detail_path=str(task_dir(tid) / "implementer-output.md"),
-                next_action=f"leadme-collab inspect {tid}",
-            )
-            _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
-            return "needs_human"
-
-        state = _write_state_update(tid, phase="implemented")
+            if _verified_budget_result_can_continue(
+                result, diff_info["changed_files"], verify_ok
+            ):
+                r.warn(
+                    "Claude budget reached after producing verified changes",
+                    "continuing automatically to reviewer",
+                )
+                log_event(
+                    tid,
+                    "implementer_budget_salvaged",
+                    f"changed={len(diff_info['changed_files'])}",
+                )
+                state = _write_state_update(tid, phase="implemented")
+            else:
+                reason = result.get("reason") or "Claude implementer failed"
+                _print_explanation(
+                    r, reason,
+                    detail_path=str(task_dir(tid) / "implementer-output.md"),
+                    next_action=f"leadme-collab inspect {tid}",
+                )
+                _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
+                return "needs_human"
+        else:
+            state = _write_state_update(tid, phase="implemented")
 
     if state["phase"] == "implemented":
         return _start_review_cycle(tid, r)
@@ -1636,14 +1677,27 @@ def _run_repair(tid, r, review_text):
     r.step("verification after repair", verify_ok)
 
     if not ok:
-        reason = result.get("reason") or "Claude repair failed"
-        _print_explanation(
-            r, reason,
-            detail_path=str(task_dir(tid) / "repair-output.md"),
-            next_action=f"leadme-collab inspect {tid}",
-        )
-        _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
-        return "needs_human"
+        if _verified_budget_result_can_continue(
+            result, new_diff["changed_files"], verify_ok
+        ):
+            r.warn(
+                "Claude repair budget reached after producing verified changes",
+                "continuing automatically to reviewer",
+            )
+            log_event(
+                tid,
+                "repair_budget_salvaged",
+                f"cycle={state['cycle']} changed={len(new_diff['changed_files'])}",
+            )
+        else:
+            reason = result.get("reason") or "Claude repair failed"
+            _print_explanation(
+                r, reason,
+                detail_path=str(task_dir(tid) / "repair-output.md"),
+                next_action=f"leadme-collab inspect {tid}",
+            )
+            _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
+            return "needs_human"
 
     next_cycle = state["cycle"] + 1
     _write_state_update(tid, phase="implemented", cycle=next_cycle)
