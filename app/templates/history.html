@@ -364,6 +364,7 @@
 
     {% if history %}
         {% for item in history %}
+        <!-- history-card:start -->
         <div class="history-card">
             <div class="domains">
                 {{ item.site_domain }} vs {{ item.competitor_domain }}
@@ -414,6 +415,7 @@
                 </form>
             </div>
         </div>
+        <!-- history-card:end -->
         {% endfor %}
     {% else %}
         <div class="empty">

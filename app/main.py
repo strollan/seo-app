@@ -4685,7 +4685,7 @@ async def final_html_report_polish_middleware_v3(request, call_next):
 
     if not (
         path == "/analyze"
-        or path.startswith("/history")
+        or path.startswith("/history/rerun")
         or path.startswith("/reports")
     ):
         return response
@@ -9983,48 +9983,72 @@ async def vast_history_gap_polish_middleware(request, call_next):
 
     body = b"".join(body_chunks)
     html = body.decode("utf-8", errors="replace")
-    lower = html.lower()
 
-    if "qualitycesspool.com" in lower or "jwcesspool.com" in lower:
-        replacements = {
-            "Cesspool Professional Sewer": "Cesspool Services Long Island",
-            "Professional Sewer Drain": "Sewer and Drain Cleaning",
-            "Professional Sewer": "Cesspool Cleaning",
-            "Trap Repair": "Cesspool Repair",
-            "Drain Pump": "Cesspool Pumping",
-            "Repair Sewer": "Sewer Repair",
-            "Commercial Drainage": "Commercial Cesspool Services",
-            "Main Sewer": "Sewer and Drain Cleaning",
-            "Plumbing Services Long Island": "Cesspool Services Long Island",
-            "Emergency Plumber Long Island": "Emergency Cesspool Service Long Island",
-            "Free Plumbing Estimate": "Free Cesspool Estimate",
-            "Emergency Plumbing Service": "Emergency Cesspool Service",
-            "Licensed Plumbing Contractor": "Licensed Cesspool Company",
-            "Water Heater Repair": "Septic Tank Cleaning",
-            "Emergency Plumbing": "Emergency Cesspool Service",
-            "Residential Plumbing": "Residential Cesspool Services",
-            "Commercial Plumbing": "Commercial Cesspool Services",
-        }
+    cesspool_replacements = {
+        "Cesspool Professional Sewer": "Cesspool Services Long Island",
+        "Professional Sewer Drain": "Sewer and Drain Cleaning",
+        "Professional Sewer": "Cesspool Cleaning",
+        "Trap Repair": "Cesspool Repair",
+        "Drain Pump": "Cesspool Pumping",
+        "Repair Sewer": "Sewer Repair",
+        "Commercial Drainage": "Commercial Cesspool Services",
+        "Main Sewer": "Sewer and Drain Cleaning",
+        "Plumbing Services Long Island": "Cesspool Services Long Island",
+        "Emergency Plumber Long Island": "Emergency Cesspool Service Long Island",
+        "Free Plumbing Estimate": "Free Cesspool Estimate",
+        "Emergency Plumbing Service": "Emergency Cesspool Service",
+        "Licensed Plumbing Contractor": "Licensed Cesspool Company",
+        "Water Heater Repair": "Septic Tank Cleaning",
+        "Emergency Plumbing": "Emergency Cesspool Service",
+        "Residential Plumbing": "Residential Cesspool Services",
+        "Commercial Plumbing": "Commercial Cesspool Services",
+    }
 
-        for old, new in replacements.items():
-            html = html.replace(old, new)
+    roofing_replacements = {
+        "Drain Cleaning": "Roof Repair",
+        "Leak Repair": "Roof Leak Repair",
+        "Water Heater Repair": "Roof Replacement",
+        "Emergency Plumbing": "Emergency Roof Repair",
+        "Residential Plumbing": "Residential Roofing",
+        "Commercial Plumbing": "Commercial Roofing",
+        "Plumbing Services Long Island": "Roofing Contractor Long Island",
+        "Emergency Plumber Long Island": "Emergency Roof Repair Long Island",
+        "Free Plumbing Estimate": "Free Roofing Estimate",
+        "Licensed Plumbing Contractor": "Licensed Roofing Contractor",
+    }
 
-    if "longislandroofing.com" in lower or "liroofing.com" in lower or "roofing" in lower:
-        replacements = {
-            "Drain Cleaning": "Roof Repair",
-            "Leak Repair": "Roof Leak Repair",
-            "Water Heater Repair": "Roof Replacement",
-            "Emergency Plumbing": "Emergency Roof Repair",
-            "Residential Plumbing": "Residential Roofing",
-            "Commercial Plumbing": "Commercial Roofing",
-            "Plumbing Services Long Island": "Roofing Contractor Long Island",
-            "Emergency Plumber Long Island": "Emergency Roof Repair Long Island",
-            "Free Plumbing Estimate": "Free Roofing Estimate",
-            "Licensed Plumbing Contractor": "Licensed Roofing Contractor",
-        }
+    # Scoped per-card: these phrases are generic enough to appear on unrelated
+    # industries' cards too, so a whole-page replace used to leak roofing/cesspool
+    # wording onto other users' cards, making unrelated cards look identical.
+    card_start = "<!-- history-card:start -->"
+    card_end = "<!-- history-card:end -->"
 
-        for old, new in replacements.items():
-            html = html.replace(old, new)
+    if card_start in html and card_end in html:
+        segments = html.split(card_start)
+        rebuilt = [segments[0]]
+        for segment in segments[1:]:
+            card_part, sep, rest = segment.partition(card_end)
+            if not sep:
+                rebuilt.append(card_start + segment)
+                continue
+
+            card_lower = card_part.lower()
+
+            if "qualitycesspool.com" in card_lower or "jwcesspool.com" in card_lower:
+                for old, new in cesspool_replacements.items():
+                    card_part = card_part.replace(old, new)
+
+            if (
+                "longislandroofing.com" in card_lower
+                or "liroofing.com" in card_lower
+                or "roofing" in card_lower
+            ):
+                for old, new in roofing_replacements.items():
+                    card_part = card_part.replace(old, new)
+
+            rebuilt.append(card_start + card_part + card_end + rest)
+
+        html = "".join(rebuilt)
 
     cleanup_script = """
 <script>
