@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LEADME_GO="$HOME/.local/bin/leadme-go"
+STATE_DIR="$HOME/.local/state/leadme-bg"
+
+mkdir -p "$STATE_DIR"
+
+if [[ $# -eq 0 ]]; then
+  echo 'Usage: leadme-bg "task description"'
+  echo '       leadme-bg --lane deep "task description"'
+  echo '       leadme-bg status'
+  exit 1
+fi
+
+timestamp="$(date +%Y%m%d-%H%M%S)"
+log_file="$STATE_DIR/$timestamp.log"
+result_file="$STATE_DIR/$timestamp.result"
+pid_file="$STATE_DIR/$timestamp.pid"
+
+notify_windows() {
+  local title="$1"
+  local message="$2"
+
+  powershell.exe -NoProfile -NonInteractive -Command "
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    \$n = New-Object System.Windows.Forms.NotifyIcon
+    \$n.Icon = [System.Drawing.SystemIcons]::Information
+    \$n.BalloonTipTitle = '$title'
+    \$n.BalloonTipText = '$message'
+    \$n.Visible = \$true
+    \$n.ShowBalloonTip(8000)
+    Start-Sleep -Seconds 8
+    \$n.Dispose()
+  " >/dev/null 2>&1 || true
+}
+
+export -f notify_windows
+
+nohup bash -c '
+  log_file="$1"
+  result_file="$2"
+  shift 2
+
+  "$@" >"$log_file" 2>&1
+  exit_code=$?
+
+  if [[ "$exit_code" -eq 0 ]]; then
+    result="COMPLETE"
+    title="LeadMe Finished"
+    message="Task completed. Check the saved log."
+  else
+    result="STOPPED"
+    title="LeadMe Needs Attention"
+    message="Task stopped or needs review. Check the saved log."
+  fi
+
+  {
+    echo "result=$result"
+    echo "exit_code=$exit_code"
+    echo "finished_at=$(date -Iseconds)"
+    echo "log=$log_file"
+  } >"$result_file"
+
+  powershell.exe -NoProfile -NonInteractive -Command "
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    \$n = New-Object System.Windows.Forms.NotifyIcon
+    \$n.Icon = [System.Drawing.SystemIcons]::Information
+    \$n.BalloonTipTitle = '\''$title'\''
+    \$n.BalloonTipText = '\''$message'\''
+    \$n.Visible = \$true
+    \$n.ShowBalloonTip(8000)
+    Start-Sleep -Seconds 8
+    \$n.Dispose()
+  " >/dev/null 2>&1 || true
+' _ "$log_file" "$result_file" "$LEADME_GO" "$@" \
+  </dev/null >/dev/null 2>&1 &
+
+pid=$!
+echo "$pid" > "$pid_file"
+
+echo
+echo "LEADME BACKGROUND TASK STARTED"
+echo "  pid:    $pid"
+echo "  log:    $log_file"
+echo "  result: $result_file"
+echo
+echo "Your terminal is free."
+echo
+echo "Watch live:"
+echo "  tail -f \"$log_file\""
+echo
+echo "Check later:"
+echo "  leadme-bg-status"

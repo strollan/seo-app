@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="/mnt/c/Users/scott/ai-project/seo-app"
+COLLAB="$REPO/scripts/leadme-collab"
+SHIP="$REPO/scripts/leadme-ship"
+DEPLOY="$REPO/scripts/leadme-deploy"
+
+usage() {
+  cat <<'EOF'
+LeadMe — one-button LeadMeLeads workflow
+
+Coding:
+  leadme "Fix mobile spacing below Exports"
+  leadme --lane fast "Change the button label"
+  leadme --lane deep "Investigate identical history cards"
+
+Operations — no Claude:
+  leadme doctor
+  leadme status [task-id]
+  leadme inspect [task-id]
+  leadme resume [task-id]
+  leadme list
+  leadme abort [task-id]
+  leadme promote [task-id]
+  leadme ship <task-id> -m "Commit message"
+  leadme deploy
+  leadme deploy --check
+
+Lanes:
+  direct  Operational commands only; no implementer
+  fast    Focused changes; 4-minute Claude limit
+  deep    Investigation or broader logic; 10-minute Claude limit
+EOF
+}
+
+die() {
+  echo "[FAIL] $*" >&2
+  exit 1
+}
+
+classify_task() {
+  local task="${1,,}"
+
+  # Investigation, security, data, auth, and architecture work need room.
+  if [[ "$task" =~ audit|investigat|debug|diagnos|root[[:space:]]cause|database|schema|migration|auth|password|session|security|permission|role|deploy|production|multi-file|refactor|architecture|duplicate|identical|history ]]; then
+    echo "deep"
+    return
+  fi
+
+  # Most isolated V1 polish belongs in the fast lane.
+  echo "fast"
+}
+
+run_task() {
+  local lane="$1"
+  local task="$2"
+
+  case "$lane" in
+    fast)
+      echo "LEADME LANE: FAST"
+      echo "Claude limit: 240 seconds / \$1.25"
+      echo
+      LEADME_CLAUDE_TIMEOUT_SECONDS=240 \
+      LEADME_CLAUDE_MAX_BUDGET_USD=1.25 \
+      exec "$COLLAB" start "$task"
+      ;;
+
+    deep)
+      echo "LEADME LANE: DEEP"
+      echo "Claude limit: 600 seconds / \$2.50"
+      echo
+      LEADME_CLAUDE_TIMEOUT_SECONDS=600 \
+      LEADME_CLAUDE_MAX_BUDGET_USD=2.50 \
+      exec "$COLLAB" start "$task"
+      ;;
+
+    direct)
+      die "DIRECT is for operational commands such as status, inspect, ship and deploy—not natural-language code edits."
+      ;;
+
+    *)
+      die "unknown lane: $lane"
+      ;;
+  esac
+}
+
+cd "$REPO"
+
+[[ $# -gt 0 ]] || {
+  usage
+  exit 1
+}
+
+case "$1" in
+  -h|--help|help)
+    usage
+    ;;
+
+  doctor)
+    shift
+    exec "$COLLAB" doctor "$@"
+    ;;
+
+  status|inspect|resume|list|abort|promote)
+    command="$1"
+    shift
+    echo "LEADME LANE: DIRECT — no Claude"
+    echo
+    exec "$COLLAB" "$command" "$@"
+    ;;
+
+  ship)
+    shift
+    echo "LEADME LANE: DIRECT — ship pipeline"
+    echo
+    exec "$SHIP" "$@"
+    ;;
+
+  deploy)
+    shift
+    echo "LEADME LANE: DIRECT — deployment pipeline"
+    echo
+    exec "$DEPLOY" "$@"
+    ;;
+
+  --lane)
+    [[ $# -ge 3 ]] || die 'usage: leadme --lane fast|deep "task"'
+    lane="$2"
+    shift 2
+    task="$*"
+    run_task "$lane" "$task"
+    ;;
+
+  -*)
+    die "unknown option: $1"
+    ;;
+
+  *)
+    task="$*"
+    lane="$(classify_task "$task")"
+    echo "TASK CLASSIFIED: ${lane^^}"
+    run_task "$lane" "$task"
+    ;;
+esac
