@@ -68,10 +68,10 @@ run_task() {
 
     deep)
       echo "LEADME LANE: DEEP"
-      echo "Claude limit: 600 seconds / \$2.50"
+      echo "Claude limit: 1200 seconds / effectively uncapped"
       echo
-      LEADME_CLAUDE_TIMEOUT_SECONDS=600 \
-      LEADME_CLAUDE_MAX_BUDGET_USD=2.50 \
+      LEADME_CLAUDE_TIMEOUT_SECONDS=1200 \
+      LEADME_CLAUDE_MAX_BUDGET_USD=100.00 \
       exec "$COLLAB" start "$task"
       ;;
 
