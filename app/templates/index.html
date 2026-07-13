@@ -42,6 +42,7 @@ a {
 }
 
 .topbar {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -50,6 +51,26 @@ a {
     row-gap: 14px;
     padding: 20px 30px 18px;
     border-bottom: 1px solid rgba(191, 219, 254, 0.12);
+    overflow: hidden;
+}
+
+.topbar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("/static/images/header-mesh.png");
+    background-repeat: no-repeat;
+    background-position: left bottom;
+    background-size: cover;
+    opacity: 0.16;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.brand,
+.nav {
+    position: relative;
+    z-index: 1;
 }
 
 .brand {
@@ -554,6 +575,11 @@ a {
     .hero-grid {
         padding-left: 18px;
         padding-right: 18px;
+    }
+
+    .topbar::before {
+        opacity: 0.10;
+        background-position: center bottom;
     }
 
     .topbar {
