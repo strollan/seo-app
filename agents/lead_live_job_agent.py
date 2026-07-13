@@ -936,6 +936,16 @@ def run_job(job_id):
                 path = export.get("path") or ""
                 if path:
                     job["export_file"] = Path(path).name
+
+                    try:
+                        from agents.lead_dashboard_agent import record_export_owner
+                        record_export_owner(
+                            job["export_file"],
+                            owner_email=params.get("owner_email", ""),
+                            owner_username=params.get("owner_username", ""),
+                        )
+                    except Exception as exc:
+                        print(f"LEADBOT LIVE EXPORT OWNER RECORD ERROR: {exc}", flush=True)
             except Exception as e:
                 job["errors"].append(f"Export failed: {e}")
                 job["export_file"] = ""

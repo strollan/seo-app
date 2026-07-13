@@ -11795,7 +11795,13 @@ async def leadbot_delete_row_safe(request: Request):
 from fastapi.responses import HTMLResponse as LeadBotHTMLResponse
 from fastapi.responses import RedirectResponse as LeadBotRedirectResponse
 from fastapi.responses import FileResponse as LeadBotFileResponse
-from agents.lead_dashboard_agent import render_lead_dashboard, safe_export_file, _leadbot_export_visible_to_user
+from agents.lead_dashboard_agent import (
+    render_lead_dashboard,
+    safe_export_file,
+    _leadbot_export_visible_to_user,
+    is_valid_market,
+    MARKET_REQUIRED_MESSAGE,
+)
 
 # === LEADBOT EXPORT ACCESS WRAPPER START ===
 def leadbot_user_can_access_export(filename, request):
@@ -11936,6 +11942,11 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
 
     Used as a safety fallback when /lead-bot?file=... lands on the dashboard
     but the selected export rows are not handed into the page correctly.
+
+    Same login + ownership enforcement as /lead-bot/export/{filename}: this
+    route used to skip the ownership check entirely, which let any logged-in
+    user pull another user's export cards through the client-side fallback
+    loader just by knowing/guessing the filename.
     """
     try:
         user = auth_current_user(request)
@@ -11951,6 +11962,12 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
         path = safe_export_file(filename)
         if not path:
             return AuthHTMLResponse('<div class="empty">Selected export not found.</div>')
+
+        if not _leadbot_export_visible_to_user(path, current_user=user):
+            return AuthHTMLResponse(
+                '<div class="empty">Selected export not found.</div>',
+                status_code=403,
+            )
 
         rows = read_csv_rows(path, limit=100)
         return AuthHTMLResponse(lead_cards(rows, selected_name=path.name))
@@ -11987,6 +12004,12 @@ def leadbot_live_start(
             status_code=403,
         )
 
+    if not is_valid_market(market):
+        return HTMLResponse(
+            f"<h1>Bad Request</h1><p>{MARKET_REQUIRED_MESSAGE}</p>",
+            status_code=400,
+        )
+
     from agents.lead_live_job_agent import create_job
 
     owner_email = ""
@@ -12002,9 +12025,13 @@ def leadbot_live_start(
         owner_username = str(getattr(user, "username", "") or getattr(user, "email", "") or "").strip().lower()
         owner_role = str(getattr(user, "role", "") or "").strip().lower()
 
+    # The visible form no longer has an Industry field. Older job/query code
+    # still expects "industry", so fall back to the keyword the user typed.
+    industry_clean = str(industry or "").strip() or str(keyword or "").strip()
+
     job_id = create_job(
         {
-            "industry": industry,
+            "industry": industry_clean,
             "market": market,
             "keyword": keyword,
             "own_domain": own_domain,

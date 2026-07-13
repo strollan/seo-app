@@ -179,3 +179,4 @@ test_*.py
 !scripts/test_signup_protection.py
 !scripts/test_url_safety.py
 !scripts/test_leadbot_csrf_routes.py
+!scripts/test_lead_live_job_export_ownership.py

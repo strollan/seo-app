@@ -15,6 +15,21 @@ from agents.lead_reason_agent import build_lead_reason
 
 EXPORT_DIR = Path("exports")
 
+MARKET_REQUIRED_MESSAGE = "Enter a city, state, or ZIP code."
+
+
+def is_valid_market(value):
+    """
+    True if value is non-blank after stripping whitespace.
+
+    No format/geocoding validation is applied here on purpose -- the
+    existing search flow already accepts free-text city/state or ZIP input
+    (e.g. "Albany, NY", "10001", "Hoboken, NJ 07030") by passing it straight
+    through as a query/location string, so presence is the only thing that
+    needs to be enforced client- and server-side.
+    """
+    return bool(str(value or "").strip())
+
 
 
 
@@ -140,6 +155,55 @@ def _leadbot_export_owner_values(filename):
             pass
 
     return out
+
+
+def record_export_owner(filename, owner_email="", owner_username=""):
+    """
+    Write the export-ownership record for a completed scan, using the same
+    data/leadbot_export_owners.json format already read by
+    _leadbot_export_owner_values()/_leadbot_export_visible_to_user() (and
+    written by app.main.leadbot_mark_export_owner() for HTTP-driven export
+    paths). Takes explicit owner identity instead of an HTTP request so it
+    can be called from a background thread (e.g. a live scan job) that has
+    no request object.
+    """
+    import json
+    from datetime import datetime
+
+    filename = str(filename or "").strip()
+    if not filename:
+        return False
+
+    email = str(owner_email or "").strip()
+    username = str(owner_username or "").strip()
+
+    if not email and not username:
+        return False
+
+    try:
+        owner_dir = Path("data")
+        owner_dir.mkdir(parents=True, exist_ok=True)
+        owner_file = owner_dir / "leadbot_export_owners.json"
+
+        if owner_file.exists():
+            try:
+                data = json.loads(owner_file.read_text(encoding="utf-8") or "{}")
+            except Exception:
+                data = {}
+        else:
+            data = {}
+
+        data[filename] = {
+            "email": email,
+            "owner_username": username,
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        owner_file.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        return True
+    except Exception as exc:
+        print(f"LEADBOT EXPORT OWNER RECORD ERROR: {exc}", flush=True)
+        return False
 
 
 def _leadbot_export_visible_to_user(path, current_user=None):
@@ -981,6 +1045,12 @@ input {
     color: #64748b;
     font-size: 13px;
     line-height: 1.45;
+}
+.leadbot-field-error {
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 700;
+    margin: -3px 0 6px;
 }
 .file-list {
     display: grid;
@@ -3581,16 +3651,14 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
             <h2>Run Lead Finder</h2>
-            <form id="leadbotRunForm" action="/lead-bot/live-start" method="post">
+            <form id="leadbotRunForm" action="/lead-bot/live-start" method="post" novalidate>
                 <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
-                <label>Keyword</label>
-                <input name="keyword" value="">
+                <label for="leadbotKeywordInput">Keyword</label>
+                <input id="leadbotKeywordInput" name="keyword" value="" required>
 
-                <label>Market</label>
-                <input name="market" value="">
-
-                <label>Industry</label>
-                <input name="industry" value="">
+                <label for="leadbotMarketInput">City, State, or ZIP Code</label>
+                <input id="leadbotMarketInput" name="market" value="" placeholder="Albany, NY or 10001" required>
+                <p class="leadbot-field-error" id="leadbotMarketError" hidden>Enter a city, state, or ZIP code.</p>
 
                 <label>Own Domain</label>
                 <input name="own_domain" value="">
@@ -4933,9 +5001,17 @@ document.addEventListener("DOMContentLoaded", function () {
                 credentials: "same-origin"
             })
             .then(function (res) {
+                // 401/403/404 (denied, forbidden, missing) and any redirect
+                // (e.g. to /login) must never be treated as card content --
+                // only a real 200 direct response can be injected.
+                if (!res.ok || res.redirected) {
+                    return null;
+                }
                 return res.text();
             })
             .then(function (html) {
+                if (html === null) return;
+
                 html = String(html || "").trim();
 
                 if (!html || html.indexOf("Selected export not found") !== -1 || html.indexOf("Could not load selected export") !== -1) {
@@ -6130,175 +6206,15 @@ btn.dataset.busy = "1";
 <!-- LEADBOT CLEAN TWO CLICK DELETE CONFIRM END -->
 
 
-<!-- LEADBOT MARKET STATE HELPER START -->
-<script>
-(function () {
-    if (window.__leadbotMarketStateHelperInstalled) return;
-    window.__leadbotMarketStateHelperInstalled = true;
-
-    function installMarketHelper() {
-        const market =
-            document.querySelector('#leadbotMarket') ||
-            document.querySelector('input[name="market"]') ||
-            document.querySelector('input[name="location"]');
-
-        if (!market) return;
-
-        market.setAttribute("placeholder", "State is required for results");
-
-        if (market.dataset.marketHelperInstalled === "1") return;
-        market.dataset.marketHelperInstalled = "1";
-
-        const note = document.createElement("div");
-        note.className = "leadbot-market-state-helper";
-        note.textContent = "";
-
-        market.insertAdjacentElement("afterend", note);
-    }
-
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", installMarketHelper);
-    } else {
-        installMarketHelper();
-    }
-
-    setTimeout(installMarketHelper, 300);
-    setTimeout(installMarketHelper, 1000);
-})();
-</script>
-
-<style>
-.leadbot-market-state-helper {
-    display: none !important;
-}
-</style>
-<!-- LEADBOT MARKET STATE HELPER END -->
-
-
-<!-- LEADBOT MARKET STATE REQUIRED VALIDATION START -->
-<script>
-(function () {
-    if (window.__leadbotMarketStateRequiredValidationInstalled) return;
-    window.__leadbotMarketStateRequiredValidationInstalled = true;
-
-    const stateNames = [
-        "alabama","alaska","arizona","arkansas","california","colorado","connecticut","delaware",
-        "florida","georgia","hawaii","idaho","illinois","indiana","iowa","kansas","kentucky",
-        "louisiana","maine","maryland","massachusetts","michigan","minnesota","mississippi",
-        "missouri","montana","nebraska","nevada","new hampshire","new jersey","new mexico",
-        "new york","north carolina","north dakota","ohio","oklahoma","oregon","pennsylvania",
-        "rhode island","south carolina","south dakota","tennessee","texas","utah","vermont",
-        "virginia","washington","west virginia","wisconsin","wyoming"
-    ];
-
-    function hasState(value) {
-        const clean = String(value || "").trim();
-        if (!clean) return false;
-
-        const stateCodes = [
-            "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS",
-            "KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY",
-            "NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV",
-            "WI","WY","DC"
-        ];
-
-        const normalized = clean
-            .replace(/[.,]+$/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
-
-        const parts = normalized.split(" ");
-        const last = String(parts[parts.length - 1] || "").toUpperCase();
-
-        // Accept: Long Island NY, Long Island, NY, Santa Barbara CA, Santa Barbara, CA
-        if (stateCodes.includes(last)) return true;
-
-        const lower = normalized.toLowerCase();
-        return stateNames.some(function (state) {
-            return lower.endsWith(" " + state) || lower.endsWith(", " + state);
-        });
-    }
-
-    function installValidation() {
-        const form = document.getElementById("leadbotRunForm");
-        const market =
-            document.getElementById("leadbotMarket") ||
-            document.querySelector('input[name="market"]') ||
-            document.querySelector('input[name="location"]');
-
-        if (!form || !market) return;
-
-        if (form.dataset.marketStateValidationInstalled === "1") return;
-        form.dataset.marketStateValidationInstalled = "1";
-
-        let error = document.getElementById("leadbotMarketStateRequiredError");
-        if (!error) {
-            error = document.createElement("div");
-            error.id = "leadbotMarketStateRequiredError";
-            error.className = "leadbot-market-state-required-error";
-            error.textContent = "State is required for results. Example: Santa Barbara CA.";
-            error.style.display = "none";
-            market.insertAdjacentElement("afterend", error);
-        }
-
-        function clearError() {
-            market.classList.remove("leadbot-market-state-required-field-error");
-            error.style.display = "none";
-        }
-
-        function showError() {
-            market.classList.add("leadbot-market-state-required-field-error");
-            error.style.display = "block";
-            market.focus();
-        }
-
-        market.addEventListener("input", function () {
-            if (hasState(market.value)) clearError();
-        });
-
-        form.addEventListener("submit", function (event) {
-            if (hasState(market.value)) {
-                clearError();
-                return true;
-            }
-
-            event.preventDefault();
-            event.stopPropagation();
-            showError();
-            return false;
-        }, true);
-    }
-
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", installValidation);
-    } else {
-        installValidation();
-    }
-
-    setTimeout(installValidation, 300);
-    setTimeout(installValidation, 1000);
-})();
-</script>
-
-<style>
-.leadbot-market-state-required-error {
-    margin-top: 6px;
-    padding: 8px 10px;
-    border-radius: 10px;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    color: #9a3412;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 850;
-}
-
-.leadbot-market-state-required-field-error {
-    border-color: #f97316 !important;
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, .16) !important;
-}
-</style>
-<!-- LEADBOT MARKET STATE REQUIRED VALIDATION END -->
+<!-- LEADBOT MARKET STATE HELPER and LEADBOT MARKET STATE REQUIRED VALIDATION
+     blocks removed: both predate the Keyword + City/State/ZIP Code V1 form.
+     They overwrote the "Albany, NY or 10001" placeholder with an older,
+     now-stale prompt at runtime and enforced a competing submit-time rule
+     that required the location to end in a full US state name/abbreviation,
+     rejecting valid ZIP-only input (e.g. "10001"). The current
+     #leadbotMarketInput required/placeholder markup and the "LEADBOT FORCE
+     LIVE START SUBMIT" handler below are the single source of truth for
+     market validation. -->
 
 
 
@@ -6937,9 +6853,7 @@ btn.dataset.busy = "1";
         // combined values like: "restaurant miami fl 20260613 125938".
         var keyword = parsed.keyword || formValue([
             'input[name="keyword"]',
-            'input[name="industry"]',
-            '#leadbotKeyword',
-            '#leadbotIndustry'
+            '#leadbotKeyword'
         ]) || "Lead Search";
 
         var market = parsed.market || formValue([
@@ -8944,9 +8858,12 @@ body.leadbot-live-page button[data-action="block"] {
     }
 
     function buildLiveStartFormData(form) {
-        var industry = fieldValue(form, "industry", "");
+        var keyword = fieldValue(form, "keyword", "");
         var market = fieldValue(form, "market", "");
-        var keyword = fieldValue(form, "keyword", industry);
+        // The visible form no longer has an Industry field. The backend job
+        // schema still stores "industry", so derive it from the keyword the
+        // user actually typed rather than requiring a second input.
+        var industry = keyword;
 
         var limit = numberField(form, "limit", "leadbotLimitDisplay", 25);
         var perQueryLimit = numberField(form, "per_query_limit", "leadbotPerQueryLimitDisplay", 12);
@@ -8975,6 +8892,8 @@ body.leadbot-live-page button[data-action="block"] {
 
         var formData = new FormData(form);
         formData.set("keyword", keyword);
+        formData.set("market", market);
+        formData.set("industry", industry);
         formData.set("limit", String(limit));
         formData.set("per_query_limit", String(perQueryLimit));
         formData.set("max_queries", String(maxQueries));
@@ -8982,14 +8901,39 @@ body.leadbot-live-page button[data-action="block"] {
         return formData;
     }
 
+    function setMarketError(show) {
+        var errEl = document.getElementById("leadbotMarketError");
+        var marketEl = document.getElementById("leadbotMarketInput");
+        if (errEl) errEl.hidden = !show;
+        if (marketEl) marketEl.setAttribute("aria-invalid", show ? "true" : "false");
+    }
+
     function launchLiveStart(event) {
         var form = document.getElementById("leadbotRunForm");
         if (!form) return;
 
-        var industry = fieldValue(form, "industry", "");
+        var keyword = fieldValue(form, "keyword", "");
         var market = fieldValue(form, "market", "");
 
-        if (!industry || !market) {
+        setMarketError(!market);
+
+        if (!keyword || !market) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.stopImmediatePropagation) {
+                    event.stopImmediatePropagation();
+                }
+            }
+
+            var marketEl = document.getElementById("leadbotMarketInput");
+            var keywordEl = document.getElementById("leadbotKeywordInput");
+            if (!market && marketEl) {
+                marketEl.focus();
+            } else if (!keyword && keywordEl) {
+                keywordEl.focus();
+            }
+
             return;
         }
 
@@ -9022,6 +8966,15 @@ body.leadbot-live-page button[data-action="block"] {
             if (btn) {
                 btn.disabled = false;
                 btn.textContent = "Start Lead Finder Scan";
+            }
+        });
+    }
+
+    var marketInputEl = document.getElementById("leadbotMarketInput");
+    if (marketInputEl) {
+        marketInputEl.addEventListener("input", function () {
+            if (String(marketInputEl.value || "").trim()) {
+                setMarketError(false);
             }
         });
     }
