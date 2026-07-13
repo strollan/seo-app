@@ -1,7 +1,11 @@
 import time
 import os
+from urllib.parse import urljoin
+
 import requests
 import urllib3
+
+from agents.url_safety import validate_public_url, UnsafeURLError, DEFAULT_MAX_REDIRECTS
 
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -13,6 +17,7 @@ def crawl_log(message):
 
 CACHE_TTL_SECONDS = 60 * 60 * 6
 _CRAWL_CACHE = {}
+_BLOCKED_HTML = "<html><head><title>Blocked by site</title></head><body></body></html>"
 
 
 class CachedResponse:
@@ -27,6 +32,16 @@ class CachedResponse:
             raise requests.HTTPError(f"{self.status_code} Error for url: {self.url}")
 
 
+def _blocked_response(url, reason):
+    crawl_log(f"CRAWL BLOCKED ({reason}): {url}")
+    return CachedResponse(
+        url=url,
+        status_code=597,
+        text=_BLOCKED_HTML,
+        headers={},
+    )
+
+
 def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=False):
     """
     Backend crawl helper for report pages.
@@ -35,6 +50,8 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
     - prevent long hangs
     - cache repeated crawls for 6 hours
     - return a response-like object compatible with existing fetch_page_data()
+    - block SSRF: refuse to fetch (or follow a redirect to) anything that
+      isn't a public http(s) host -- see agents/url_safety.py
     """
 
     cache_key = url.strip()
@@ -69,16 +86,46 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
             headers={},
         )
     # === LEADBOT NON-HTTP CRAWL SKIP END ===
-    crawl_log(f"CRAWL CACHE MISS: {cache_key}")
 
     try:
-        response = requests.get(
-            url,
-            timeout=timeout,
-            headers=headers,
-            allow_redirects=allow_redirects,
-            verify=verify,
-        )
+        validate_public_url(raw_crawl_url)
+    except UnsafeURLError as exc:
+        return _blocked_response(raw_crawl_url, str(exc))
+
+    crawl_log(f"CRAWL CACHE MISS: {cache_key}")
+
+    current_url = raw_crawl_url
+    redirects_followed = 0
+
+    try:
+        while True:
+            response = requests.get(
+                current_url,
+                timeout=timeout,
+                headers=headers,
+                allow_redirects=False,
+                verify=verify,
+            )
+
+            if not (allow_redirects and response.is_redirect):
+                break
+
+            next_url = response.headers.get("Location")
+            if not next_url:
+                break
+
+            if redirects_followed >= DEFAULT_MAX_REDIRECTS:
+                return _blocked_response(url, "too many redirects")
+
+            next_url = urljoin(current_url, next_url)
+
+            try:
+                validate_public_url(next_url)
+            except UnsafeURLError as exc:
+                return _blocked_response(next_url, str(exc))
+
+            current_url = next_url
+            redirects_followed += 1
 
         payload = {
             "url": response.url,
@@ -101,7 +148,7 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
         return CachedResponse(
             url=url,
             status_code=599,
-            text="<html><head><title>Blocked by site</title></head><body></body></html>",
+            text=_BLOCKED_HTML,
             headers={},
         )
 
@@ -110,6 +157,6 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
         return CachedResponse(
             url=url,
             status_code=598,
-            text="<html><head><title>Blocked by site</title></head><body></body></html>",
+            text=_BLOCKED_HTML,
             headers={},
         )

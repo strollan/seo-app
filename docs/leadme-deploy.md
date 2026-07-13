@@ -13,6 +13,18 @@ smoke-test deploy loop for LeadMeLeads.
 Production target: `root@165.245.238.122:/var/www/leadmeleads`, systemd unit
 `leadmeleads`, live site `https://leadmeleads.com`.
 
+## Required production environment variable
+
+The real production `.env` (not committed, not `.env.example`) must contain:
+
+```
+APP_COOKIE_SECURE=true
+```
+
+Without it, the login session cookie is sent without the `Secure` flag even
+though the site is served over HTTPS. Confirm this is set on the droplet
+before/after any deploy that touches auth.
+
 ## Modes
 
 ### `leadme-deploy`

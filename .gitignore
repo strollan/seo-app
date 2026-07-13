@@ -177,3 +177,5 @@ test_*.py
 !scripts/test_history_gap_polish_scope.py
 !scripts/test_history_snapshot_uniqueness.py
 !scripts/test_signup_protection.py
+!scripts/test_url_safety.py
+!scripts/test_leadbot_csrf_routes.py

@@ -417,7 +417,7 @@ def leadbot_search_summary_row(rows, selected_name=""):
 
 
 
-def lead_cards(rows, selected_name=""):
+def lead_cards(rows, selected_name="", csrf_token=""):
     # === LEADBOT FILTER BLOCKED LEADS ON DASHBOARD RENDER START ===
     # Block button must survive refresh:
     # existing CSV rows stay on disk, but blocked domains should not render again.
@@ -640,10 +640,15 @@ def lead_cards(rows, selected_name=""):
         if selected_name and selected_name != "leadbot_master.csv" and domain:
             safe_file = html.escape(selected_name)
             safe_domain = html.escape(domain)
+            safe_csrf = html.escape(csrf_token or "")
             delete_html = (
-                f'<a class="lead-delete-one" title="Delete lead" '
-                f'href="/lead-bot/delete-row/{safe_file}?domain={safe_domain}" '
-                f'onclick="return confirm(&quot;Delete this lead from this export?&quot;);">Delete</a>'
+                f'<form class="lead-delete-one-form" method="post" '
+                f'action="/lead-bot/delete-row/{safe_file}" '
+                f'onsubmit="return confirm(&quot;Delete this lead from this export?&quot;);">'
+                f'<input type="hidden" name="domain" value="{safe_domain}">'
+                f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
+                f'<button type="submit" class="lead-delete-one">Delete</button>'
+                f'</form>'
             )
 
         cards.append(f"""
@@ -769,7 +774,7 @@ def _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=None):
 # === LEADBOT DATAFORSEO ADMIN UI FILTER END ===
 
 
-def render_lead_dashboard(file="", current_user=None):
+def render_lead_dashboard(file="", current_user=None, csrf_token=""):
     files = latest_csvs(current_user=current_user)
 
     selected = safe_export_file(file) if file else None
@@ -3570,12 +3575,14 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
     </div>
     <div class="app-nav-overlay" data-nav-overlay></div>
 <script src="/static/js/mobile-nav.js" defer></script>
+<script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__";</script>
 
 
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
             <h2>Run Lead Finder</h2>
-            <form id="leadbotRunForm" action="/lead-bot/live-start" method="get">
+            <form id="leadbotRunForm" action="/lead-bot/live-start" method="post">
+                <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
                 <label>Keyword</label>
                 <input name="keyword" value="">
 
@@ -5048,10 +5055,11 @@ btn.dataset.busy = "1";
                 btn.style.pointerEvents = "none";
 
                 fetch(btn.href, {
-                    method: "GET",
+                    method: "POST",
                     cache: "no-store",
                     credentials: "same-origin",
-                    redirect: "follow"
+                    redirect: "follow",
+                    body: new URLSearchParams({ csrf_token: window.LEADBOT_CSRF_TOKEN || "" })
                 })
                 .then(function () {
                     if (selectedFile() === filename) {
@@ -5393,10 +5401,11 @@ btn.dataset.busy = "1";
                 if (row) row.classList.add("is-removing");
 
                 fetch(href, {
-                    method: "GET",
+                    method: "POST",
                     credentials: "same-origin",
                     cache: "no-store",
-                    redirect: "follow"
+                    redirect: "follow",
+                    body: new URLSearchParams({ csrf_token: window.LEADBOT_CSRF_TOKEN || "" })
                 }).then(function () {
                     if (row) {
                         row.classList.remove("is-removing");
@@ -5522,7 +5531,7 @@ btn.dataset.busy = "1";
         }
 
         fetch(
-            "/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain),
+            "/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""),
             {
                 method: "POST",
                 cache: "no-store",
@@ -5647,10 +5656,11 @@ btn.dataset.busy = "1";
         }
 
         fetch(url, {
-            method: "GET",
+            method: "POST",
             cache: "no-store",
             credentials: "same-origin",
-            redirect: "follow"
+            redirect: "follow",
+            body: new URLSearchParams({ csrf_token: window.LEADBOT_CSRF_TOKEN || "" })
         })
         .then(function (res) {
             if (!res.ok) {
@@ -6057,7 +6067,7 @@ btn.dataset.busy = "1";
         btn.textContent = "Deleting...";
         btn.classList.add("is-deleting");
 
-        fetch("/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain), {
+        fetch("/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""), {
             method: "POST",
             credentials: "same-origin",
             cache: "no-store"
@@ -8933,11 +8943,10 @@ body.leadbot-live-page button[data-action="block"] {
         return value;
     }
 
-    function buildLiveStartUrl(form) {
+    function buildLiveStartFormData(form) {
         var industry = fieldValue(form, "industry", "");
         var market = fieldValue(form, "market", "");
         var keyword = fieldValue(form, "keyword", industry);
-        var ownDomain = fieldValue(form, "own_domain", "");
 
         var limit = numberField(form, "limit", "leadbotLimitDisplay", 25);
         var perQueryLimit = numberField(form, "per_query_limit", "leadbotPerQueryLimitDisplay", 12);
@@ -8964,16 +8973,13 @@ body.leadbot-live-page button[data-action="block"] {
             }
         }
 
-        var params = new URLSearchParams();
-        params.set("industry", industry);
-        params.set("market", market);
-        params.set("keyword", keyword);
-        params.set("own_domain", ownDomain);
-        params.set("limit", String(limit));
-        params.set("per_query_limit", String(perQueryLimit));
-        params.set("max_queries", String(maxQueries));
+        var formData = new FormData(form);
+        formData.set("keyword", keyword);
+        formData.set("limit", String(limit));
+        formData.set("per_query_limit", String(perQueryLimit));
+        formData.set("max_queries", String(maxQueries));
 
-        return "/lead-bot/live-start?" + params.toString();
+        return formData;
     }
 
     function launchLiveStart(event) {
@@ -9001,7 +9007,23 @@ body.leadbot-live-page button[data-action="block"] {
             btn.textContent = "Starting Lead Finder...";
         }
 
-        window.location.href = buildLiveStartUrl(form);
+        fetch("/lead-bot/live-start", {
+            method: "POST",
+            body: buildLiveStartFormData(form),
+        }).then(function (resp) {
+            if (resp.ok || resp.redirected) {
+                window.location.href = resp.url;
+                return;
+            }
+            alert("Could not start the scan (your session may have expired). Please refresh the page and try again.");
+            window.location.reload();
+        }).catch(function () {
+            alert("Could not start the scan. Please check your connection and try again.");
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = "Start Lead Finder Scan";
+            }
+        });
     }
 
     document.addEventListener("click", function (event) {
@@ -9094,11 +9116,12 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace("__SELECTED__", html.escape(selected_name))
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)
-    page = page.replace("__CARDS__", lead_cards(rows, selected_name=file))
+    page = page.replace("__CARDS__", lead_cards(rows, selected_name=file, csrf_token=csrf_token))
     page = page.replace(
         "__HISTORY_NAV_LINK__",
         '<a href="/history">History</a>\n                ' if current_user else "",
     )
+    page = page.replace("__CSRF_TOKEN__", html.escape(csrf_token or ""))
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
     return page

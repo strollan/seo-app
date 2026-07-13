@@ -39,6 +39,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from agents.crawl_agent import crawl_get
+from agents.url_safety import validate_public_url, UnsafeURLError
 
 from app.agent_service import run_agent_summary
 from app.competitor_agent import find_competitors
@@ -2289,6 +2290,21 @@ async def analyze(
     url_1: str = Form(...),
     url_2: str = Form(...),
 ):
+    import html as _html
+
+    for candidate_url in (url_1, url_2):
+        candidate_url = (candidate_url or "").strip()
+        if not candidate_url:
+            continue
+        try:
+            validate_public_url(candidate_url)
+        except UnsafeURLError as exc:
+            return HTMLResponse(
+                f"<h1>Could not scan this URL</h1><p>{_html.escape(str(exc))}</p>"
+                f"<p><a href='/compare'>Back to Compare</a></p>",
+                status_code=400,
+            )
+
     site = fetch_page_data(url_1)
     # Auto-select a real business competitor if no competitor URL was provided.
     # Live SERP stays protected by USE_LIVE_SERP in the Serper/client layer.
@@ -11642,7 +11658,7 @@ async def leadbot_dataforseo_toggle(request: AuthRequest):
 
 
 # === LEADBOT SAFE DELETE ROW ROUTE START ===
-@app.api_route("/lead-bot/delete-row-safe", methods=["GET", "POST"])
+@app.api_route("/lead-bot/delete-row-safe", methods=["POST"])
 async def leadbot_delete_row_safe(request: Request):
     """
     Safe LeadBot row delete endpoint.
@@ -11665,17 +11681,21 @@ async def leadbot_delete_row_safe(request: Request):
         return value
 
     try:
+        user = auth_current_user(request)
+        if not user:
+            return JSONResponse({"ok": False, "error": "Login required."}, status_code=401)
+
         params = dict(request.query_params)
 
-        if request.method.upper() == "POST":
-            try:
-                form = await request.form()
-                params.update(dict(form))
-            except Exception:
-                pass
+        try:
+            form = await request.form()
+            params.update(dict(form))
+        except Exception:
+            pass
 
         filename = str(params.get("filename") or params.get("file") or "").strip()
         domain = clean_domain(params.get("domain") or "")
+        csrf_token = str(params.get("csrf_token") or "").strip()
 
         if not filename:
             return JSONResponse(
@@ -11695,6 +11715,18 @@ async def leadbot_delete_row_safe(request: Request):
             return JSONResponse(
                 {"ok": False, "error": "Invalid filename."},
                 status_code=400,
+            )
+
+        if not leadbot_user_can_access_export(safe_name, request):
+            return JSONResponse(
+                {"ok": False, "error": "You can only edit your own Lead Finder exports."},
+                status_code=403,
+            )
+
+        if not _csrf_token_valid(request, csrf_token):
+            return JSONResponse(
+                {"ok": False, "error": "Invalid or missing CSRF token."},
+                status_code=403,
             )
 
         export_path = Path("exports") / safe_name
@@ -11792,7 +11824,8 @@ from pathlib import Path as LeadBotPath
 @app.get("/lead-bot", response_class=LeadBotHTMLResponse)
 def lead_bot_dashboard(request: AuthRequest, file: str = ""):
     user = auth_current_user(request)
-    return render_lead_dashboard(file, current_user=user)
+    csrf_token = _get_or_create_csrf_token(request) if user else ""
+    return render_lead_dashboard(file, current_user=user, csrf_token=csrf_token)
 
 
 @app.get("/lead-bot/run")
@@ -11927,17 +11960,18 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
         return AuthHTMLResponse('<div class="empty">Could not load selected export.</div>')
 
 
-@app.get("/lead-bot/live-start")
+@app.post("/lead-bot/live-start")
 def leadbot_live_start(
     request: AuthRequest,
-    industry: str = "",
-    market: str = "",
-    keyword: str = "",
-    own_domain: str = "",
-    limit: int = 50,
-    per_batch: int = 8,
-    per_query_limit: int = 5,
-    max_queries: int = 5,
+    industry: str = AuthForm(""),
+    market: str = AuthForm(""),
+    keyword: str = AuthForm(""),
+    own_domain: str = AuthForm(""),
+    limit: int = AuthForm(50),
+    per_batch: int = AuthForm(8),
+    per_query_limit: int = AuthForm(5),
+    max_queries: int = AuthForm(5),
+    csrf_token: str = AuthForm(""),
 ):
     try:
         user = auth_current_user(request)
@@ -11946,6 +11980,12 @@ def leadbot_live_start(
 
     if not user:
         return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     from agents.lead_live_job_agent import create_job
 
@@ -13612,8 +13652,13 @@ def leadbot_enrich_this_scan(filename: str, request: AuthRequest):
 # === LEADBOT RAW FILE AUTO ENRICH REDIRECT START ===
 
 
-@app.get("/lead-bot/delete-row/{filename}")
-def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = ""):
+@app.post("/lead-bot/delete-row/{filename}")
+def leadbot_delete_row_route(
+    filename: str,
+    request: AuthRequest,
+    domain: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
     import csv
     from pathlib import Path
 
@@ -13629,6 +13674,12 @@ def leadbot_delete_row_route(filename: str, request: AuthRequest, domain: str = 
     if not leadbot_user_can_access_export(safe_name, request):
         return LeadBotHTMLResponse(
             "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
+            status_code=403,
+        )
+
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
             status_code=403,
         )
 
@@ -14938,8 +14989,8 @@ def leadbot_debug_complete_addresses(filename: str, request: AuthRequest):
 
 
 # === LEADBOT SAFE OVERRIDE DELETE EXPORT ROUTE START ===
-@app.get("/lead-bot/delete-export/{filename}")
-def leadbot_delete_export(filename: str, request: AuthRequest):
+@app.post("/lead-bot/delete-export/{filename}")
+def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str = AuthForm("")):
     import json
     import re
     from pathlib import Path
@@ -14957,6 +15008,12 @@ def leadbot_delete_export(filename: str, request: AuthRequest):
     # Standard user may delete only owned/visible export.
     if not _leadbot_export_visible_to_user(target, current_user=user):
         return LeadBotHTMLResponse("Forbidden", status_code=403)
+
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
 
     export_dir = Path("exports").resolve()
     names_to_delete = set()
