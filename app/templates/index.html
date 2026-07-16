@@ -161,6 +161,13 @@ a {
     margin-top: 28px;
 }
 
+.beta-note {
+    margin-top: 14px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.68);
+    max-width: 46ch;
+}
+
 .btn {
     display: inline-flex;
     align-items: center;
@@ -685,6 +692,10 @@ a {
                     <a class="btn btn-primary" href="/lead-bot">Open Lead Finder</a>
                     <a class="btn btn-secondary" href="/compare">Compare Websites</a>
                 </div>
+
+                {% if not user %}
+                <p class="beta-note">No account required for beta testing. Guest access is limited, and your contact information is not required.</p>
+                {% endif %}
 
                 <div class="mini-proof">
                     <div class="proof-card">

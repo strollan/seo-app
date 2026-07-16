@@ -3651,6 +3651,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 <div class="layout">
         <aside class="panel" id="run-lead-bot">
             <h2>Run Lead Finder</h2>
+            __GUEST_NOTE__
             <form id="leadbotRunForm" action="/lead-bot/live-start" method="post" novalidate>
                 <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
                 <label for="leadbotKeywordInput">Keyword</label>
@@ -9075,6 +9076,17 @@ body.leadbot-live-page button[data-action="block"] {
         '<a href="/history">History</a>\n                ' if current_user else "",
     )
     page = page.replace("__CSRF_TOKEN__", html.escape(csrf_token or ""))
+    page = page.replace(
+        "__GUEST_NOTE__",
+        ""
+        if current_user
+        else (
+            '<p class="leadbot-guest-note" style="margin:0 0 16px;color:#64748b;'
+            'font-size:12.5px;line-height:1.5;">No account required for beta '
+            "testing. Guest access is limited, and your contact information is "
+            "not required.</p>"
+        ),
+    )
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
     return page

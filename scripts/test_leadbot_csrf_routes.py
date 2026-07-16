@@ -123,7 +123,17 @@ class LiveStartCsrfTests(LeadBotCsrfRouteTestCase):
         self.assertEqual(resp.headers["location"], "/lead-bot/live/job-123")
         mock_create_job.assert_called_once()
 
-    def test_logged_out_post_redirects_to_login_without_starting_a_scan(self):
+    def test_logged_out_post_without_guest_cookie_is_rejected_without_starting_a_scan(self):
+        """
+        Pre-guest-mode this asserted an unconditional redirect to /login for
+        any logged-out POST. Limited guest beta testing (see
+        agents.guest_session_agent / scripts/test_guest_beta_access.py) now
+        intentionally allows a logged-out scan when a valid guest CSRF
+        cookie pair is present. A request with no guest cookie at all (as
+        here) still cannot start a scan -- it now fails CSRF verification
+        (403) instead of being redirected to login, since anonymous access
+        is no longer categorically blocked.
+        """
         with mock.patch("agents.lead_live_job_agent.create_job") as mock_create_job:
             resp = self.client.post(
                 "/lead-bot/live-start",
@@ -131,8 +141,7 @@ class LiveStartCsrfTests(LeadBotCsrfRouteTestCase):
                 follow_redirects=False,
             )
 
-        self.assertEqual(resp.status_code, 303)
-        self.assertEqual(resp.headers["location"], "/login?next=/lead-bot")
+        self.assertEqual(resp.status_code, 403)
         mock_create_job.assert_not_called()
 
 

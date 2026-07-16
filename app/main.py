@@ -10426,6 +10426,24 @@ from fastapi.responses import RedirectResponse as AuthRedirectResponse
 AUTH_COOKIE_NAME = "vast_session"
 # === AUTH COOKIE COMPAT END ===
 
+# === ACCOUNT PRIVACY NOTE START ===
+# Shown under the login and create-account forms. Every sentence here is
+# checked against the actual implementation (see the guest-mode audit
+# report): passwords are one-way PBKDF2-HMAC-SHA256 hashed (never stored or
+# logged in plaintext), email is used only for login lookup and the
+# password-reset SMTP send in app.main._send_reset_email (no marketing/
+# analytics/third-party integration reads it), and there is currently no
+# self-service account-deletion feature -- so that sentence intentionally
+# does not promise one.
+_ACCOUNT_PRIVACY_NOTE = (
+    "Your information stays private. We use your email only to provide account "
+    "access, password recovery, and essential service messages. We do not sell "
+    "your information or add testers to marketing lists. Account deletion is not "
+    "yet available as a self-service feature; this is planned as a follow-up "
+    "improvement."
+)
+# === ACCOUNT PRIVACY NOTE END ===
+
 
 
 
@@ -10607,6 +10625,15 @@ button {{
     font-weight: 800;
     text-decoration: none;
 }}
+.auth-privacy-note {{
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 12.5px;
+    line-height: 1.55;
+    text-align: center;
+}}
 {_PASSWORD_TOGGLE_STYLE}
 @media (max-width: 700px) {{
     body {{
@@ -10689,6 +10716,7 @@ button {{
             <a href="/forgot-password">Forgot password?</a> &nbsp;|&nbsp;
             <a href="/create-account">Create Account</a>
         </div>
+        <p class="auth-privacy-note">{_ACCOUNT_PRIVACY_NOTE}</p>
     </form>
 {_PASSWORD_TOGGLE_SCRIPT}
 </body>
@@ -10848,6 +10876,15 @@ button {{
     font-weight: 800;
     text-decoration: none;
 }}
+.auth-privacy-note {{
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+    color: #64748b;
+    font-size: 12.5px;
+    line-height: 1.55;
+    text-align: center;
+}}
 .small-note {{
     margin-top: 10px;
     color: #64748b;
@@ -10956,6 +10993,7 @@ button {{
         <div class="auth-links">
             <a href="/login">Log In</a> &nbsp;|&nbsp; <a href="/">Back to Home</a>
         </div>
+        <p class="auth-privacy-note">{_ACCOUNT_PRIVACY_NOTE}</p>
     </form>
 {_PASSWORD_TOGGLE_SCRIPT}
 </body>
@@ -11803,6 +11841,74 @@ from agents.lead_dashboard_agent import (
     MARKET_REQUIRED_MESSAGE,
 )
 
+# === GUEST BETA TESTING SUPPORT START ===
+# See agents.guest_session_agent for the full design note. Guests never get
+# a users/sessions row; they are identified only by an unpredictable,
+# short-lived cookie pair (identity + stateless double-submit CSRF) used to
+# scope a small scan-rate limit and to let a guest view only the live job(s)
+# they personally started.
+from agents.guest_session_agent import (
+    GUEST_ID_COOKIE,
+    GUEST_CSRF_COOKIE,
+    GUEST_COOKIE_MAX_AGE_SECONDS,
+    new_guest_id,
+    new_guest_csrf_value,
+    guest_csrf_valid,
+    guest_scan_is_rate_limited,
+    guest_scan_record_attempt,
+    clamp_guest_scan_params,
+    job_belongs_to_guest,
+)
+
+
+def _leadbot_client_host(request) -> str:
+    try:
+        return request.client.host if request.client else ""
+    except Exception:
+        return ""
+
+
+def _ensure_guest_cookies(request):
+    """
+    Return (guest_id, guest_csrf, cookies_to_set) for an unauthenticated
+    visitor. Reuses the existing guest cookie pair if present; otherwise
+    mints a new one. cookies_to_set is a list of (name, value) pairs the
+    caller must set on the outgoing response only when a new pair was
+    minted (an existing valid pair is left untouched).
+    """
+    guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
+    guest_csrf = request.cookies.get(GUEST_CSRF_COOKIE, "")
+    cookies_to_set = []
+
+    if not guest_id:
+        guest_id = new_guest_id()
+        guest_csrf = new_guest_csrf_value()
+        cookies_to_set.append((GUEST_ID_COOKIE, guest_id))
+        cookies_to_set.append((GUEST_CSRF_COOKIE, guest_csrf))
+    elif not guest_csrf:
+        # Guest id survived but the CSRF half didn't (e.g. cleared
+        # individually) -- reissue just the CSRF cookie.
+        guest_csrf = new_guest_csrf_value()
+        cookies_to_set.append((GUEST_CSRF_COOKIE, guest_csrf))
+
+    return guest_id, guest_csrf, cookies_to_set
+
+
+def _set_guest_cookies(response, cookies_to_set):
+    from agents.auth_agent import cookie_secure_enabled
+
+    for name, value in cookies_to_set:
+        response.set_cookie(
+            name,
+            value,
+            httponly=True,
+            secure=cookie_secure_enabled(),
+            samesite="lax",
+            max_age=GUEST_COOKIE_MAX_AGE_SECONDS,
+            path="/",
+        )
+# === GUEST BETA TESTING SUPPORT END ===
+
 # === LEADBOT EXPORT ACCESS WRAPPER START ===
 def leadbot_user_can_access_export(filename, request):
     """
@@ -11830,8 +11936,22 @@ from pathlib import Path as LeadBotPath
 @app.get("/lead-bot", response_class=LeadBotHTMLResponse)
 def lead_bot_dashboard(request: AuthRequest, file: str = ""):
     user = auth_current_user(request)
-    csrf_token = _get_or_create_csrf_token(request) if user else ""
-    return render_lead_dashboard(file, current_user=user, csrf_token=csrf_token)
+    guest_cookies_to_set = []
+
+    if user:
+        csrf_token = _get_or_create_csrf_token(request)
+    else:
+        # Guest beta testing: no login required to view the Lead Finder
+        # input page. A guest CSRF cookie pair is issued here (if the
+        # visitor doesn't already have one) so the scan-start form below
+        # can be submitted safely without an account.
+        _guest_id, guest_csrf, guest_cookies_to_set = _ensure_guest_cookies(request)
+        csrf_token = guest_csrf
+
+    html_content = render_lead_dashboard(file, current_user=user, csrf_token=csrf_token)
+    response = LeadBotHTMLResponse(html_content)
+    _set_guest_cookies(response, guest_cookies_to_set)
+    return response
 
 
 @app.get("/lead-bot/run")
@@ -11995,14 +12115,37 @@ def leadbot_live_start(
     except Exception:
         user = None
 
-    if not user:
-        return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+    guest_id = ""
 
-    if not _csrf_token_valid(request, csrf_token):
-        return HTMLResponse(
-            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
-            status_code=403,
-        )
+    if user:
+        if not _csrf_token_valid(request, csrf_token):
+            return HTMLResponse(
+                "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+                status_code=403,
+            )
+    else:
+        # Guest beta testing: allow a small, rate-limited scan with no
+        # account. CSRF is verified via the guest double-submit cookie
+        # pair (agents.guest_session_agent) instead of the DB-backed
+        # session CSRF used for logged-in users, since guests have no
+        # session row to hang a server-side CSRF hash off of.
+        guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
+        guest_csrf_cookie = request.cookies.get(GUEST_CSRF_COOKIE, "")
+
+        if not guest_csrf_valid(guest_csrf_cookie, csrf_token):
+            return HTMLResponse(
+                "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+                status_code=403,
+            )
+
+        client_host = _leadbot_client_host(request)
+        if guest_scan_is_rate_limited(client_host, guest_id):
+            return HTMLResponse(
+                "<h1>Too Many Requests</h1>"
+                "<p>Guest scan limit reached for now. Create a free account to keep "
+                "testing, or try again later.</p>",
+                status_code=429,
+            )
 
     if not is_valid_market(market):
         return HTMLResponse(
@@ -12016,34 +12159,47 @@ def leadbot_live_start(
     owner_username = ""
     owner_role = ""
 
-    if isinstance(user, dict):
-        owner_email = str(user.get("email") or user.get("username") or "").strip().lower()
-        owner_username = str(user.get("username") or user.get("email") or "").strip().lower()
-        owner_role = str(user.get("role") or "").strip().lower()
-    else:
-        owner_email = str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip().lower()
-        owner_username = str(getattr(user, "username", "") or getattr(user, "email", "") or "").strip().lower()
-        owner_role = str(getattr(user, "role", "") or "").strip().lower()
+    if user:
+        if isinstance(user, dict):
+            owner_email = str(user.get("email") or user.get("username") or "").strip().lower()
+            owner_username = str(user.get("username") or user.get("email") or "").strip().lower()
+            owner_role = str(user.get("role") or "").strip().lower()
+        else:
+            owner_email = str(getattr(user, "email", "") or getattr(user, "username", "") or "").strip().lower()
+            owner_username = str(getattr(user, "username", "") or getattr(user, "email", "") or "").strip().lower()
+            owner_role = str(getattr(user, "role", "") or "").strip().lower()
 
     # The visible form no longer has an Industry field. Older job/query code
     # still expects "industry", so fall back to the keyword the user typed.
     industry_clean = str(industry or "").strip() or str(keyword or "").strip()
 
-    job_id = create_job(
-        {
-            "industry": industry_clean,
-            "market": market,
-            "keyword": keyword,
-            "own_domain": own_domain,
-            "limit": limit,
-            "per_batch": per_batch,
-            "per_query_limit": per_query_limit,
-            "max_queries": max_queries,
-            "owner_email": owner_email,
-            "owner_username": owner_username,
-            "owner_role": owner_role,
-        }
-    )
+    job_params = {
+        "industry": industry_clean,
+        "market": market,
+        "keyword": keyword,
+        "own_domain": own_domain,
+        "owner_email": owner_email,
+        "owner_username": owner_username,
+        "owner_role": owner_role,
+    }
+
+    if user:
+        job_params["limit"] = limit
+        job_params["per_batch"] = per_batch
+        job_params["per_query_limit"] = per_query_limit
+        job_params["max_queries"] = max_queries
+    else:
+        g_limit, g_per_batch, g_per_query_limit, g_max_queries = clamp_guest_scan_params(
+            limit, per_batch, per_query_limit, max_queries
+        )
+        job_params["limit"] = g_limit
+        job_params["per_batch"] = g_per_batch
+        job_params["per_query_limit"] = g_per_query_limit
+        job_params["max_queries"] = g_max_queries
+        job_params["guest_id"] = guest_id
+        guest_scan_record_attempt(_leadbot_client_host(request), guest_id)
+
+    job_id = create_job(job_params)
 
     return AuthRedirectResponse(url=f"/lead-bot/live/{job_id}", status_code=303)
 
@@ -12055,15 +12211,20 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
     except Exception:
         user = None
 
-    if not user:
-        return {"status": "auth_required", "message": "Login required."}
-
     from agents.lead_live_job_agent import read_job
 
     job = read_job(job_id)
 
     if not job:
         return {"status": "missing", "message": "Job not found.", "leads": []}
+
+    if not user:
+        # Guest beta testing: a guest may only poll a job their own guest
+        # session started (matched via the unpredictable job_id plus the
+        # job's stored guest_id, never a user-supplied identifier).
+        guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
+        if not job_belongs_to_guest(job, guest_id):
+            return {"status": "auth_required", "message": "Login required."}
 
     return job
 
@@ -12077,10 +12238,13 @@ def leadbot_live_cancel(job_id: str, request: AuthRequest):
     except Exception:
         user = None
 
-    if not user:
-        return {"status": "auth_required", "message": "Login required."}
+    from agents.lead_live_job_agent import read_job, cancel_job
 
-    from agents.lead_live_job_agent import cancel_job
+    if not user:
+        # Guest beta testing: same job-ownership match as live-status.
+        guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
+        if not job_belongs_to_guest(read_job(job_id), guest_id):
+            return {"status": "auth_required", "message": "Login required."}
 
     job = cancel_job(job_id)
 
@@ -12260,7 +12424,16 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
         user = None
 
     if not user:
-        return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+        # Guest beta testing: same job-ownership match as live-status /
+        # live-cancel. A guest may view only the live scan their own guest
+        # session started.
+        from agents.lead_live_job_agent import read_job as _leadbot_read_job_for_guest_check
+
+        guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
+        if not job_belongs_to_guest(_leadbot_read_job_for_guest_check(job_id), guest_id):
+            return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+
+    is_guest_js = "true" if not user else "false"
 
     return AuthHTMLResponse(f"""
 <!doctype html>
@@ -12689,6 +12862,15 @@ body.leadbot-live-final .live-progress-bar {{
         <p id="exportWrap" style="display:none; margin:18px 0 0; text-align:center;">
             <a id="exportLink" href="/lead-bot/live-dashboard/{job_id}" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:12px;background:#1e3a8a;color:#fff!important;font-weight:900;text-decoration:none;box-shadow:0 8px 18px rgba(30,58,138,.22);">Open Desktop</a>
         </p>
+
+        <div id="guestSavePrompt" style="display:none; margin:18px 0 0; padding:18px 20px; background:#fff7ed; border:1px solid #fed7aa; border-radius:16px; text-align:center;">
+            <h3 style="margin:0 0 8px; font-size:19px; color:#0f172a;">Want to save this report?</h3>
+            <p style="margin:0 0 14px; color:#475569;">Create an account to keep your results, access them later, and manage future scans.</p>
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <a href="/create-account?next=/lead-bot" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:12px;background:#1e3a8a;color:#fff!important;font-weight:900;text-decoration:none;">Create Account</a>
+                <button type="button" id="guestContinueBtn" style="padding:11px 18px;border-radius:12px;background:#e2e8f0;color:#0f172a;font-weight:900;border:0;cursor:pointer;">Continue Without Saving</button>
+            </div>
+        </div>
     </section>
 
     <section class="leads" id="leads"></section>
@@ -12698,9 +12880,23 @@ body.leadbot-live-final .live-progress-bar {{
 
 <script>
 const jobId = "{job_id}";
+const IS_GUEST = {is_guest_js};
+
+function showGuestSavePrompt() {{
+    const prompt = document.getElementById("guestSavePrompt");
+    if (prompt) prompt.style.display = "block";
+}}
 
 const cancelScanBtn = document.getElementById("cancelScanBtn");
 const cancelNote = document.getElementById("cancelNote");
+
+const guestContinueBtn = document.getElementById("guestContinueBtn");
+if (guestContinueBtn) {{
+    guestContinueBtn.addEventListener("click", function () {{
+        const prompt = document.getElementById("guestSavePrompt");
+        if (prompt) prompt.style.display = "none";
+    }});
+}}
 
 async function cancelScan() {{
     if (!cancelScanBtn) return;
@@ -12921,6 +13117,8 @@ async function poll() {{
                 if (liveLine1) liveLine1.textContent = "Scan complete. Your export is ready.";
                 if (liveLine2) liveLine2.textContent = "Search complete.";
                 if (liveLine3) liveLine3.textContent = "Dashboard is ready.";
+
+                if (IS_GUEST) showGuestSavePrompt();
             }}
         }}
 
@@ -12935,7 +13133,13 @@ async function poll() {{
             (job.export && (job.export.filename || job.export.file || job.export.path)) ||
             "";
 
-        if (exportFileRaw) {{
+        // Guests never see the "Open Desktop" link: it points into the
+        // file-based export dashboard, which is intentionally
+        // account-required (guest scans stay unowned/hidden there, same as
+        // any other unowned export -- see
+        // agents.lead_dashboard_agent._leadbot_export_visible_to_user).
+        // Guests already see their full results as cards on this page.
+        if (!IS_GUEST && exportFileRaw) {{
             const exportFile = String(exportFileRaw).split(/[\\/]/).pop();
             const dashboardUrl = `/lead-bot?file=${{encodeURIComponent(exportFile)}}#results`;
             const exportWrap = document.getElementById("exportWrap");
@@ -12954,7 +13158,7 @@ async function poll() {{
                 window.location.href = dashboardUrl;
                 return false;
             }};
-        }} else if (job.status === "done") {{
+        }} else if (!IS_GUEST && job.status === "done") {{
             const exportWrap = document.getElementById("exportWrap");
             const exportLink = document.getElementById("exportLink");
 
