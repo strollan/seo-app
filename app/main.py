@@ -56,8 +56,11 @@ if os.path.isdir(static_dir):
 
 
 reports_static_dir = os.path.join(os.path.dirname(BASE_DIR), "reports")
-if os.path.isdir(reports_static_dir):
-    app.mount("/reports", StaticFiles(directory=reports_static_dir), name="reports")
+# Not mounted as a public StaticFiles dir: reports/history.json and
+# reports/saved/*.html carry other users' site/competitor URLs and full
+# report content. /reports/saved/{filename} below serves individual saved
+# reports only to their owner (or an admin), the same ownership pattern
+# used by /lead-bot/export/{filename}.
 
 
 def location_terms_file_path() -> str:
@@ -1790,6 +1793,45 @@ def _login_required_user_or_response(request: Request):
         return None, RedirectResponse(url="/login", status_code=303)
 
     return user, None
+
+
+@app.get("/reports/saved/{filename}")
+def view_saved_report(filename: str, request: Request):
+    """
+    Serves one saved report snapshot to its owner (or an admin) only.
+    Replaces the old public StaticFiles mount at /reports -- filenames here
+    match the saved_report value already stored in history.json entries, so
+    history.html's "View Saved Report" link needs no change.
+    """
+    from fastapi.responses import FileResponse
+
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+
+    safe_name = os.path.basename(filename)
+    saved_dir = os.path.realpath(os.path.join(reports_dir_path(), "saved"))
+    candidate = os.path.realpath(os.path.join(saved_dir, safe_name))
+
+    if os.path.dirname(candidate) != saved_dir or not os.path.isfile(candidate):
+        return HTMLResponse("<h1>Report not found</h1>", status_code=404)
+
+    is_admin = _admin_role_from_user(user) == "admin"
+
+    if not is_admin:
+        history = load_report_history()
+        owns_it = any(
+            entry.get("saved_report") == f"/reports/saved/{safe_name}"
+            and entry.get("owner_id") == user["id"]
+            for entry in history
+        )
+        if not owns_it:
+            return HTMLResponse(
+                "<h1>Forbidden</h1><p>You can only view your own saved reports.</p>",
+                status_code=403,
+            )
+
+    return FileResponse(candidate, media_type="text/html")
 
 
 # CSRF token state is stored server-side in the sessions table
