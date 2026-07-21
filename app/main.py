@@ -2054,6 +2054,57 @@ async def report_history(request: Request):
 
 
 
+# /compare and POST /analyze are public (no login required). Anonymous use of
+# /analyze does live external fetches (and, indirectly, competitor search),
+# so it is throttled the same in-process, IP-keyed sliding-window way as
+# signup above -- not persisted, doesn't need to survive restarts or be
+# shared across servers for the current single-server deployment. Logged-in
+# users are exempt: they're already identified via their own session.
+ANALYZE_RATE_LIMIT_MAX_ATTEMPTS = 10
+ANALYZE_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+
+_analyze_rate_limit_lock = threading.Lock()
+_analyze_rate_limit_attempts = {}
+
+
+def _analyze_rate_limit_key(client_host):
+    return str(client_host or "").strip()[:80] or "unknown"
+
+
+def analyze_is_rate_limited(client_host):
+    key = _analyze_rate_limit_key(client_host)
+    cutoff = time.time() - ANALYZE_RATE_LIMIT_WINDOW_SECONDS
+
+    with _analyze_rate_limit_lock:
+        attempts = [t for t in _analyze_rate_limit_attempts.get(key, []) if t >= cutoff]
+        _analyze_rate_limit_attempts[key] = attempts
+        return len(attempts) >= ANALYZE_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def analyze_record_attempt(client_host):
+    key = _analyze_rate_limit_key(client_host)
+    now = time.time()
+    cutoff = now - ANALYZE_RATE_LIMIT_WINDOW_SECONDS
+
+    with _analyze_rate_limit_lock:
+        attempts = [t for t in _analyze_rate_limit_attempts.get(key, []) if t >= cutoff]
+        attempts.append(now)
+        _analyze_rate_limit_attempts[key] = attempts
+
+
+def analyze_retry_after_seconds(client_host):
+    key = _analyze_rate_limit_key(client_host)
+    cutoff = time.time() - ANALYZE_RATE_LIMIT_WINDOW_SECONDS
+
+    with _analyze_rate_limit_lock:
+        attempts = [t for t in _analyze_rate_limit_attempts.get(key, []) if t >= cutoff]
+        if not attempts:
+            return ANALYZE_RATE_LIMIT_WINDOW_SECONDS
+        oldest = min(attempts)
+
+    return max(1, int(oldest + ANALYZE_RATE_LIMIT_WINDOW_SECONDS - time.time()))
+
+
 @app.get("/compare")
 async def compare_page(request: Request):
     return templates.TemplateResponse(
@@ -2346,6 +2397,23 @@ async def analyze(
                 f"<p><a href='/compare'>Back to Compare</a></p>",
                 status_code=400,
             )
+
+    if not auth_current_user(request):
+        analyze_client_host = request.client.host if request.client else ""
+
+        if analyze_is_rate_limited(analyze_client_host):
+            retry_after = analyze_retry_after_seconds(analyze_client_host)
+            response = HTMLResponse(
+                "<h1>Too Many Requests</h1>"
+                "<p>You've reached the anonymous scan limit. Please wait a few minutes "
+                "and try again, or <a href='/signup'>create a free account</a> to "
+                "continue without this limit.</p>",
+                status_code=429,
+            )
+            response.headers["Retry-After"] = str(retry_after)
+            return response
+
+        analyze_record_attempt(analyze_client_host)
 
     site = fetch_page_data(url_1)
     # Auto-select a real business competitor if no competitor URL was provided.
