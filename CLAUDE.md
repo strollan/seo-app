@@ -173,6 +173,29 @@ Never claim Git is clean without checking.
 
 ---
 
+## Repo Safety Rules
+
+Before touching files, always inspect the working tree.
+
+- Run git status first.
+- Show relevant diffs before deciding what belongs to the current task.
+- Do not revert anything unless Scot explicitly says "revert."
+- Do not delete files unless Scot explicitly approves the exact files.
+- Do not overwrite unrelated work.
+- Do not stash changes unless Scot explicitly approves it.
+- Do not run git reset, git checkout --, git restore, or cleanup commands without approval.
+- Do not commit unless Scot explicitly says "commit."
+- Do not push unless Scot explicitly says "push."
+- Do not deploy unless Scot explicitly says "deploy."
+- Do not auto-handle uncommitted changes.
+- Separate intended task changes from unrelated leftover changes.
+- Preserve intended fixes unless Scot explicitly asks to discard them.
+- If anything is ambiguous, report what you found and wait.
+
+When working on security fixes, commit only the security fix. Do not drag unrelated CSS, homepage, template, or background changes into the same commit.
+
+---
+
 ## Backup Policy
 
 Before a high-risk or structurally meaningful edit, create a targeted backup when practical.
