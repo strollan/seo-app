@@ -3639,7 +3639,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 <a href="/compare">Compare URL</a>
                 __HISTORY_NAV_LINK__<a href="#run-lead-bot">Start</a>
                 <a href="#exports">Exports</a>
-                <a href="/logout">Logout</a>
+                __AUTH_NAV_LINK__
             </nav>
         </div>
     </div>
@@ -9074,6 +9074,12 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace(
         "__HISTORY_NAV_LINK__",
         '<a href="/history">History</a>\n                ' if current_user else "",
+    )
+    page = page.replace(
+        "__AUTH_NAV_LINK__",
+        '<a href="/logout">Logout</a>'
+        if current_user
+        else '<a href="/login">Login</a>\n                <a href="/create-account">Create Account</a>',
     )
     page = page.replace("__CSRF_TOKEN__", html.escape(csrf_token or ""))
     page = page.replace(
