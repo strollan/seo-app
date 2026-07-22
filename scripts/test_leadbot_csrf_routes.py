@@ -302,6 +302,25 @@ class LeadBotFormMarkupTests(LeadBotCsrfRouteTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('name="keyword"', resp.text)
 
+    def test_own_domain_field_has_optional_placeholder_for_every_role(self):
+        """Own Domain must keep its label and stay optional, with the new
+        placeholder, regardless of who is viewing the form (guest, standard
+        user, or admin)."""
+        import agents.lead_dashboard_agent as dashboard_agent
+
+        expected_input = '<input name="own_domain" value="" placeholder="yourdomain.com (optional)">'
+
+        for current_user in (
+            None,
+            {"role": "standard", "username": "user1"},
+            {"role": "admin", "username": "theadmin"},
+        ):
+            source = dashboard_agent.render_lead_dashboard(current_user=current_user, csrf_token="tok")
+            self.assertIn(">Own Domain<", source)
+            # The exact tag (no `required`, no other attributes added) proves
+            # the field stayed optional and untouched beyond the placeholder.
+            self.assertIn(expected_input, source)
+
     def test_no_stale_state_required_text_remains(self):
         """Regression: the removed "LEADBOT MARKET STATE HELPER" /
         "LEADBOT MARKET STATE REQUIRED VALIDATION" scripts used to clobber

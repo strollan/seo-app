@@ -3718,7 +3718,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 <p class="leadbot-field-error" id="leadbotMarketError" hidden>Enter a city, state, or ZIP code.</p>
 
                 <label>Own Domain</label>
-                <input name="own_domain" value="">
+                <input name="own_domain" value="" placeholder="yourdomain.com (optional)">
 
                 <label>Scan Size</label>
                 <select id="scanSizePreset" class="leadbot-select">
