@@ -1,7 +1,9 @@
 from agents.leadbot_block_gate import load_main_blocked_domains
 
 from agents.lead_blocklist_agent import apply_blocklist_to_job
+import inspect
 import json
+import re
 import threading
 import time
 import uuid
@@ -14,6 +16,12 @@ JOB_DIR = Path("data/leadbot_live_jobs")
 JOB_DIR.mkdir(parents=True, exist_ok=True)
 
 LIVE_SCAN_BATCH_TIMEOUT_SECONDS = 90
+
+# How often the pre-first-lead heartbeat refreshes its status message.
+# A module-level constant (rather than a literal in the closure) so tests
+# can shrink it to force a real, fast heartbeat/streaming write race
+# instead of waiting out the real cadence.
+LEADBOT_HEARTBEAT_INTERVAL_SECONDS = 3.0
 
 
 
@@ -180,39 +188,141 @@ def _leadbot_apply_final_blocked_domain_gate(job) -> None:
 
 # === LEADBOT HARD BLOCKED DOMAIN FINAL GATE END ===
 
-def call_find_leads_with_timeout(find_leads, *, industry, market, query, own_domain, limit):
+
+_UNEXPECTED_KWARG_RE = re.compile(r"unexpected keyword argument '([^']+)'")
+
+
+def _resolve_find_leads_call(find_leads, *, industry, market, query, own_domain, limit, on_candidate):
+    """
+    Decide how to call `find_leads`, defaulting to inspecting its signature
+    up front rather than the risky pattern
+    `try: fn(..., on_candidate=x) except TypeError: fn(...)` -- a TypeError
+    raised from *inside* find_leads for an unrelated reason would otherwise
+    be indistinguishable from "on_candidate isn't a supported parameter",
+    and could cause the whole (potentially expensive, external SERP/contact)
+    call to silently run a second time.
+
+    inspect.signature() alone isn't quite enough: a callable that's actually
+    a mock.patch(..., side_effect=real_fn) MagicMock reports a generic
+    (*args, **kwargs) signature regardless of what real_fn really accepts,
+    so it can look like it supports on_candidate when it doesn't. To handle
+    that safely without reintroducing a broad except TypeError, the
+    returned callable performs at most one *executed* find_leads call:
+    if the richer attempt raises a TypeError whose message names exactly
+    'on_candidate' as an unexpected keyword argument, it retries without
+    it. This is safe to retry rather than double-execute, because Python
+    binds keyword arguments (and raises this exact TypeError) before the
+    callee's body ever runs -- so nothing inside find_leads has executed
+    yet when this specific error occurs. Any other TypeError -- including
+    one that happens to occur after argument binding succeeds -- is
+    re-raised untouched, exactly as the caller would see it without any of
+    this fallback logic.
+    """
+    try:
+        sig = inspect.signature(find_leads)
+        params = sig.parameters
+        has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+        accepts_service_keyword = has_var_kwargs or "service_keyword" in params
+        accepts_on_candidate = has_var_kwargs or "on_candidate" in params
+    except (TypeError, ValueError):
+        # Signature couldn't be inspected at all (e.g. a builtin/C callable).
+        accepts_service_keyword = False
+        accepts_on_candidate = False
+
+    if not accepts_service_keyword:
+        # Oldest supported shape: positional-only, no on_candidate support.
+        return lambda: find_leads(industry, market, query, own_domain, limit)
+
+    def _call(include_on_candidate):
+        kwargs = dict(industry=industry, market=market, service_keyword=query, own_domain=own_domain, limit=limit)
+        if include_on_candidate:
+            kwargs["on_candidate"] = on_candidate
+        return find_leads(**kwargs)
+
+    def call():
+        if not accepts_on_candidate:
+            return _call(False)
+        try:
+            return _call(True)
+        except TypeError as exc:
+            match = _UNEXPECTED_KWARG_RE.search(str(exc))
+            if match and match.group(1) == "on_candidate":
+                return _call(False)
+            raise
+
+    return call
+
+
+def call_find_leads_with_timeout(
+    find_leads, *, industry, market, query, own_domain, limit, publish_callback=None
+):
     """
     Keep Live Scan from hanging forever on one SERP/search batch.
     If find_leads stalls, return a timeout error and let the job continue.
+
+    Thread-safety contract: find_leads() runs in a background worker thread.
+    That worker thread is only ever given a callback that does a thread-safe
+    `queue.Queue.put()` -- it never touches the job object or write_job()
+    directly. This function's own polling loop (which runs on the CALLER's
+    thread, i.e. run_job()'s thread, since this function itself is called
+    synchronously, not spawned) drains that queue and invokes
+    `publish_callback` -- so all job mutation and all write_job() calls
+    happen on the same single thread that already owned them before this
+    streaming path existed. `queue.Queue` is documented as safe for exactly
+    this producer/consumer pattern (CPython's GIL plus internal locking make
+    put()/get() atomic across threads).
     """
     result_queue = queue.Queue(maxsize=1)
+    progress_queue = queue.Queue()
+
+    def _on_candidate(lead):
+        # Runs on the WORKER thread. Must stay a pure, non-blocking,
+        # thread-safe enqueue -- no job mutation, no write_job() here.
+        progress_queue.put(lead)
+
+    call_find_leads = _resolve_find_leads_call(
+        find_leads,
+        industry=industry,
+        market=market,
+        query=query,
+        own_domain=own_domain,
+        limit=limit,
+        on_candidate=_on_candidate,
+    )
 
     def target():
         try:
-            try:
-                result = find_leads(
-                    industry=industry,
-                    market=market,
-                    service_keyword=query,
-                    own_domain=own_domain,
-                    limit=limit,
-                )
-            except TypeError:
-                result = find_leads(
-                    industry,
-                    market,
-                    query,
-                    own_domain,
-                    limit,
-                )
-
+            result = call_find_leads()
             result_queue.put(("ok", result))
         except Exception as exc:
             result_queue.put(("error", exc))
 
+    def _drain_progress():
+        # Runs on the CALLER's thread (run_job()'s thread). Safe to mutate
+        # job / call write_job() here via publish_callback.
+        if publish_callback is None:
+            return
+        while True:
+            try:
+                candidate = progress_queue.get_nowait()
+            except queue.Empty:
+                return
+            publish_callback(candidate)
+
     thread = threading.Thread(target=target, daemon=True)
     thread.start()
-    thread.join(LIVE_SCAN_BATCH_TIMEOUT_SECONDS)
+
+    deadline = time.monotonic() + LIVE_SCAN_BATCH_TIMEOUT_SECONDS
+    poll_interval = 0.2
+
+    while thread.is_alive():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        thread.join(min(poll_interval, remaining))
+        _drain_progress()
+
+    _drain_progress()
 
     if thread.is_alive():
         return None, f"Search batch timed out after {LIVE_SCAN_BATCH_TIMEOUT_SECONDS}s; skipping to next batch"
@@ -776,32 +886,138 @@ def run_job(job_id):
         seen_domains = set(job.get("seen_domains") or [])
         all_rows = []
 
+        def _stop_heartbeat_before_write(heartbeat_stop_event, heartbeat_thread):
+            """Deterministically silence the heartbeat before this thread's
+            own write_job() call, so the two can never race on disk.
+
+            Signals the Event (the heartbeat's wait() wakes immediately,
+            not on its next 3s tick) and then joins the heartbeat thread --
+            blocking until it has fully exited, including finishing any
+            write_job() call that was already in flight. Only after join()
+            returns is it guaranteed the heartbeat will never write again,
+            so the caller's own write_job() right after this call is safe.
+
+            Always called from run_job()'s own thread, never from the
+            heartbeat thread itself, so this can never self-join/deadlock.
+            join() on an already-finished thread returns immediately, so
+            calling this for every published lead (not just the first) is
+            cheap and safe.
+            """
+            heartbeat_stop_event.set()
+            heartbeat_thread.join(timeout=5.0)
+
+        def _publish_candidate(lead, heartbeat_stop_event, heartbeat_thread):
+            """Sole publisher of a single accepted lead: domain dedupe,
+            guest/logged-in total-limit enforcement, cache application,
+            address enrichment, append to job["leads"], write_job().
+
+            Always called on run_job()'s own thread -- either synchronously
+            from the post-batch catch-up loop below (as today), or from
+            call_find_leads_with_timeout()'s polling loop while it waits on
+            the worker thread (new). Never called from the SERP/scoring
+            worker thread itself, so this is the only place job/write_job()
+            get touched for lead data, preserving the existing single-writer
+            guarantee that made write_job() safe before streaming existed.
+
+            Returns True if this lead was newly published, False if it was
+            skipped (duplicate domain or over limit) -- so a lead already
+            published via early streaming is a safe, cheap no-op when the
+            final batch loop reaches it again.
+            """
+            if len(job["leads"]) >= total_limit:
+                return False
+
+            domain = str(lead.get("domain") or lead.get("url") or "").strip().lower()
+            if not domain or domain in seen_domains:
+                return False
+
+            seen_domains.add(domain)
+
+            # Real per-lead progress now exists. Deterministically silence
+            # the heartbeat -- wait for it to fully exit -- before this
+            # thread's own write_job() below, so no heartbeat disk write
+            # can ever land after a streamed lead has been written.
+            _stop_heartbeat_before_write(heartbeat_stop_event, heartbeat_thread)
+
+            job["message"] = f"Found a lead: {domain}. Checking contact details..."
+            job["updated_at"] = now_iso()
+            write_job(job)
+
+            try:
+                _, cached = apply_cached_business_to_lead(lead)
+                if cached:
+                    job["counts"]["cached"] += 1
+            except Exception:
+                cached = False
+
+            try:
+                save_business_from_lead(lead, enriched=bool(cached))
+            except Exception:
+                pass
+
+            # Address polish before the live card/export row is saved.
+            try:
+                lead = _leadbot_enrich_live_address(lead, market=market)
+            except Exception as exc:
+                try:
+                    print(f"LEADBOT LIVE ADDRESS POLISH ERROR: {domain} {exc}", flush=True)
+                except Exception:
+                    pass
+
+            public = lead_to_public(lead)
+
+            if public.get("best_phone") or public.get("emails"):
+                job["counts"]["enriched"] += 1
+            else:
+                job["counts"]["needs_research"] += 1
+
+            job["leads"].append(public)
+            job["seen_domains"] = list(seen_domains)
+            job["counts"]["found"] = len(job["leads"])
+            job["updated_at"] = now_iso()
+            write_job(job)
+
+            all_rows.append(lead)
+
+            # Small pause lets the UI show progress instead of dumping many
+            # cards from the same page/SERP-response at once. Kept after
+            # adding real streaming: within one page's results, scoring is
+            # still fast/synchronous, so several candidates can still clear
+            # the gate within milliseconds of each other.
+            time.sleep(0.15)
+
+            return True
+
         for q_index, query in enumerate(queries, start=1):
             if len(job["leads"]) >= total_limit:
                 break
 
-            job["message"] = f"Searching batch {q_index} of {len(queries)} for local business prospects..."
+            job["message"] = f"Searching local results for batch {q_index} of {len(queries)}..."
             job["updated_at"] = now_iso()
             write_job(job)
 
-            # Keep the Live Scan UI feeling alive while find_leads() does
-            # the slower SERP/crawl/contact pass before returning rows.
-            heartbeat_stop = {"stop": False}
+            # Keep the Live Scan UI feeling alive before the first real lead
+            # arrives. _publish_candidate() stops this (and waits for it to
+            # fully exit) the moment streaming produces its first result.
+            heartbeat_stop_event = threading.Event()
 
             def _leadbot_search_heartbeat():
                 heartbeat_messages = [
-                    f"Searching batch {q_index} of {len(queries)} for local businesses...",
-                    "Filtering directories, junk domains, and duplicate results...",
-                    "Checking websites and contact pages. Leads may appear shortly...",
-                    "Preparing live cards as usable leads come through...",
+                    f"Searching local results for batch {q_index} of {len(queries)}...",
+                    "Checking business websites...",
+                    "Filtering potential leads...",
                     "Still working — slow websites are being skipped when needed...",
                 ]
 
                 beat = 0
-                while not heartbeat_stop["stop"]:
-                    time.sleep(3.0)
-
-                    if heartbeat_stop["stop"]:
+                while True:
+                    # wait() returns True immediately once the event is set
+                    # (rather than only after a full tick), and False if the
+                    # interval elapsed with no signal -- this is what makes
+                    # the deterministic stop-before-write in
+                    # _stop_heartbeat_before_write() fast instead of
+                    # blocking the first lead's publish for a full interval.
+                    if heartbeat_stop_event.wait(timeout=LEADBOT_HEARTBEAT_INTERVAL_SECONDS):
                         break
 
                     try:
@@ -825,6 +1041,9 @@ def run_job(job_id):
             heartbeat_thread = threading.Thread(target=_leadbot_search_heartbeat, daemon=True)
             heartbeat_thread.start()
 
+            def _stream_publish(lead):
+                _publish_candidate(lead, heartbeat_stop_event, heartbeat_thread)
+
             try:
                 leads, search_error = call_find_leads_with_timeout(
                     find_leads,
@@ -833,12 +1052,25 @@ def run_job(job_id):
                     query=query,
                     own_domain=own_domain,
                     limit=per_query_limit,
+                    publish_callback=_stream_publish,
                 )
             finally:
-                heartbeat_stop["stop"] = True
+                # Covers the zero-candidates-this-query case too: guarantees
+                # the heartbeat has fully exited before the reload/merge
+                # below and before the next query's iteration starts a new
+                # heartbeat thread.
+                _stop_heartbeat_before_write(heartbeat_stop_event, heartbeat_thread)
 
-            # Reload because the heartbeat may have updated the persisted job file.
-            job = read_job(job_id) or job
+            # Reload because the heartbeat may have updated the persisted job
+            # file's message/updated_at fields. job["leads"]/counts/seen_domains
+            # were only ever written by this thread (via _publish_candidate),
+            # so nothing streamed during the call above is lost by this merge.
+            reloaded = read_job(job_id)
+            if reloaded:
+                reloaded["leads"] = job["leads"]
+                reloaded["counts"] = job["counts"]
+                reloaded["seen_domains"] = job["seen_domains"]
+                job = reloaded
 
             if is_cancel_requested(job_id):
                 mark_job_cancelled(job_id)
@@ -852,67 +1084,20 @@ def run_job(job_id):
 
             leads = normalize_lead_results(leads)
 
-            if leads:
-                job["message"] = f"Found {len(leads)} possible leads. Preparing live cards..."
-                job["updated_at"] = now_iso()
-                write_job(job)
-            else:
-                job["message"] = f"No usable leads found in batch {q_index}. Trying next batch..."
-                job["updated_at"] = now_iso()
-                write_job(job)
-
+            # Safety-net catch-up pass: find_leads() streams every accepted
+            # candidate (organic pages and the Google Places supplement
+            # alike) via publish_callback as it goes, so in the normal case
+            # every lead here was already published and this loop is a
+            # cheap no-op. It still exists so no candidate is lost if a
+            # given call site's find_leads doesn't accept on_candidate, or a
+            # callback invocation raised and was swallowed.
+            # _publish_candidate()'s domain dedupe against the shared
+            # `seen_domains` set is what makes this safe to re-run: exactly
+            # one visible card per domain, never a duplicate.
             for lead in leads:
                 if len(job["leads"]) >= total_limit:
                     break
-
-                domain = str(lead.get("domain") or lead.get("url") or "").strip().lower()
-                if not domain or domain in seen_domains:
-                    continue
-
-                seen_domains.add(domain)
-
-                job["message"] = f"Found a lead: {domain}. Checking contact details..."
-                job["updated_at"] = now_iso()
-                write_job(job)
-
-                try:
-                    _, cached = apply_cached_business_to_lead(lead)
-                    if cached:
-                        job["counts"]["cached"] += 1
-                except Exception:
-                    cached = False
-
-                try:
-                    save_business_from_lead(lead, enriched=bool(cached))
-                except Exception:
-                    pass
-
-                # Address polish before the live card/export row is saved.
-                try:
-                    lead = _leadbot_enrich_live_address(lead, market=market)
-                except Exception as exc:
-                    try:
-                        print(f"LEADBOT LIVE ADDRESS POLISH ERROR: {domain} {exc}", flush=True)
-                    except Exception:
-                        pass
-
-                public = lead_to_public(lead)
-
-                if public.get("best_phone") or public.get("emails"):
-                    job["counts"]["enriched"] += 1
-                else:
-                    job["counts"]["needs_research"] += 1
-
-                job["leads"].append(public)
-                job["seen_domains"] = list(seen_domains)
-                job["counts"]["found"] = len(job["leads"])
-                job["updated_at"] = now_iso()
-                write_job(job)
-
-                all_rows.append(lead)
-
-                # Small pause lets the UI show progress instead of dumping all at once.
-                time.sleep(0.15)
+                _publish_candidate(lead, heartbeat_stop_event, heartbeat_thread)
 
         job["message"] = "Scan complete. Building dashboard export..."
         job["updated_at"] = now_iso()
