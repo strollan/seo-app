@@ -12948,7 +12948,7 @@ body.leadbot-live-final .live-progress-bar {{
         <div class="hero-row">
             <div>
                 <h1>Lead Finder Live Scan</h1>
-                <p>Leads appear as they are found. Contact details fill in as cache/enrichment runs.</p>
+                <p>Leads appear as they are found. Contact details fill in as they're checked.</p>
             </div>
             <nav class="nav">
                 <a href="/lead-bot">Lead Finder</a>
@@ -12976,7 +12976,7 @@ body.leadbot-live-final .live-progress-bar {{
             <div class="live-console-body">
                 <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing Lead Finder crawler...</span></div>
                 <div class="live-line"><strong>serp</strong><span id="liveConsoleLine2">Finding page 1–4 opportunities...</span></div>
-                <div class="live-line"><strong>data</strong><span id="liveConsoleLine3">Contacts will appear as they are enriched.</span></div>
+                <div class="live-line"><strong>data</strong><span id="liveConsoleLine3">Contacts will appear as contact details are checked.</span></div>
                 <div class="live-progress-rail"><div class="live-progress-bar"></div></div>
             </div>
         </div>
@@ -13212,7 +13212,7 @@ async function poll() {{
 
         if (liveLine1) liveLine1.textContent = job.message || "Lead Finder is scanning...";
         if (liveLine2) liveLine2.textContent = "Found " + String(counts.found || 0) + " of " + String(params.limit || "—") + " target leads.";
-        if (liveLine3) liveLine3.textContent = String(counts.cached || 0) + " cache hits · " + String(counts.enriched || 0) + " enriched · " + String(counts.needs_research || 0) + " need research.";
+        if (liveLine3) liveLine3.textContent = String(counts.cached || 0) + " cache hits · " + String(counts.enriched || 0) + " with contact info · " + String(counts.needs_research || 0) + " need research.";
 
         if (job.status === "done") {{
             const statusBox = document.querySelector(".status");

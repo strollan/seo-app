@@ -3008,7 +3008,7 @@ main#results .results-top {
 
 
 
-/* Restore breathing room between Enrich Website Details and Exports */
+/* Restore breathing room between Find Missing Contact Details and Exports */
 .leadbot-complete-details-above-exports {
     margin: 18px 0 24px !important;
 }
@@ -3682,7 +3682,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 </a>
                 <div>
                     <h1>Lead Finder Dashboard</h1>
-                    <p>Find page 1–4 prospects, enrich contact details, and prioritize outreach opportunities.</p>
+                    <p>Find page 1–4 prospects, add missing contact details, and prioritize outreach opportunities.</p>
                 </div>
             </div>
 
@@ -3756,11 +3756,12 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
 </form>
 
-            <p class="help">Live results appear as prospects are found and contacts are enriched.</p>
+            <p class="help">Live results appear as prospects are found and contact details are filled in.</p>
 
 
 <div class="leadbot-complete-details-above-exports">
-    <a class="leadbot-current-fill-addresses" id="leadbotCompleteAddresses" href="#">Enrich Website Details</a>
+    <a class="leadbot-current-fill-addresses" id="leadbotCompleteAddresses" href="#">Find Missing Contact Details</a>
+    <p class="help">Check business websites for missing email, phone, and address information.</p>
 </div>
 
 <div class="leadbot-complete-details-above-exports">
@@ -3819,7 +3820,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
     </div>
     <div class="leadbot-wait-copy">
         <strong>Lead Finder is building your lead list...</strong>
-        <span>Finding page 1–4 prospects, enriching contact details, and building your export.</span>
+        <span>Finding page 1–4 prospects, checking for missing contact details, and building your export.</span>
     </div>
 </div>
 <!-- === LEADBOT CSS SCANNER LOADER END === -->
@@ -3925,7 +3926,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
     document.querySelectorAll('form[action="/lead-bot/live-start"], form[action="/lead-bot/live-start"]').forEach(function (form) {
         form.addEventListener("submit", function () {
-            showLeadBotLoader("Finding page 1–4 prospects, enriching contact details, and building your export.");
+            showLeadBotLoader("Finding page 1–4 prospects, checking for missing contact details, and building your export.");
 
             const button = form.querySelector('button[type="submit"]');
             if (button) {
@@ -3937,7 +3938,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
     document.querySelectorAll('a[href*="/lead-bot/enrich/"]').forEach(function (link) {
         link.addEventListener("click", function () {
-            showLeadBotLoader("Enriching contact details and updating this scan...");
+            showLeadBotLoader("Checking websites for contact details and updating this scan...");
         });
     });
 })();
@@ -4363,7 +4364,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (count) count.textContent = "";
         download.href = "/lead-bot/export/" + encodeURIComponent(file);
 
-        complete.textContent = "Enrich Website Details";
+        complete.textContent = "Find Missing Contact Details";
         complete.href = "/lead-bot/complete-details/" + encodeURIComponent(file);
         complete.onclick = function () {
             return confirm("Complete missing addresses for this scan? This may take a little while.");
