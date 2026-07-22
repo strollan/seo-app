@@ -451,75 +451,38 @@ def _leadbot_preserve_source_metadata(scored, item):
     return scored
 
 
-def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10):
+def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10, on_candidate=None):
+    """
+    on_candidate: optional callback invoked synchronously, once, for each
+    candidate the instant it clears the same scoring/dedupe/threshold gate
+    used below -- before this function returns. Selection is first-N-that-
+    qualify in discovery order (page 1 before page 2, organic before the
+    Google Places supplement), not a global best-of-all-pages sort, so that
+    an early candidate's acceptance is final and never retracted by a later,
+    higher-scoring one. Must be side-effect-light and must not raise; any
+    exception from it is caught and ignored so a UI/publishing failure can
+    never break the underlying scan.
+    """
     query = make_query(industry, market, service_keyword)
 
-    raw_results = find_business_competitors(
-        query,
-        own_domain=own_domain,
-        location=market or "United States",
-        limit=max(limit * 2, 20),
-    )
-
-    # Restaurant/food searches need Google Places as a supplement because
-    # organic SERPs are packed with listicles, directories, travel sites, and forums.
-    try:
-        places_text = f"{industry} {service_keyword} {query}".lower()
-        places_terms = (
-            "restaurant",
-            "restaurants",
-            "dining",
-            "food",
-            "cafe",
-            "coffee",
-            "bakery",
-            "bar",
-            "grill",
-            "bistro",
-            "eatery",
-        )
-
-        if any(term in places_text for term in places_terms):
-            from business_competitor_finder import _leadbot_google_places_search
-
-            places_results = []
-            for places_page in (1, 2):
-                page_results = _leadbot_google_places_search(
-                    keyword=service_keyword or industry or query,
-                    location=market or "United States",
-                    page=places_page,
-                    num=20,
-                )
-                if page_results:
-                    places_results.extend(list(page_results or []))
-
-            if places_results:
-                print(f"LEADBOT GOOGLE PLACES SUPPLEMENT ADDED: {len(places_results)}", flush=True)
-                raw_results = list(raw_results or []) + list(places_results or [])
-
-    except Exception as exc:
-        print(f"LEADBOT GOOGLE PLACES SUPPLEMENT ERROR: {exc}", flush=True)
-
-    # HARD SAFETY: do not let Google Places become the main LeadBot scan output.
-    # This function uses raw_results, not a local variable named competitors.
+    disable_places_main = False
     try:
         import os as _leadbot_os
-        if (_leadbot_os.getenv("LEADBOT_DISABLE_PLACES_MAIN") or "").strip().lower() in {"1", "true", "yes", "on"}:
-            before = len(raw_results or [])
-            raw_results = [
-                item for item in (raw_results or [])
-                if not (isinstance(item, dict) and item.get("source") == "google_places")
-            ]
-            dropped = before - len(raw_results)
-            if dropped:
-                print(f"LEADBOT DROPPED GOOGLE PLACES MAIN ROWS: {dropped}", flush=True)
+        disable_places_main = (_leadbot_os.getenv("LEADBOT_DISABLE_PLACES_MAIN") or "").strip().lower() in {
+            "1", "true", "yes", "on",
+        }
     except Exception as exc:
         print(f"LEADBOT DROP GOOGLE PLACES MAIN ROWS ERROR: {exc}", flush=True)
 
     leads = []
     seen_domains = set()
 
-    for item in raw_results:
+    def _process_item(item):
+        """Score one raw SERP/Places item; return the finalized lead dict if
+        it clears every existing gate (dedupe, score >= 50), else None.
+        Identical logic to the original single-pass loop, just callable
+        per-item so it can run once a page/supplement item is available
+        instead of only after every page has been fetched."""
         scored = score_lead(item, industry, market)
 
         scored = _leadbot_preserve_source_metadata(scored, item)
@@ -583,12 +546,12 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
             dedupe_key = str(domain or "").lower().strip()
 
         if not dedupe_key or dedupe_key in seen_domains:
-            continue
+            return None
 
         seen_domains.add(dedupe_key)
 
         if scored["score"] < 50:
-            continue
+            return None
 
         places_phone = ""
         places_address = ""
@@ -697,13 +660,118 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
 
         scored["final_lead_score"] = max(0, min(100, final_score))
 
-        leads.append(scored)
+        finalized = leadbot_normalize_lead_object(scored)
+        if not finalized:
+            return None
+        finalized = _leadbot_safe_lead_dict(finalized)
+        if not finalized:
+            return None
 
-    leads = [leadbot_normalize_lead_object(x) for x in leads]
-    leads = [x for x in leads if x]
-    leads = [_leadbot_safe_lead_dict(item) for item in leads]
-    leads = [item for item in leads if item]
-    leads = sorted(leads, key=lambda x: x.get("final_lead_score", x.get("score", 0)), reverse=True)
+        return finalized
+
+    def _accept(finalized):
+        """Record an already-fully-scored, already-gated lead and, if a
+        caller supplied on_candidate, publish it immediately. Returns True
+        once `limit` has been reached (signal to stop fetching more)."""
+        leads.append(finalized)
+
+        if on_candidate is not None:
+            try:
+                on_candidate(finalized)
+            except Exception as exc:
+                print(f"LEADBOT ON_CANDIDATE CALLBACK ERROR: {exc}", flush=True)
+
+        return len(leads) >= limit
+
+    # Selection is first-N-that-qualify in discovery order: organic pages
+    # 1-4 in order, then (only if still short of `limit`) the Google Places
+    # supplement for food-type queries. This intentionally replaces the old
+    # "collect every page, score everything, sort by final_lead_score,
+    # truncate to `limit`" behavior -- that global sort/truncate required
+    # every page to be fetched before any single lead was safe to publish,
+    # which is exactly the latency this per-page early-emission exists to
+    # remove. Every candidate still passes the identical scoring/dedupe/
+    # score>=50 gate in _process_item(); only the cross-page ranking step
+    # was removed.
+    quota_reached = False
+
+    for serp_page in (1, 2, 3, 4):
+        if quota_reached:
+            break
+
+        page_results = find_business_competitors(
+            query,
+            own_domain=own_domain,
+            location=market or "United States",
+            limit=max(limit * 2, 20),
+            pages=[serp_page],
+        )
+
+        for item in page_results or []:
+            if disable_places_main and isinstance(item, dict) and item.get("source") == "google_places":
+                # Mirrors the original HARD SAFETY guard: never let Places
+                # rows count as organic-page output when the flag is set.
+                continue
+
+            finalized = _process_item(item)
+            if finalized is None:
+                continue
+
+            if _accept(finalized):
+                quota_reached = True
+                break
+
+    # Restaurant/food searches need Google Places as a supplement because
+    # organic SERPs are packed with listicles, directories, travel sites, and
+    # forums. Only run this (and only score/emit as many as still needed) if
+    # the organic pages above did not already fill the quota.
+    if not quota_reached and not disable_places_main:
+        try:
+            places_text = f"{industry} {service_keyword} {query}".lower()
+            places_terms = (
+                "restaurant",
+                "restaurants",
+                "dining",
+                "food",
+                "cafe",
+                "coffee",
+                "bakery",
+                "bar",
+                "grill",
+                "bistro",
+                "eatery",
+            )
+
+            if any(term in places_text for term in places_terms):
+                from business_competitor_finder import _leadbot_google_places_search
+
+                places_results = []
+                for places_page in (1, 2):
+                    page_results = _leadbot_google_places_search(
+                        keyword=service_keyword or industry or query,
+                        location=market or "United States",
+                        page=places_page,
+                        num=20,
+                    )
+                    if page_results:
+                        places_results.extend(list(page_results or []))
+
+                if places_results:
+                    print(f"LEADBOT GOOGLE PLACES SUPPLEMENT ADDED: {len(places_results)}", flush=True)
+
+                for item in places_results:
+                    if quota_reached:
+                        break
+
+                    finalized = _process_item(item)
+                    if finalized is None:
+                        continue
+
+                    if _accept(finalized):
+                        quota_reached = True
+
+        except Exception as exc:
+            print(f"LEADBOT GOOGLE PLACES SUPPLEMENT ERROR: {exc}", flush=True)
 
     return {
         "query": query,
