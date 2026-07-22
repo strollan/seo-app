@@ -570,7 +570,19 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
                         "Live search provider failed and the fallback also failed."
                     ) from fallback_exc
         else:
-            page_results = _leadbot_non_serper_search(keyword, location=location, page=serp_page, num=10)
+            # DataForSEO is the primary (not fallback) path here when Serper
+            # is disabled by configuration -- a real failure on this branch
+            # must surface the same way a Serper-then-fallback failure does,
+            # not silently look like a genuine zero-result scan. This only
+            # changes behavior for an actual failure (disabled/exception);
+            # a successful call that legitimately finds nothing still
+            # returns [] normally (see _leadbot_non_serper_search's
+            # `return list(results or [])`, which raise_on_failure never
+            # touches), and the intentional page>1 redundancy short-circuit
+            # is likewise unaffected.
+            page_results = _leadbot_non_serper_search(
+                keyword, location=location, page=serp_page, num=10, raise_on_failure=True
+            )
 
         for idx, result in enumerate(page_results, 1):
             if isinstance(result, dict) and result.get("source") in {"dataforseo", "google_places"}:

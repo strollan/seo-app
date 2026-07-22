@@ -162,6 +162,47 @@ class RawFindBusinessCompetitorsProviderFailureTests(EnvVarSandbox):
         self.assertEqual(results, [])
 
 
+class RawFindBusinessCompetitorsSerperDisabledTests(EnvVarSandbox):
+    """
+    _raw_find_business_competitors() with USE_LIVE_SERP=0 -- production's
+    actual current configuration. DataForSEO is the *direct* (not fallback)
+    path here (the `else` branch), which previously called
+    _leadbot_non_serper_search() without raise_on_failure=True -- so a real
+    DataForSEO failure with Serper disabled could return [] silently and
+    look like a genuine zero-result scan, exactly the gap this fix closes.
+    """
+
+    def setUp(self):
+        super().setUp()
+        os.environ["USE_LIVE_SERP"] = "0"
+        os.environ["LEADBOT_DATAFORSEO_ENABLED"] = "1"
+
+    def test_dataforseo_succeeds_with_results_and_serper_is_never_called(self):
+        fake_results = [{"title": "A Plumber", "link": "https://a-plumber-test.com", "snippet": "plumber services"}]
+        with mock.patch.object(bcf, "google_search") as mock_google_search, \
+             mock.patch("agents.dataforseo_serp_agent.search_google_organic", return_value=fake_results):
+            results = bcf._raw_find_business_competitors("plumber", location="Test City", limit=5, pages=[1])
+
+        self.assertIsInstance(results, list)
+        mock_google_search.assert_not_called()
+
+    def test_dataforseo_legitimate_zero_result_stays_a_valid_empty_result(self):
+        with mock.patch.object(bcf, "google_search") as mock_google_search, \
+             mock.patch("agents.dataforseo_serp_agent.search_google_organic", return_value=[]):
+            results = bcf._raw_find_business_competitors("plumber", location="Test City", limit=5, pages=[1])
+
+        self.assertEqual(results, [])
+        mock_google_search.assert_not_called()
+
+    def test_dataforseo_failure_raises_provider_unavailable_not_empty_list(self):
+        with mock.patch.object(bcf, "google_search") as mock_google_search, \
+             mock.patch("agents.dataforseo_serp_agent.search_google_organic", side_effect=RuntimeError("simulated DataForSEO outage")):
+            with self.assertRaises(bcf.SearchProviderUnavailableError):
+                bcf._raw_find_business_competitors("plumber", location="Test City", limit=5, pages=[1])
+
+        mock_google_search.assert_not_called()
+
+
 class RunJobProviderFailureTests(unittest.TestCase):
     """agents.lead_live_job_agent.run_job(): job state when the provider
     fails vs. a genuine zero-result scan vs. an ordinary per-query error."""
