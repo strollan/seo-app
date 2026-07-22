@@ -6436,6 +6436,47 @@ a[href*="/lead-bot/my-leads"] {
 }
 /* === LEADBOT LIVE ZERO RESULTS EMPTY STATE END === */
 
+/* === LEADBOT PROVIDER UNAVAILABLE STATE START === */
+.leadbot-provider-unavailable {
+    margin: 18px 0 0;
+    padding: 18px;
+    border-radius: 18px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #7c2d12;
+    box-shadow: 0 10px 24px rgba(154, 52, 18, .08);
+}
+
+.leadbot-provider-unavailable h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    line-height: 1.2;
+    color: #7c2d12;
+}
+
+.leadbot-provider-unavailable p {
+    margin: 0 0 14px;
+    color: #9a3412;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.leadbot-provider-unavailable a {
+    display: inline-block;
+    background: #9a3412;
+    color: #fff7ed;
+    text-decoration: none;
+    font-weight: 900;
+    font-size: 13px;
+    padding: 10px 16px;
+    border-radius: 10px;
+}
+
+.leadbot-provider-unavailable a:hover {
+    background: #7c2d12;
+}
+/* === LEADBOT PROVIDER UNAVAILABLE STATE END === */
+
 
 .auth-brand-text {
     text-align: center;
@@ -12061,6 +12102,14 @@ def lead_bot_dashboard(request: AuthRequest, file: str = ""):
 
     html_content = render_lead_dashboard(file, current_user=user, csrf_token=csrf_token)
     response = LeadBotHTMLResponse(html_content)
+    # /lead-bot embeds a fresh CSRF token and (for guests) sets a fresh
+    # guest cookie pair on every render -- a cached copy would hand a stale
+    # token to whoever it's served to next. Applies to every role (guest,
+    # standard, admin) since this is the one shared route/response for all
+    # three; does not touch static-asset caching elsewhere.
+    response.headers["Cache-Control"] = "no-store, private, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     _set_guest_cookies(response, guest_cookies_to_set)
     return response
 
@@ -13245,6 +13294,29 @@ async function poll() {{
                 if (liveLine3) liveLine3.textContent = "Dashboard is ready.";
 
                 if (IS_GUEST) showGuestSavePrompt();
+            }}
+        }}
+
+        if (job.status === "error" && job.error_code === "search_provider_unavailable") {{
+            // Distinct from both a genuine zero-result scan and a generic
+            // error: the search itself could not run, so this must never
+            // read as "we searched and found nothing".
+            const leadsWrap = document.getElementById("leads");
+
+            if (liveLine1) liveLine1.textContent = "Lead search temporarily unavailable";
+            if (liveLine2) liveLine2.textContent = "This scan could not be completed. Please try again shortly.";
+            if (liveLine3) liveLine3.textContent = "";
+
+            if (leadsWrap && !document.getElementById("leadbotProviderUnavailable")) {{
+                const unavailable = document.createElement("div");
+                unavailable.id = "leadbotProviderUnavailable";
+                unavailable.className = "leadbot-provider-unavailable";
+                unavailable.innerHTML = `
+                    <h3>Lead search temporarily unavailable</h3>
+                    <p>This scan could not be completed. Please try again shortly.</p>
+                    <a class="btn" href="/lead-bot">Back to Lead Finder</a>
+                `;
+                leadsWrap.appendChild(unavailable);
             }}
         }}
 

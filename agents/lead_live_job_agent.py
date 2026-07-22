@@ -17,6 +17,18 @@ JOB_DIR.mkdir(parents=True, exist_ok=True)
 
 LIVE_SCAN_BATCH_TIMEOUT_SECONDS = 90
 
+# Prefix marker call_find_leads_with_timeout() uses to carry a
+# SearchProviderUnavailableError through its (leads, search_error) string
+# return contract without changing that contract's shape. run_job() checks
+# for this prefix to distinguish "the provider failed" from an ordinary
+# per-query error, instead of masking either as a normal zero-result scan.
+PROVIDER_UNAVAILABLE_MARKER = "PROVIDER_UNAVAILABLE:"
+
+SEARCH_PROVIDER_UNAVAILABLE_MESSAGE = (
+    "The lead search service is temporarily unavailable. This scan did not "
+    "complete. Please try again shortly."
+)
+
 # How often the pre-first-lead heartbeat refreshes its status message.
 # A module-level constant (rather than a literal in the closure) so tests
 # can shrink it to force a real, fast heartbeat/streaming write race
@@ -333,6 +345,10 @@ def call_find_leads_with_timeout(
         return None, "Search ended without returning results"
 
     if status == "error":
+        from business_competitor_finder import SearchProviderUnavailableError
+
+        if isinstance(payload, SearchProviderUnavailableError):
+            return None, f"{PROVIDER_UNAVAILABLE_MARKER}{payload}"
         return None, str(payload)
 
     return payload, ""
@@ -1074,6 +1090,23 @@ def run_job(job_id):
 
             if is_cancel_requested(job_id):
                 mark_job_cancelled(job_id)
+                return
+
+            if search_error and str(search_error).startswith(PROVIDER_UNAVAILABLE_MARKER):
+                # The live provider failed and no working fallback could
+                # produce results (agents.lead_live_job_agent.
+                # call_find_leads_with_timeout / business_competitor_finder.
+                # SearchProviderUnavailableError). This is not a genuine
+                # zero-result scan -- do not mark it "done", do not build an
+                # export from whatever partial leads exist, and preserve
+                # any leads _publish_candidate() already streamed before the
+                # failure (job["leads"] above already carries them; nothing
+                # here clears it).
+                job["status"] = "error"
+                job["error_code"] = "search_provider_unavailable"
+                job["message"] = SEARCH_PROVIDER_UNAVAILABLE_MESSAGE
+                job["updated_at"] = now_iso()
+                write_job(job)
                 return
 
             if search_error:

@@ -403,7 +403,25 @@ def _leadbot_serp_provider() -> str:
 
 
 
-def _leadbot_non_serper_search(keyword: str, location: str = "United States", page: int = 1, num: int = 10):
+class SearchProviderUnavailableError(Exception):
+    """
+    Raised when the live search provider (Serper) fails and no working
+    fallback could produce results -- distinct from a provider that ran
+    successfully and legitimately found nothing. Previously, a Serper
+    exception with the fallback disabled (or also failing) was caught
+    locally and silently treated as "found nothing", producing a job that
+    looked like a genuine zero-result scan. See agents.lead_live_job_agent.
+    run_job() for how this is now surfaced instead of swallowed.
+    """
+
+
+def _leadbot_non_serper_search(
+    keyword: str,
+    location: str = "United States",
+    page: int = 1,
+    num: int = 10,
+    raise_on_failure: bool = False,
+):
     """
     LeadBot organic search.
 
@@ -411,6 +429,17 @@ def _leadbot_non_serper_search(keyword: str, location: str = "United States", pa
     - Main LeadBot list uses DataForSEO organic only.
     - Google Places must not appear as Page Google Places in the main lead list.
     - Places can still be used elsewhere for address enrichment, but not here.
+
+    raise_on_failure: when True (only passed by _raw_find_business_competitors
+    after a live-SERP failure, i.e. this function is being used as the
+    fallback rather than as the deliberately-chosen primary path), a
+    disabled DataForSEO means the fallback genuinely has nothing to offer --
+    raise SearchProviderUnavailableError instead of returning [] so the
+    caller can't mistake "no working provider" for "provider ran and found
+    nothing". When called as the primary path (_leadbot_use_live_serp() is
+    False by configuration choice), the default False keeps existing
+    behavior: a disabled fallback there is an intentional dev/test config,
+    not a failure.
     """
     import os
     from pathlib import Path
@@ -423,11 +452,6 @@ def _leadbot_non_serper_search(keyword: str, location: str = "United States", pa
 
     keyword = str(keyword or "").strip()
     location = str(location or "United States").strip()
-
-    # DataForSEO depth 40 already gives page 1-4 style organic results.
-    if int(page or 1) > 1:
-        return []
-
     query = _leadbot_build_fallback_query(keyword, location)
 
     if os.getenv("LEADBOT_DATAFORSEO_ENABLED", "0").strip() != "1":
@@ -435,6 +459,14 @@ def _leadbot_non_serper_search(keyword: str, location: str = "United States", pa
             f"LEADBOT DATAFORSEO DISABLED: query={query!r} location={location!r}",
             flush=True,
         )
+        if raise_on_failure:
+            raise SearchProviderUnavailableError(
+                "Live search provider failed and the fallback (DataForSEO) is not enabled."
+            )
+        return []
+
+    # DataForSEO depth 40 already gives page 1-4 style organic results.
+    if int(page or 1) > 1:
         return []
 
     # Restaurants/food SERPs are directory and article-heavy, so pull deeper
@@ -483,6 +515,10 @@ def _leadbot_non_serper_search(keyword: str, location: str = "United States", pa
             f"LEADBOT DATAFORSEO ORGANIC ONLY ERROR: query={query!r} location={location!r} error={exc}",
             flush=True,
         )
+        if raise_on_failure:
+            raise SearchProviderUnavailableError(
+                "Live search provider failed and the fallback (DataForSEO) also failed."
+            ) from exc
         return []
 
 # === LEADBOT NON-SERPER FALLBACK END ===
@@ -521,8 +557,18 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
                 data = google_search(keyword, location=location, page=serp_page, num=10)
                 page_results = get_organic_results(data)
             except Exception as exc:
-                print(f"LEADBOT SERPER ERROR; USING NON-SERPER FALLBACK: {exc}", flush=True)
-                page_results = _leadbot_non_serper_search(keyword, location=location, page=serp_page, num=10)
+                print(f"LEADBOT SERPER ERROR; TRYING FALLBACK: {exc}", flush=True)
+                try:
+                    page_results = _leadbot_non_serper_search(
+                        keyword, location=location, page=serp_page, num=10, raise_on_failure=True
+                    )
+                except SearchProviderUnavailableError:
+                    raise
+                except Exception as fallback_exc:
+                    print(f"LEADBOT FALLBACK SEARCH ALSO FAILED: {fallback_exc}", flush=True)
+                    raise SearchProviderUnavailableError(
+                        "Live search provider failed and the fallback also failed."
+                    ) from fallback_exc
         else:
             page_results = _leadbot_non_serper_search(keyword, location=location, page=serp_page, num=10)
 
