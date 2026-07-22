@@ -12545,6 +12545,12 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
 
     is_guest_js = "true" if not user else "false"
 
+    live_page_auth_nav = (
+        '<a href="/logout">Logout</a>'
+        if user
+        else '<a href="/login">Login</a>\n                <a href="/create-account">Create Account</a>'
+    )
+
     return AuthHTMLResponse(f"""
 <!doctype html>
 <html>
@@ -12938,7 +12944,7 @@ body.leadbot-live-final .live-progress-bar {{
                 <a href="/lead-bot">Lead Finder</a>
                 <a href="/compare">Compare URL</a>
                 <a href="/">Home</a>
-                <a href="/logout">Logout</a>
+                {live_page_auth_nav}
             </nav>
         </div>
     </section>
