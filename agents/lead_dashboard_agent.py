@@ -1052,6 +1052,30 @@ input {
     font-weight: 700;
     margin: -3px 0 6px;
 }
+.leadbot-start-scan-message {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.leadbot-start-scan-message[data-kind="rate-limit"],
+.leadbot-start-scan-message[data-kind="session-expired"] {
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+}
+.leadbot-start-scan-message[data-kind="validation"],
+.leadbot-start-scan-message[data-kind="server-error"],
+.leadbot-start-scan-message[data-kind="network-error"] {
+    color: #991b1b;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+}
+#leadbotRefreshPageBtn {
+    margin-top: 8px;
+}
 .file-list {
     display: grid;
     gap: 8px;
@@ -3645,7 +3669,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
     </div>
     <div class="app-nav-overlay" data-nav-overlay></div>
 <script src="/static/js/mobile-nav.js" defer></script>
-<script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__";</script>
+<script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__"; window.LEADBOT_IS_GUEST = __IS_GUEST_JS__;</script>
 
 
 <div class="layout">
@@ -3692,6 +3716,9 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 <button type="submit" class="leadbot-start-btn" id="leadbotStartScanButton">
     Start Lead Finder Scan
 </button>
+
+<p class="leadbot-start-scan-message" id="leadbotStartScanMessage" role="alert" hidden></p>
+<button type="button" class="leadbot-secondary-btn" id="leadbotRefreshPageBtn" hidden>Refresh page</button>
 
 </form>
 
@@ -8909,6 +8936,62 @@ body.leadbot-live-page button[data-action="block"] {
         if (marketEl) marketEl.setAttribute("aria-invalid", show ? "true" : "false");
     }
 
+    var LEADBOT_START_BTN_DEFAULT_TEXT = "Start Lead Finder Scan";
+
+    function resetStartScanButton() {
+        var btn = document.getElementById("leadbotStartScanButton");
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = LEADBOT_START_BTN_DEFAULT_TEXT;
+        }
+    }
+
+    // Rejections (429/403/400/other) land here instead of an alert() +
+    // page reload, so a blocked submission never lands the visitor on the
+    // same empty/stale results view a genuine zero-lead scan would show --
+    // see "The scan completed, but no qualifying leads were found for this
+    // search." below, which is the ONLY place that exact copy is used.
+    function setStartScanMessage(text, kind) {
+        var el = document.getElementById("leadbotStartScanMessage");
+        var refreshBtn = document.getElementById("leadbotRefreshPageBtn");
+
+        if (!text) {
+            if (el) {
+                el.hidden = true;
+                el.textContent = "";
+                el.removeAttribute("data-kind");
+            }
+            if (refreshBtn) refreshBtn.hidden = true;
+            return;
+        }
+
+        if (el) {
+            el.hidden = false;
+            el.textContent = text;
+            el.setAttribute("data-kind", kind || "server-error");
+        }
+
+        // Only the guest/session-expired case gets a refresh action, and it
+        // is never triggered automatically -- the visitor has to click it,
+        // and clicking it does not itself resubmit the scan.
+        if (refreshBtn) refreshBtn.hidden = kind !== "session-expired";
+    }
+
+    function formatRetryAfterSeconds(value) {
+        var seconds = parseInt(value, 10);
+        if (!seconds || seconds <= 0) return "";
+        if (seconds < 60) return " Try again in about " + seconds + (seconds === 1 ? " second." : " seconds.");
+        var minutes = Math.ceil(seconds / 60);
+        return " Try again in about " + minutes + (minutes === 1 ? " minute." : " minutes.");
+    }
+
+    var refreshPageBtnEl = document.getElementById("leadbotRefreshPageBtn");
+    if (refreshPageBtnEl) {
+        refreshPageBtnEl.addEventListener("click", function () {
+            window.location.reload();
+        });
+    }
+
     function launchLiveStart(event) {
         var form = document.getElementById("leadbotRunForm");
         if (!form) return;
@@ -8951,6 +9034,7 @@ body.leadbot-live-page button[data-action="block"] {
             btn.disabled = true;
             btn.textContent = "Starting Lead Finder...";
         }
+        setStartScanMessage("");
 
         fetch("/lead-bot/live-start", {
             method: "POST",
@@ -8960,14 +9044,41 @@ body.leadbot-live-page button[data-action="block"] {
                 window.location.href = resp.url;
                 return;
             }
-            alert("Could not start the scan (your session may have expired). Please refresh the page and try again.");
-            window.location.reload();
-        }).catch(function () {
-            alert("Could not start the scan. Please check your connection and try again.");
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = "Start Lead Finder Scan";
+
+            // A rejected submission always restores the form -- it never
+            // redirects or reloads into the results view, since that would
+            // be indistinguishable from a scan that actually ran and found
+            // nothing.
+            resetStartScanButton();
+
+            if (resp.status === 429) {
+                var retryText = formatRetryAfterSeconds(resp.headers.get("Retry-After"));
+                setStartScanMessage(
+                    "Guest scan limit reached. You can run up to 3 guest scans per hour. "
+                    + "Create an account for full access or try again later." + retryText,
+                    "rate-limit"
+                );
+                return;
             }
+
+            if (resp.status === 403) {
+                if (window.LEADBOT_IS_GUEST) {
+                    setStartScanMessage("Your guest session expired. Refresh this page and try again.", "session-expired");
+                } else {
+                    setStartScanMessage("Your session expired. Refresh this page and try again.", "session-expired");
+                }
+                return;
+            }
+
+            if (resp.status === 400) {
+                setStartScanMessage("Please check the keyword and market fields and try again.", "validation");
+                return;
+            }
+
+            setStartScanMessage("Something went wrong starting the scan. Please try again in a moment.", "server-error");
+        }).catch(function () {
+            resetStartScanButton();
+            setStartScanMessage("Could not reach the server. Please check your connection and try again.", "network-error");
         });
     }
 
@@ -9082,15 +9193,16 @@ body.leadbot-live-page button[data-action="block"] {
         else '<a href="/login">Login</a>\n                <a href="/create-account">Create Account</a>',
     )
     page = page.replace("__CSRF_TOKEN__", html.escape(csrf_token or ""))
+    page = page.replace("__IS_GUEST_JS__", "false" if current_user else "true")
     page = page.replace(
         "__GUEST_NOTE__",
         ""
         if current_user
         else (
             '<p class="leadbot-guest-note" style="margin:0 0 16px;color:#64748b;'
-            'font-size:12.5px;line-height:1.5;">No account required for beta '
-            "testing. Guest access is limited, and your contact information is "
-            "not required.</p>"
+            'font-size:12.5px;line-height:1.5;">Guest preview: up to 3 scans per '
+            "hour with limited results. No account required for beta testing, "
+            "and your contact information is not required.</p>"
         ),
     )
 

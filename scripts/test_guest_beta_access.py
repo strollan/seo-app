@@ -129,11 +129,17 @@ class LeadFinderGuestPageTests(GuestAccessTestCase):
         self.assertIn(guest_agent.GUEST_CSRF_COOKIE, resp.cookies)
 
     def test_guest_beta_note_renders_when_logged_out(self):
+        """Wording updated to disclose the actual guest ceiling (3 scans/hour,
+        limited results) instead of the vaguer "Guest access is limited" --
+        see scripts/test_guest_scan_rejection_messaging.py for the rest of
+        the guest-rejection-messaging coverage this wording change is part
+        of."""
         client = self.guest_client()
         resp = client.get("/lead-bot")
         self.assertIn(
-            "No account required for beta testing. Guest access is limited, "
-            "and your contact information is not required.",
+            "Guest preview: up to 3 scans per hour with limited results. "
+            "No account required for beta testing, and your contact "
+            "information is not required.",
             resp.text,
         )
 

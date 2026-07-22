@@ -182,3 +182,4 @@ test_*.py
 !scripts/test_lead_live_job_export_ownership.py
 !scripts/test_guest_beta_access.py
 !scripts/test_analyze_rate_limit.py
+!scripts/test_guest_scan_rejection_messaging.py

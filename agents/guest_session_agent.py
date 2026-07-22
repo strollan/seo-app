@@ -104,6 +104,22 @@ def guest_scan_is_rate_limited(client_host, guest_id):
         return len(attempts) >= GUEST_SCAN_RATE_LIMIT_MAX_ATTEMPTS
 
 
+def guest_scan_retry_after_seconds(client_host, guest_id):
+    """Seconds until the oldest attempt in the current window expires, for
+    a Retry-After header -- same pattern as app.main's
+    analyze_retry_after_seconds for the /analyze anonymous rate limit."""
+    key = _guest_rate_limit_key(client_host, guest_id)
+    cutoff = time.time() - GUEST_SCAN_RATE_LIMIT_WINDOW_SECONDS
+
+    with _guest_scan_rate_limit_lock:
+        attempts = [t for t in _guest_scan_rate_limit_attempts.get(key, []) if t >= cutoff]
+        if not attempts:
+            return GUEST_SCAN_RATE_LIMIT_WINDOW_SECONDS
+        oldest = min(attempts)
+
+    return max(1, int(oldest + GUEST_SCAN_RATE_LIMIT_WINDOW_SECONDS - time.time()))
+
+
 def guest_scan_record_attempt(client_host, guest_id):
     key = _guest_rate_limit_key(client_host, guest_id)
     now = time.time()

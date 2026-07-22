@@ -11965,6 +11965,7 @@ from agents.guest_session_agent import (
     new_guest_csrf_value,
     guest_csrf_valid,
     guest_scan_is_rate_limited,
+    guest_scan_retry_after_seconds,
     guest_scan_record_attempt,
     clamp_guest_scan_params,
     job_belongs_to_guest,
@@ -12243,19 +12244,28 @@ def leadbot_live_start(
         guest_csrf_cookie = request.cookies.get(GUEST_CSRF_COOKIE, "")
 
         if not guest_csrf_valid(guest_csrf_cookie, csrf_token):
+            # Guest-specific wording: this is the double-submit guest CSRF
+            # cookie pair (agents.guest_session_agent.guest_csrf_valid), so
+            # to a guest visitor this reads as their temporary session
+            # having lapsed -- not the generic "Forbidden" shown for a
+            # logged-in user's own (DB-backed) CSRF failure below.
             return HTMLResponse(
-                "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+                "<h1>Forbidden</h1>"
+                "<p>Your guest session expired. Refresh this page and try again.</p>",
                 status_code=403,
             )
 
         client_host = _leadbot_client_host(request)
         if guest_scan_is_rate_limited(client_host, guest_id):
-            return HTMLResponse(
+            retry_after = guest_scan_retry_after_seconds(client_host, guest_id)
+            response = HTMLResponse(
                 "<h1>Too Many Requests</h1>"
-                "<p>Guest scan limit reached for now. Create a free account to keep "
-                "testing, or try again later.</p>",
+                "<p>Guest scan limit reached. You can run up to 3 guest scans per "
+                "hour. Create an account for full access or try again later.</p>",
                 status_code=429,
             )
+            response.headers["Retry-After"] = str(retry_after)
+            return response
 
     if not is_valid_market(market):
         return HTMLResponse(
@@ -13212,7 +13222,7 @@ async function poll() {{
             const leadsWrap = document.getElementById("leads");
 
             if (leadCount === 0 && leadsWrap && !document.getElementById("leadbotZeroResultsEmpty")) {{
-                if (liveLine1) liveLine1.textContent = "No leads found for this scan.";
+                if (liveLine1) liveLine1.textContent = "The scan completed, but no qualifying leads were found for this search.";
                 if (liveLine2) liveLine2.textContent = "Try a broader search or a clearer location.";
                 if (liveLine3) liveLine3.textContent = "State is required for best results.";
 
@@ -13221,7 +13231,7 @@ async function poll() {{
                 empty.className = "leadbot-zero-results-empty";
                 empty.innerHTML = `
                     <h3>No leads found.</h3>
-                    <p>Lead Finder finished the scan, but no usable local business leads made it through search and filtering.</p>
+                    <p>The scan completed, but no qualifying leads were found for this search.</p>
                     <ul>
                         <li>Include city and state, like <b>Santa Barbara CA</b>.</li>
                         <li>Try a broader business type.</li>
