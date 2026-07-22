@@ -183,3 +183,4 @@ test_*.py
 !scripts/test_guest_beta_access.py
 !scripts/test_analyze_rate_limit.py
 !scripts/test_guest_scan_rejection_messaging.py
+!scripts/test_export_delete_admin_and_advanced_settings.py

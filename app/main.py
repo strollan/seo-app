@@ -15341,6 +15341,41 @@ def leadbot_debug_complete_addresses(filename: str, request: AuthRequest):
 # === LEADBOT DELETE EXPORT ROUTE START ===
 
 
+# === LEADBOT FRESH CSRF TOKEN FOR EXPORT DELETE START ===
+@app.get("/lead-bot/csrf-token")
+def leadbot_csrf_token(request: AuthRequest):
+    """
+    Fresh CSRF token for the caller's own session, fetched immediately
+    before a state-changing LeadBot request (currently: export delete).
+
+    _get_or_create_csrf_token() issues a brand-new token on every call --
+    agents.auth_agent.issue_csrf_token() unconditionally overwrites the
+    session's stored csrf_token_hash, by design (no raw token is ever
+    persisted, so an old one can't be reissued). That means a token
+    embedded in an already-rendered /lead-bot page goes stale the instant
+    any other request re-mints one for the same session -- including a
+    second /lead-bot load in another tab, or a visit to /history or
+    /settings, both of which also call _get_or_create_csrf_token(). That
+    staleness -- not a file-specific permission bug -- is what produced
+    the "delete succeeds for a few exports, then 403s" symptom: whichever
+    delete happened to fire after some other page re-minted the token
+    failed CSRF verification, regardless of which file it targeted.
+
+    This endpoint doesn't change token minting, storage, or rotation in
+    any way -- it only gives the client a way to ask for the *current*
+    valid token right before using it, instead of relying on one baked in
+    at an earlier, possibly-superseded page load.
+    """
+    user = auth_current_user(request)
+    if not user:
+        return JSONResponse({"error": "Login required"}, status_code=401)
+
+    response = JSONResponse({"csrf_token": _get_or_create_csrf_token(request) or ""})
+    # A freshly minted CSRF token must never be browser- or proxy-cached.
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Pragma"] = "no-cache"
+    return response
+# === LEADBOT FRESH CSRF TOKEN FOR EXPORT DELETE END ===
 
 
 

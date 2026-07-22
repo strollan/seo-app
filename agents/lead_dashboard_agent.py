@@ -838,6 +838,38 @@ def _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=None):
 # === LEADBOT DATAFORSEO ADMIN UI FILTER END ===
 
 
+# === LEADBOT ADVANCED SCAN CONTROLS ADMIN FILTER START ===
+def _leadbot_remove_advanced_scan_controls_for_non_admin(page, current_user=None):
+    """
+    Remove the "Internal scan controls" (Limit / Per Query Limit / Max
+    Queries) panel from rendered LeadBot HTML for guests and standard
+    users. These fields are cosmetic only in the current UI -- the Scan
+    Size preset dropdown always overwrites limit/per_query_limit/
+    max_queries at submit time (see buildLiveStartFormData), and the real
+    ceiling is enforced server-side regardless of what any client field
+    contains (agents.lead_live_job_agent.run_job()'s clean_int() clamp for
+    every user, plus agents.guest_session_agent.clamp_guest_scan_params()
+    for guests). Removing the markup here is a UX simplification, not the
+    security boundary -- that stays server-side and is unchanged.
+    """
+    if _leadbot_user_is_admin(current_user):
+        return page
+
+    import re
+
+    text = str(page or "")
+
+    text = re.sub(
+        r'\s*<!--\s*LEADBOT ADVANCED SCAN CONTROLS START\s*-->.*?<!--\s*LEADBOT ADVANCED SCAN CONTROLS END\s*-->\s*',
+        '\n',
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    return text
+# === LEADBOT ADVANCED SCAN CONTROLS ADMIN FILTER END ===
+
+
 def render_lead_dashboard(file="", current_user=None, csrf_token=""):
     files = latest_csvs(current_user=current_user)
 
@@ -3700,8 +3732,9 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                 <input type="hidden" name="per_query_limit" id="leadbotPerQueryLimit" value="12">
                 <input type="hidden" name="max_queries" id="leadbotMaxQueries" value="12">
 
+<!-- LEADBOT ADVANCED SCAN CONTROLS START -->
                 <details class="leadbot-advanced">
-                    <summary>Advanced settings</summary>
+                    <summary>Internal scan controls</summary>
 
                     <label>Limit</label>
                     <input name="_limit_display" id="leadbotLimitDisplay" value="25">
@@ -3712,6 +3745,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
                     <label>Max Queries</label>
                     <input name="_max_queries_display" id="leadbotMaxQueriesDisplay" value="12">
                 </details>
+<!-- LEADBOT ADVANCED SCAN CONTROLS END -->
 
 <button type="submit" class="leadbot-start-btn" id="leadbotStartScanButton">
     Start Lead Finder Scan
@@ -5759,36 +5793,7 @@ btn.dataset.busy = "1";
             row.classList.add("is-export-delete-starting");
         }
 
-        fetch(url, {
-            method: "POST",
-            cache: "no-store",
-            credentials: "same-origin",
-            redirect: "follow",
-            body: new URLSearchParams({ csrf_token: window.LEADBOT_CSRF_TOKEN || "" })
-        })
-        .then(function (res) {
-            if (!res.ok) {
-                throw new Error("Export delete failed: HTTP " + res.status);
-            }
-
-            btn.classList.remove("is-deleting");
-            btn.classList.add("is-deleted");
-            setButtonText(btn, "✓");
-
-            if (row) {
-                row.classList.remove("is-export-delete-starting");
-                row.classList.add("is-export-delete-success");
-
-                setTimeout(function () {
-                    row.classList.add("is-export-delete-removing");
-                }, 240);
-
-                setTimeout(function () {
-                    row.remove();
-                }, 620);
-            }
-        })
-        .catch(function (err) {
+        function restoreDeleteButtonAndRow() {
             btn.__leadbotExportDeleteBusy = false;
             btn.classList.remove("is-deleting", "is-deleted");
             btn.style.pointerEvents = "";
@@ -5804,9 +5809,62 @@ btn.dataset.busy = "1";
             setTimeout(function () {
                 btn.innerHTML = btn.dataset.originalHtml || "×";
             }, 1200);
+        }
 
-            alert(err.message || "Export delete failed.");
-        });
+        // A CSRF token embedded at page-load time can go stale (see
+        // /lead-bot/csrf-token's docstring in app.main) if any other tab
+        // or page re-minted one for this session since. Fetching a fresh
+        // one right before this POST -- falling back to the page-load
+        // token if that fetch itself fails -- avoids that without
+        // changing how tokens are issued, stored, or rotated.
+        fetch("/lead-bot/csrf-token", { credentials: "same-origin", cache: "no-store" })
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (data) { return (data && data.csrf_token) || window.LEADBOT_CSRF_TOKEN || ""; })
+            .catch(function () { return window.LEADBOT_CSRF_TOKEN || ""; })
+            .then(function (csrfToken) {
+                return fetch(url, {
+                    method: "POST",
+                    cache: "no-store",
+                    credentials: "same-origin",
+                    redirect: "follow",
+                    body: new URLSearchParams({ csrf_token: csrfToken })
+                });
+            })
+            .then(function (res) {
+                if (!res.ok) {
+                    var err = new Error(
+                        res.status === 403
+                            ? "You do not have permission to delete this export."
+                            : "Could not delete this export. Please try again."
+                    );
+                    err.status = res.status;
+                    throw err;
+                }
+
+                btn.classList.remove("is-deleting");
+                btn.classList.add("is-deleted");
+                setButtonText(btn, "✓");
+
+                if (row) {
+                    row.classList.remove("is-export-delete-starting");
+                    row.classList.add("is-export-delete-success");
+
+                    setTimeout(function () {
+                        row.classList.add("is-export-delete-removing");
+                    }, 240);
+
+                    setTimeout(function () {
+                        row.remove();
+                    }, 620);
+                }
+            })
+            .catch(function (err) {
+                // Never remove the row here -- only the success branch
+                // above does that. A failed delete always leaves the row
+                // visible and the button restored to its normal state.
+                restoreDeleteButtonAndRow();
+                alert((err && err.message) || "Export delete failed.");
+            });
 
         return false;
     }, true);
@@ -9207,6 +9265,7 @@ body.leadbot-live-page button[data-action="block"] {
     )
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
+    page = _leadbot_remove_advanced_scan_controls_for_non_admin(page, current_user=current_user)
     return page
 
 # === LEADBOT CSV SIZE CAP START ===
