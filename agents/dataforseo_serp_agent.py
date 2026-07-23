@@ -203,6 +203,72 @@ def _leadbot_is_zip_code(value: str) -> bool:
     return bool(_LEADBOT_ZIP_CODE_RE.fullmatch((value or "").strip()))
 
 
+_LEADBOT_CITY_WORD_SEPARATOR_RE = re.compile(r"([ \-]+)")
+
+
+def _leadbot_capitalize_city_word(word: str) -> str:
+    """Capitalize a single city-name word, with special handling for the
+    "Mc" and "O'" prefixes so a full renormalization pass doesn't mangle
+    names like "McAllen" or "O'Fallon" into "Mcallen"/"O'fallon" the way a
+    plain str.capitalize() would."""
+    if not word:
+        return word
+
+    lowered = word.lower()
+
+    if lowered.startswith("mc") and len(lowered) > 2:
+        return "Mc" + lowered[2].upper() + lowered[3:]
+
+    if "'" in word:
+        return "'".join(part[:1].upper() + part[1:] for part in lowered.split("'"))
+
+    return lowered[:1].upper() + lowered[1:]
+
+
+def _leadbot_city_word_looks_plausible(word: str) -> bool:
+    """A word already "looks" correctly cased if it starts with an
+    uppercase letter and isn't entirely upper-case -- ALL CAPS input
+    (e.g. "ALBANY") still needs normalizing even though it starts with a
+    capital letter. Punctuation-only tokens (e.g. a trailing period) never
+    block plausibility on their own."""
+    if not word or not word[0].isalpha():
+        return True
+    return word[0].isupper() and not word.isupper()
+
+
+def _normalize_city_case(city: str) -> str:
+    """
+    Normalize a parsed city name's casing without blindly title-casing
+    every input (a plain str.title() call would turn already-correct
+    names like "McAllen" or "O'Fallon" into "Mcallen"/"O'fallon").
+
+    If every word in the city already looks plausibly cased (starts with
+    an uppercase letter, isn't ALL CAPS), the input is returned completely
+    unchanged -- so correctly typed names are never touched. Otherwise the
+    whole string is renormalized word-by-word (split on spaces and
+    hyphens) via _leadbot_capitalize_city_word(), which still produces the
+    right result for "Mc"/"O'" names even when renormalized from a fully
+    lowercase or fully uppercase input.
+    """
+    city = (city or "").strip()
+    if not city:
+        return city
+
+    tokens = _LEADBOT_CITY_WORD_SEPARATOR_RE.split(city)
+    words = [
+        token for token in tokens
+        if token and not _LEADBOT_CITY_WORD_SEPARATOR_RE.fullmatch(token)
+    ]
+
+    if all(_leadbot_city_word_looks_plausible(word) for word in words):
+        return city
+
+    return "".join(
+        token if _LEADBOT_CITY_WORD_SEPARATOR_RE.fullmatch(token) else _leadbot_capitalize_city_word(token)
+        for token in tokens
+    )
+
+
 def _location_name(market: str) -> str:
     """
     Resolve a free-text market string (as typed by a user: "Albany, NY",
@@ -249,7 +315,7 @@ def _location_name(market: str) -> str:
     resolved_state = _leadbot_resolve_state_name(state_token) if state_token else None
 
     if city and resolved_state:
-        return f"{city},{resolved_state},United States"
+        return f"{_normalize_city_case(city)},{resolved_state},United States"
 
     raise InvalidMarketLocationError(
         "Enter a City, State or ZIP Code, such as Albany, NY or 12207."

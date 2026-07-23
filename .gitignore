@@ -187,3 +187,4 @@ test_*.py
 !scripts/test_contact_lookup_wording.py
 !scripts/test_search_provider_failure_surfacing.py
 !scripts/test_dataforseo_location_formatting.py
+!scripts/test_dataforseo_city_casing.py
