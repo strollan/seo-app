@@ -158,7 +158,7 @@ def _leadbot_export_owner_values(filename):
     return out
 
 
-def record_export_owner(filename, owner_email="", owner_username=""):
+def record_export_owner(filename, owner_email="", owner_username="", is_partial=False):
     """
     Write the export-ownership record for a completed scan, using the same
     data/leadbot_export_owners.json format already read by
@@ -167,6 +167,15 @@ def record_export_owner(filename, owner_email="", owner_username=""):
     paths). Takes explicit owner identity instead of an HTTP request so it
     can be called from a background thread (e.g. a live scan job) that has
     no request object.
+
+    is_partial: whether this export was produced by a scan where at least
+    one query variant succeeded and at least one other genuinely failed at
+    the provider (agents.lead_live_job_agent.run_job()'s partial-results
+    handling). Stored here rather than in a new file/system, since this is
+    already the one existing per-export metadata record. Read back by
+    _leadbot_export_is_partial(). Defaults to False, so this call only ever
+    marks an export partial when the caller explicitly says so -- it never
+    needs to be threaded through the many existing non-partial call sites.
     """
     import json
     from datetime import datetime
@@ -198,12 +207,39 @@ def record_export_owner(filename, owner_email="", owner_username=""):
             "email": email,
             "owner_username": username,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "partial": bool(is_partial),
         }
 
         owner_file.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         return True
     except Exception as exc:
         print(f"LEADBOT EXPORT OWNER RECORD ERROR: {exc}", flush=True)
+        return False
+
+
+def _leadbot_export_is_partial(filename):
+    """True only if this export's ownership record explicitly says
+    partial=true. Any export with no record at all, an unreadable record,
+    or an older record predating this field defaults to False -- existing
+    complete exports are never relabeled."""
+    import json
+
+    name = Path(str(filename or "")).name
+    if not name:
+        return False
+
+    owner_map_path = Path("data/leadbot_export_owners.json")
+    try:
+        if not owner_map_path.exists():
+            return False
+        data = json.loads(owner_map_path.read_text(encoding="utf-8") or "{}")
+        if not isinstance(data, dict):
+            return False
+        entry = data.get(name)
+        if not isinstance(entry, dict):
+            return False
+        return bool(entry.get("partial", False))
+    except Exception:
         return False
 
 
@@ -891,10 +927,15 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
         safe_name = html.escape(f.name)
         safe_label = html.escape(label)
         encoded_name = quote(f.name)
+        partial_badge = (
+            ' <span class="export-partial-badge" title="Some search requests for this scan could not be completed.">Partial</span>'
+            if _leadbot_export_is_partial(f.name)
+            else ""
+        )
 
         file_links.append(
             f'<div class="export-file-row{active}">'
-            f'<a class="file-link{active}" title="{safe_name}" href="/lead-bot?file={encoded_name}">{safe_label}</a>'
+            f'<a class="file-link{active}" title="{safe_name}" href="/lead-bot?file={encoded_name}">{safe_label}{partial_badge}</a>'
             f'<a class="export-csv-link" title="Download CSV" href="/lead-bot/export/{encoded_name}">CSV</a>'
             f'</div>'
         )
@@ -2702,6 +2743,20 @@ main#results .results-top {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
+}
+
+.export-partial-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    vertical-align: middle;
 }
 
 .export-csv-link {

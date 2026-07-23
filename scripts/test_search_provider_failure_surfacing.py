@@ -298,6 +298,19 @@ class RunJobProviderFailureTests(unittest.TestCase):
             self.assertNotIn(banned, final_job["message"])
 
     def test_partial_published_leads_survive_a_later_provider_failure(self):
+        """Updated by the partial-results fix (scripts.
+        test_partial_provider_results.py): a query's provider failure no
+        longer aborts the whole scan as search_provider_unavailable when a
+        different query already succeeded in the same job -- the scan now
+        ends "done" with job["partial"] = True and the partial-results
+        warning message, and the lead found by the successful query is
+        still published. This test previously asserted the old
+        total-abort behavior, which was exactly the bug that fix
+        addresses. Full coverage of the partial-outcome behavior itself
+        (export creation, zero-result variants, total-failure-unchanged,
+        diagnostics) lives in test_partial_provider_results.py -- this
+        test is kept here only to confirm the lead-survival guarantee in
+        this file's existing fixture/mock style."""
         call_count = {"n": 0}
 
         def flaky_find_leads(industry, market, service_keyword=None, own_domain=None, limit=10, on_candidate=None):
@@ -317,8 +330,8 @@ class RunJobProviderFailureTests(unittest.TestCase):
             job_agent.run_job(job_id)
 
         final_job = job_agent.read_job(job_id)
-        self.assertEqual(final_job["status"], "error")
-        self.assertEqual(final_job["error_code"], "search_provider_unavailable")
+        self.assertEqual(final_job["status"], "done")
+        self.assertTrue(final_job["partial"])
         domains = [lead.get("domain") for lead in final_job["leads"]]
         self.assertIn("first-lead.com", domains, "a lead published before the failure must survive it")
 

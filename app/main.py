@@ -13319,9 +13319,22 @@ async function poll() {{
                 `;
                 leadsWrap.appendChild(empty);
             }} else {{
-                if (liveLine1) liveLine1.textContent = "Scan complete. Your export is ready.";
-                if (liveLine2) liveLine2.textContent = "Search complete.";
-                if (liveLine3) liveLine3.textContent = "Dashboard is ready.";
+                // job.partial is only ever set by run_job() when at least
+                // one query succeeded and at least one other genuinely
+                // failed at the provider -- never inferred from anything
+                // else here. Strict === true (rather than truthy) so an
+                // older job file with no "partial" key at all -- or any
+                // other falsy value -- always falls through to the
+                // existing complete-success wording unchanged.
+                if (job.partial === true) {{
+                    if (liveLine1) liveLine1.textContent = "Partial results are ready.";
+                    if (liveLine2) liveLine2.textContent = "Some searches could not be completed, but the leads found so far are available.";
+                    if (liveLine3) liveLine3.textContent = "Your partial export is ready.";
+                }} else {{
+                    if (liveLine1) liveLine1.textContent = "Scan complete. Your export is ready.";
+                    if (liveLine2) liveLine2.textContent = "Search complete.";
+                    if (liveLine3) liveLine3.textContent = "Dashboard is ready.";
+                }}
 
                 if (IS_GUEST) showGuestSavePrompt();
             }}

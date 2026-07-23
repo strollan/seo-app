@@ -38,11 +38,55 @@ INVALID_MARKET_LOCATION_MARKER = "INVALID_MARKET_LOCATION:"
 
 INVALID_MARKET_LOCATION_MESSAGE = "Enter a City, State or ZIP Code, such as Albany, NY or 12207."
 
+# Shown when at least one query in a scan hit a genuine provider failure
+# (PROVIDER_UNAVAILABLE_MARKER) but at least one OTHER query in the same
+# scan succeeded (with results or a legitimate zero-result outcome). A
+# single failing query variant must never discard leads a different
+# query variant already found -- see run_job()'s per-query loop.
+PARTIAL_RESULTS_WARNING_MESSAGE = (
+    "Some search requests could not be completed. The results shown may be incomplete."
+)
+
 # How often the pre-first-lead heartbeat refreshes its status message.
 # A module-level constant (rather than a literal in the closure) so tests
 # can shrink it to force a real, fast heartbeat/streaming write race
 # instead of waiting out the real cadence.
 LEADBOT_HEARTBEAT_INTERVAL_SECONDS = 3.0
+
+# === LEADBOT QUERY OUTCOME DIAGNOSTICS START ===
+# Sanitized, job-level summary of how a scan's queries resolved -- how
+# many were attempted, how many succeeded (with results or a legitimate
+# zero-result outcome), how many hit a genuine provider failure, whether
+# the scan ended up partial, and how many leads were ultimately
+# published. Never logs query text, provider names, numeric provider
+# status codes, or any lead/business data -- only counts and the job id.
+_LEADBOT_QUERY_OUTCOME_LOG = Path("data") / "leadbot_query_outcomes.log"
+
+
+def _leadbot_log_query_outcome(
+    job_id,
+    queries_attempted,
+    queries_succeeded,
+    queries_failed,
+    leads_published,
+    is_partial,
+):
+    try:
+        _LEADBOT_QUERY_OUTCOME_LOG.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": now_iso(),
+            "job_id": job_id,
+            "queries_attempted": queries_attempted,
+            "queries_succeeded": queries_succeeded,
+            "queries_failed": queries_failed,
+            "leads_published": leads_published,
+            "partial": is_partial,
+        }
+        with _LEADBOT_QUERY_OUTCOME_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
+    except Exception:
+        pass
+# === LEADBOT QUERY OUTCOME DIAGNOSTICS END ===
 
 
 
@@ -914,6 +958,16 @@ def run_job(job_id):
         seen_domains = set(job.get("seen_domains") or [])
         all_rows = []
 
+        # Per-query outcome tally so one query's genuine provider failure
+        # doesn't discard results a different query already found. Only
+        # PROVIDER_UNAVAILABLE_MARKER counts as a "failed" query here --
+        # a market that can't be resolved at all (INVALID_MARKET_LOCATION_
+        # MARKER) still aborts the whole scan immediately below, since
+        # every remaining query would fail identically anyway.
+        queries_attempted = 0
+        queries_succeeded = 0
+        queries_with_provider_failure = 0
+
         def _stop_heartbeat_before_write(heartbeat_stop_event, heartbeat_thread):
             """Deterministically silence the heartbeat before this thread's
             own write_job() call, so the two can never race on disk.
@@ -1121,28 +1175,33 @@ def run_job(job_id):
                 write_job(job)
                 return
 
+            queries_attempted += 1
+
             if search_error and str(search_error).startswith(PROVIDER_UNAVAILABLE_MARKER):
-                # The live provider failed and no working fallback could
-                # produce results (agents.lead_live_job_agent.
-                # call_find_leads_with_timeout / business_competitor_finder.
-                # SearchProviderUnavailableError). This is not a genuine
-                # zero-result scan -- do not mark it "done", do not build an
-                # export from whatever partial leads exist, and preserve
-                # any leads _publish_candidate() already streamed before the
-                # failure (job["leads"] above already carries them; nothing
-                # here clears it).
-                job["status"] = "error"
-                job["error_code"] = "search_provider_unavailable"
-                job["message"] = SEARCH_PROVIDER_UNAVAILABLE_MESSAGE
+                # This one query variant hit a genuine provider failure
+                # (agents.lead_live_job_agent.call_find_leads_with_timeout /
+                # business_competitor_finder.SearchProviderUnavailableError).
+                # Do not abort the whole scan here -- a different query
+                # variant may still succeed. Whether the scan as a whole
+                # ends up a total failure, a partial success, or a clean
+                # success is decided once after every query has been tried
+                # (see "queries_with_provider_failure" below). Never expose
+                # the provider name or any numeric status code here.
+                queries_with_provider_failure += 1
+                job["errors"].append(f"{query}: search temporarily unavailable")
                 job["updated_at"] = now_iso()
                 write_job(job)
-                return
+                continue
 
             if search_error:
                 job["errors"].append(f"{query}: {search_error}")
                 job["updated_at"] = now_iso()
                 write_job(job)
                 continue
+
+            # No search_error at all -- a genuine success, whether or not
+            # this particular query variant happened to find any leads.
+            queries_succeeded += 1
 
             leads = normalize_lead_results(leads)
 
@@ -1160,6 +1219,40 @@ def run_job(job_id):
                 if len(job["leads"]) >= total_limit:
                     break
                 _publish_candidate(lead, heartbeat_stop_event, heartbeat_thread)
+
+        # Decide the scan's overall outcome only after every query has been
+        # tried, so one query's provider failure never discards a different
+        # query's valid results.
+        is_total_provider_failure = (
+            queries_attempted > 0
+            and queries_with_provider_failure > 0
+            and queries_succeeded == 0
+        )
+        is_partial = queries_with_provider_failure > 0 and queries_succeeded > 0
+
+        _leadbot_log_query_outcome(
+            job_id,
+            queries_attempted=queries_attempted,
+            queries_succeeded=queries_succeeded,
+            queries_failed=queries_with_provider_failure,
+            leads_published=len(job["leads"]),
+            is_partial=is_partial,
+        )
+
+        if is_total_provider_failure:
+            # Every attempted query hit a genuine provider failure and none
+            # succeeded -- preserve the existing behavior exactly: no
+            # export, no leads published, the standard provider-unavailable
+            # message. (Any leads a query streamed via _publish_candidate()
+            # before its own later failure are still preserved in
+            # job["leads"], same as before this change -- nothing here
+            # clears it.)
+            job["status"] = "error"
+            job["error_code"] = "search_provider_unavailable"
+            job["message"] = SEARCH_PROVIDER_UNAVAILABLE_MESSAGE
+            job["updated_at"] = now_iso()
+            write_job(job)
+            return
 
         job["message"] = "Scan complete. Building dashboard export..."
         job["updated_at"] = now_iso()
@@ -1190,6 +1283,7 @@ def run_job(job_id):
                             job["export_file"],
                             owner_email=params.get("owner_email", ""),
                             owner_username=params.get("owner_username", ""),
+                            is_partial=is_partial,
                         )
                     except Exception as exc:
                         print(f"LEADBOT LIVE EXPORT OWNER RECORD ERROR: {exc}", flush=True)
@@ -1202,7 +1296,8 @@ def run_job(job_id):
             return
 
         job["status"] = "done"
-        job["message"] = "Done. Open Desktop is ready."
+        job["partial"] = is_partial
+        job["message"] = PARTIAL_RESULTS_WARNING_MESSAGE if is_partial else "Done. Open Desktop is ready."
 
         try:
             _leadbot_sync_live_addresses_to_export(job)
