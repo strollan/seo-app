@@ -134,14 +134,25 @@ def _auth_header() -> Dict[str, str]:
 # "Long Island" (and similar informal NY-area names) usable in the search
 # keyword/query, but send a valid nearby canonical location to DataForSEO
 # so the API does not reject it.
+#
+# DataForSEO has no single canonical location for the whole Long Island
+# region (it spans Nassau + Suffolk counties), so bare "Long Island"
+# aliases deliberately keep using the broad "New York,New York,United
+# States" value -- the LEADBOT LONG ISLAND LOCAL SERP GUARDRAIL below
+# filters out NYC/borough leakage from those broad results. Nassau County
+# and Suffolk County, unlike Long Island as a whole, each DO have their
+# own precise DataForSEO canonical location (confirmed via a live
+# locations lookup: location_code 9058760 and 1023413 respectively), so
+# those two aliases use their exact county location instead of the
+# broad NYC value.
 _LEADBOT_LOCATION_ALIASES = {
     "long island": "New York,New York,United States",
     "long island ny": "New York,New York,United States",
     "long island new york": "New York,New York,United States",
-    "nassau county": "New York,New York,United States",
-    "nassau county ny": "New York,New York,United States",
-    "suffolk county": "New York,New York,United States",
-    "suffolk county ny": "New York,New York,United States",
+    "nassau county": "Nassau County,New York,United States",
+    "nassau county ny": "Nassau County,New York,United States",
+    "suffolk county": "Suffolk County,New York,United States",
+    "suffolk county ny": "Suffolk County,New York,United States",
     "nyc": "New York,New York,United States",
     "new york city": "New York,New York,United States",
     "brooklyn": "Brooklyn,New York,United States",

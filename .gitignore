@@ -188,3 +188,4 @@ test_*.py
 !scripts/test_search_provider_failure_surfacing.py
 !scripts/test_dataforseo_location_formatting.py
 !scripts/test_dataforseo_city_casing.py
+!scripts/test_dataforseo_nassau_suffolk_locations.py
