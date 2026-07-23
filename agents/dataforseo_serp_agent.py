@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -361,6 +362,115 @@ _LEADBOT_DATAFORSEO_MAX_ATTEMPTS = 3  # 1 initial attempt + 2 retries
 _LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS = [1, 2]  # before retry 1, before retry 2
 
 
+# === LEADBOT DATAFORSEO CIRCUIT BREAKER START ===
+# Production runs LeadMeLeads as a single uvicorn process (no --workers
+# flag; confirmed against the deployed systemd unit and the running
+# process list), so a thread-safe in-process circuit breaker -- plain
+# module-level state guarded by one lock -- is the smallest correct
+# mechanism. No file/SQLite-backed shared state is needed since there is
+# only one process to share it across; concurrent scans within that one
+# process run their per-query work on background threads (see
+# call_find_leads_with_timeout() in agents/lead_live_job_agent.py), so
+# thread-safety (not multi-process-safety) is what actually matters here.
+#
+# Scope: only the two retryable task codes (40101, 40103) ever feed this
+# breaker. A permanent error (auth, malformed field, rate limit) or a
+# network-level timeout/connection error never touches it, exactly as
+# before this change -- those still raise on attempt 1 with no retry and
+# no effect on the circuit's state.
+_circuit_breaker_lock = threading.Lock()
+_circuit_breaker_state = {
+    "exhaustion_timestamps": [],  # monotonic times of exhausted retryable ops
+    "opened_until": None,         # monotonic time the circuit reopens for probing, or None if closed
+    "probe_in_progress": False,   # True while the one allowed post-cooldown probe is in flight
+}
+
+_CIRCUIT_BREAKER_FAILURE_THRESHOLD = 3
+_CIRCUIT_BREAKER_FAILURE_WINDOW_SECONDS = 60
+_CIRCUIT_BREAKER_OPEN_SECONDS = 120
+
+
+def _circuit_breaker_now() -> float:
+    """Wrapped so tests can patch this one function to control time
+    deterministically instead of sleeping for real."""
+    return time.monotonic()
+
+
+def _circuit_breaker_gate(now: float) -> str:
+    """Returns "closed" (proceed normally), "probe" (this call is the one
+    allowed post-cooldown probe -- proceed), or "open" (fail fast, make no
+    request). Thread-safe."""
+    with _circuit_breaker_lock:
+        state = _circuit_breaker_state
+
+        if state["opened_until"] is None:
+            return "closed"
+
+        if now < state["opened_until"]:
+            return "open"
+
+        # Cooldown has elapsed. Exactly one probe is allowed through;
+        # every other concurrent caller keeps failing fast until this
+        # probe's outcome (success or exhaustion) is known.
+        if state["probe_in_progress"]:
+            return "open"
+
+        state["probe_in_progress"] = True
+        return "probe"
+
+
+def _circuit_breaker_record_success() -> None:
+    """Any normal successful provider response -- including a genuine
+    40102 zero-result completion -- clears stale failure history and
+    fully closes the circuit. Safe to call unconditionally regardless of
+    whether this call was the probe or an ordinary closed-circuit call."""
+    with _circuit_breaker_lock:
+        _circuit_breaker_state["exhaustion_timestamps"] = []
+        _circuit_breaker_state["opened_until"] = None
+        _circuit_breaker_state["probe_in_progress"] = False
+
+
+def _circuit_breaker_record_exhaustion(now: float, is_probe: bool) -> None:
+    """Call exactly once when a retryable-task-code operation has
+    exhausted every attempt. `is_probe` must be the caller's own locally
+    captured probe flag from _circuit_breaker_gate() -- never re-derived
+    from the shared state here -- so one thread's unrelated failure can
+    never be mistaken for a different thread's active probe failing."""
+    with _circuit_breaker_lock:
+        state = _circuit_breaker_state
+
+        if is_probe:
+            # The one allowed probe just failed -- reopen immediately,
+            # independent of the ordinary threshold/window accounting.
+            state["probe_in_progress"] = False
+            state["opened_until"] = now + _CIRCUIT_BREAKER_OPEN_SECONDS
+            state["exhaustion_timestamps"] = []
+            return
+
+        cutoff = now - _CIRCUIT_BREAKER_FAILURE_WINDOW_SECONDS
+        recent = [t for t in state["exhaustion_timestamps"] if t >= cutoff]
+        recent.append(now)
+        state["exhaustion_timestamps"] = recent
+
+        if len(recent) >= _CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+            state["opened_until"] = now + _CIRCUIT_BREAKER_OPEN_SECONDS
+            state["exhaustion_timestamps"] = []
+
+
+def _circuit_breaker_release_probe_if_still_claimed() -> None:
+    """Safety net for a probe call that ends in something other than a
+    recorded success or a recorded exhaustion (e.g. a permanent/non-
+    retryable error, or a timeout, happens to land on the probe attempt).
+    Permanent errors and timeouts must never contribute to the circuit's
+    threshold or reopen it, but the probe slot still has to be released
+    so a later request can try again -- otherwise the circuit would stay
+    wedged open forever with no further probe ever allowed. A no-op if
+    the probe was already resolved by record_success/record_exhaustion."""
+    with _circuit_breaker_lock:
+        _circuit_breaker_state["probe_in_progress"] = False
+# === LEADBOT DATAFORSEO CIRCUIT BREAKER END ===
+
+
 def _leadbot_classify_provider_failure(exc: Exception) -> str:
     """Best-effort sanitized failure category for diagnostics only. Never
     used for control flow -- a wrong guess here only mislabels a log
@@ -403,6 +513,27 @@ def _leadbot_classify_provider_failure(exc: Exception) -> str:
     return "unknown"
 
 
+_LEADBOT_PROVIDER_DIAGNOSTICS_LOG_MAX_BYTES = 2 * 1024 * 1024  # ~2 MB
+
+
+def _leadbot_rotate_provider_diagnostics_log_if_needed() -> None:
+    """Keep the active diagnostics log bounded: once it would exceed
+    ~2MB, move it to a single ".1" backup (replacing any older one) and
+    let a fresh active file start on the next append. Never raises --
+    rotation is best-effort only, exactly like the logging it supports,
+    so a rotation failure can never break a scan or hide the real
+    provider exception."""
+    try:
+        if not _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.exists():
+            return
+        if _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.stat().st_size < _LEADBOT_PROVIDER_DIAGNOSTICS_LOG_MAX_BYTES:
+            return
+        backup_path = _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.parent / (_LEADBOT_PROVIDER_DIAGNOSTICS_LOG.name + ".1")
+        _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.replace(backup_path)
+    except Exception:
+        pass
+
+
 def _leadbot_log_provider_diagnostic(
     failure_category: str,
     status_code: Optional[int] = None,
@@ -415,10 +546,12 @@ def _leadbot_log_provider_diagnostic(
     the raw response body, request headers, credentials, or any lead
     data -- only a provider name, failure category, numeric status code,
     the location being searched, the attempt number, and the outcome
-    ("retrying", "exhausted", or "recovered"). Diagnostics must never
-    break the actual search path, so any failure here is swallowed."""
+    ("retrying", "exhausted", "recovered", or "circuit_open"). Diagnostics
+    must never break the actual search path, so any failure here
+    (including a rotation failure) is swallowed."""
     try:
         _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        _leadbot_rotate_provider_diagnostics_log_if_needed()
         record = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "provider": "dataforseo",
@@ -475,79 +608,114 @@ def search_google_organic(
         }
     ]
 
+    # Fail fast, before spending a single paid request, if the circuit is
+    # open. Only a genuinely open circuit blocks here -- "closed" and
+    # "probe" both proceed to the retry loop below exactly as before.
+    circuit_gate = _circuit_breaker_gate(_circuit_breaker_now())
+    if circuit_gate == "open":
+        _leadbot_log_provider_diagnostic(
+            failure_category="circuit_breaker_open",
+            status_code=None,
+            location_name=resolved_location_name,
+            attempt=0,
+            outcome="circuit_open",
+        )
+        raise RuntimeError("DataForSEO circuit breaker is open")
+
+    is_probe = circuit_gate == "probe"
     task = None
 
-    # Bounded retry for the two DataForSEO task-status codes confirmed to
-    # be transient/provider-side (40101 "Internal SE server error", 40103
-    # "Task execution failed; try resubmitting" -- per DataForSEO's own
-    # error table). Every other failure (auth, validation, malformed
-    # field, rate limit, etc.) raises immediately on the first attempt,
-    # unchanged from before. 40102 "No Search Results" is not an error at
-    # all and returns [] without ever entering the retry path.
-    for attempt in range(1, _LEADBOT_DATAFORSEO_MAX_ATTEMPTS + 1):
-        envelope_status_code = None
-        task_status_code = None
+    try:
+        # Bounded retry for the two DataForSEO task-status codes confirmed
+        # to be transient/provider-side (40101 "Internal SE server error",
+        # 40103 "Task execution failed; try resubmitting" -- per
+        # DataForSEO's own error table). Every other failure (auth,
+        # validation, malformed field, rate limit, etc.) raises
+        # immediately on the first attempt, unchanged from before. 40102
+        # "No Search Results" is not an error at all and returns []
+        # without ever entering the retry path.
+        for attempt in range(1, _LEADBOT_DATAFORSEO_MAX_ATTEMPTS + 1):
+            envelope_status_code = None
+            task_status_code = None
 
-        try:
-            response = requests.post(
-                url,
-                headers=_auth_header(),
-                json=payload,
-                timeout=90,
-            )
-
-            response.raise_for_status()
-            data = response.json()
-
-            envelope_status_code = data.get("status_code")
-            if envelope_status_code != 20000:
-                raise RuntimeError(
-                    f"DataForSEO API error: {envelope_status_code} {data.get('status_message')}"
+            try:
+                response = requests.post(
+                    url,
+                    headers=_auth_header(),
+                    json=payload,
+                    timeout=90,
                 )
 
-            tasks = data.get("tasks") or []
-            if not tasks:
-                return []
+                response.raise_for_status()
+                data = response.json()
 
-            task = tasks[0]
-            task_status_code = task.get("status_code")
+                envelope_status_code = data.get("status_code")
+                if envelope_status_code != 20000:
+                    raise RuntimeError(
+                        f"DataForSEO API error: {envelope_status_code} {data.get('status_message')}"
+                    )
 
-            if task_status_code == _LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE:
-                return []
+                tasks = data.get("tasks") or []
+                if not tasks:
+                    _circuit_breaker_record_success()
+                    return []
 
-            if task_status_code != 20000:
-                raise RuntimeError(
-                    f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
-                )
+                task = tasks[0]
+                task_status_code = task.get("status_code")
 
-            if attempt > 1:
+                if task_status_code == _LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE:
+                    # A genuine, legitimate zero-result completion -- not
+                    # a failure, so it clears stale failure history same
+                    # as any other successful response.
+                    _circuit_breaker_record_success()
+                    return []
+
+                if task_status_code != 20000:
+                    raise RuntimeError(
+                        f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
+                    )
+
+                _circuit_breaker_record_success()
+
+                if attempt > 1:
+                    _leadbot_log_provider_diagnostic(
+                        failure_category="recovered",
+                        status_code=task_status_code,
+                        location_name=resolved_location_name,
+                        attempt=attempt,
+                        outcome="recovered",
+                    )
+                break
+            except Exception as exc:
+                status_for_log = task_status_code if task_status_code is not None else envelope_status_code
+                is_retryable = task_status_code in _LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES
+                is_last_attempt = attempt == _LEADBOT_DATAFORSEO_MAX_ATTEMPTS
+                will_retry = is_retryable and not is_last_attempt
+
                 _leadbot_log_provider_diagnostic(
-                    failure_category="recovered",
-                    status_code=task_status_code,
+                    failure_category=_leadbot_classify_provider_failure(exc),
+                    status_code=status_for_log,
                     location_name=resolved_location_name,
                     attempt=attempt,
-                    outcome="recovered",
+                    outcome="retrying" if will_retry else "exhausted",
                 )
-            break
-        except Exception as exc:
-            status_for_log = task_status_code if task_status_code is not None else envelope_status_code
-            is_retryable = task_status_code in _LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES
-            is_last_attempt = attempt == _LEADBOT_DATAFORSEO_MAX_ATTEMPTS
-            will_retry = is_retryable and not is_last_attempt
 
-            _leadbot_log_provider_diagnostic(
-                failure_category=_leadbot_classify_provider_failure(exc),
-                status_code=status_for_log,
-                location_name=resolved_location_name,
-                attempt=attempt,
-                outcome="retrying" if will_retry else "exhausted",
-            )
+                if will_retry:
+                    time.sleep(_LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS[attempt - 1])
+                    continue
 
-            if will_retry:
-                time.sleep(_LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS[attempt - 1])
-                continue
+                if is_retryable:
+                    # Exhausted every attempt on a retryable code -- this
+                    # counts toward the circuit breaker (or, if this call
+                    # was itself the one allowed probe, reopens it
+                    # immediately). Permanent/non-retryable errors never
+                    # reach this branch, so they never affect the breaker.
+                    _circuit_breaker_record_exhaustion(_circuit_breaker_now(), is_probe)
 
-            raise
+                raise
+    finally:
+        if is_probe:
+            _circuit_breaker_release_probe_if_still_claimed()
 
     result_blocks = task.get("result") or []
     if not result_blocks:

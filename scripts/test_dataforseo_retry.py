@@ -57,8 +57,37 @@ def _fake_response(task_status_code, items=None, task_message="x"):
     return _FakeResponse()
 
 
+def _isolate_circuit_breaker_state(testcase):
+    """This file's own tests deliberately exhaust 40101/40103 many times
+    in a row using real wall-clock time (agents.dataforseo_serp_agent's
+    circuit breaker isn't mocked here -- that's covered separately in
+    scripts/test_dataforseo_circuit_breaker.py). Run back-to-back, enough
+    of those real exhaustions land inside a real 60-second window to trip
+    the breaker for a real 120 seconds, which would then leak into and
+    break whatever DataForSEO-related test file happens to run next in
+    the same process. Save/reset/restore the breaker's module-level state
+    around each test so this file can never affect any other."""
+    orig = {
+        "exhaustion_timestamps": list(dfs._circuit_breaker_state["exhaustion_timestamps"]),
+        "opened_until": dfs._circuit_breaker_state["opened_until"],
+        "probe_in_progress": dfs._circuit_breaker_state["probe_in_progress"],
+    }
+    dfs._circuit_breaker_state["exhaustion_timestamps"] = []
+    dfs._circuit_breaker_state["opened_until"] = None
+    dfs._circuit_breaker_state["probe_in_progress"] = False
+
+    def _restore():
+        dfs._circuit_breaker_state["exhaustion_timestamps"] = orig["exhaustion_timestamps"]
+        dfs._circuit_breaker_state["opened_until"] = orig["opened_until"]
+        dfs._circuit_breaker_state["probe_in_progress"] = orig["probe_in_progress"]
+
+    testcase.addCleanup(_restore)
+
+
 class DataForSeoRetryTests(unittest.TestCase):
     def setUp(self):
+        _isolate_circuit_breaker_state(self)
+
         self._env_backup = {
             key: os.environ.get(key)
             for key in ("LEADBOT_DATAFORSEO_ENABLED", "DATAFORSEO_LOGIN", "DATAFORSEO_PASSWORD")
@@ -176,6 +205,8 @@ class RetryDiagnosticLoggingTests(unittest.TestCase):
     def setUp(self):
         import tempfile
         import shutil
+
+        _isolate_circuit_breaker_state(self)
 
         self.tmpdir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
