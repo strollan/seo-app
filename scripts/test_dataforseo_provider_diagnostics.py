@@ -223,7 +223,10 @@ class SanitizedNoSecretsTests(_DiagnosticLogTestCase):
         records = self._read_log_records()
         self.assertEqual(
             set(records[0].keys()),
-            {"ts", "provider", "failure_category", "status_code", "location_code", "location_name"},
+            {
+                "ts", "provider", "failure_category", "status_code",
+                "location_code", "location_name", "attempt", "outcome",
+            },
         )
 
     def test_diagnostic_logging_failure_never_breaks_the_search_path(self):

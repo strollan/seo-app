@@ -192,3 +192,4 @@ test_*.py
 !scripts/test_seo_technical_foundation.py
 !scripts/test_homepage_content.py
 !scripts/test_dataforseo_provider_diagnostics.py
+!scripts/test_dataforseo_retry.py

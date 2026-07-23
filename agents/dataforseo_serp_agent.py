@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -349,11 +350,33 @@ def _location_name(market: str) -> str:
 # before this was added.
 _LEADBOT_PROVIDER_DIAGNOSTICS_LOG = Path(__file__).resolve().parents[1] / "data" / "leadbot_provider_diagnostics.log"
 
+# Confirmed from DataForSEO's official task-status-code table:
+#   40101 = Internal SE server error; requested search engine could not
+#           process the request -- transient, safe to retry.
+#   40103 = Task execution failed; DataForSEO's own guidance is to retry.
+#   40102 = No Search Results -- NOT an error, a legitimate empty result.
+_LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES = {40101, 40103}
+_LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE = 40102
+_LEADBOT_DATAFORSEO_MAX_ATTEMPTS = 3  # 1 initial attempt + 2 retries
+_LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS = [1, 2]  # before retry 1, before retry 2
+
 
 def _leadbot_classify_provider_failure(exc: Exception) -> str:
     """Best-effort sanitized failure category for diagnostics only. Never
     used for control flow -- a wrong guess here only mislabels a log
     line, it can't change what error the user sees."""
+    message = str(exc)
+
+    code_match = re.search(r"\b(40101|40102|40103)\b", message)
+    if code_match:
+        code = code_match.group(1)
+        if code == "40101":
+            return "provider_internal_error"
+        if code == "40102":
+            return "no_results"
+        if code == "40103":
+            return "task_execution_failed"
+
     if isinstance(exc, requests.exceptions.Timeout):
         return "timeout"
     if isinstance(exc, requests.exceptions.ConnectionError):
@@ -368,14 +391,14 @@ def _leadbot_classify_provider_failure(exc: Exception) -> str:
             return "provider_5xx"
         return "http_error"
 
-    message = str(exc).lower()
-    if "invalid field" in message:
+    message_lower = message.lower()
+    if "invalid field" in message_lower:
         return "malformed_request_field"
-    if "not enough credit" in message or "balance" in message:
+    if "not enough credit" in message_lower or "balance" in message_lower:
         return "account_balance"
-    if "unauthorized" in message or "auth" in message:
+    if "unauthorized" in message_lower or "auth" in message_lower:
         return "authentication"
-    if "rate limit" in message or "too many requests" in message:
+    if "rate limit" in message_lower or "too many requests" in message_lower:
         return "rate_limit"
     return "unknown"
 
@@ -385,12 +408,15 @@ def _leadbot_log_provider_diagnostic(
     status_code: Optional[int] = None,
     location_name: str = "",
     location_code: Optional[int] = None,
+    attempt: int = 1,
+    outcome: str = "failed",
 ) -> None:
     """Append one sanitized diagnostic line. Deliberately never includes
     the raw response body, request headers, credentials, or any lead
     data -- only a provider name, failure category, numeric status code,
-    and the location being searched. Diagnostics must never break the
-    actual search path, so any failure here is swallowed."""
+    the location being searched, the attempt number, and the outcome
+    ("retrying", "exhausted", or "recovered"). Diagnostics must never
+    break the actual search path, so any failure here is swallowed."""
     try:
         _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.parent.mkdir(parents=True, exist_ok=True)
         record = {
@@ -400,6 +426,8 @@ def _leadbot_log_provider_diagnostic(
             "status_code": status_code,
             "location_code": location_code,
             "location_name": location_name,
+            "attempt": attempt,
+            "outcome": outcome,
         }
         with _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, sort_keys=True) + "\n")
@@ -447,44 +475,79 @@ def search_google_organic(
         }
     ]
 
-    envelope_status_code = None
-    task_status_code = None
+    task = None
 
-    try:
-        response = requests.post(
-            url,
-            headers=_auth_header(),
-            json=payload,
-            timeout=90,
-        )
+    # Bounded retry for the two DataForSEO task-status codes confirmed to
+    # be transient/provider-side (40101 "Internal SE server error", 40103
+    # "Task execution failed; try resubmitting" -- per DataForSEO's own
+    # error table). Every other failure (auth, validation, malformed
+    # field, rate limit, etc.) raises immediately on the first attempt,
+    # unchanged from before. 40102 "No Search Results" is not an error at
+    # all and returns [] without ever entering the retry path.
+    for attempt in range(1, _LEADBOT_DATAFORSEO_MAX_ATTEMPTS + 1):
+        envelope_status_code = None
+        task_status_code = None
 
-        response.raise_for_status()
-        data = response.json()
-
-        envelope_status_code = data.get("status_code")
-        if envelope_status_code != 20000:
-            raise RuntimeError(
-                f"DataForSEO API error: {envelope_status_code} {data.get('status_message')}"
+        try:
+            response = requests.post(
+                url,
+                headers=_auth_header(),
+                json=payload,
+                timeout=90,
             )
 
-        tasks = data.get("tasks") or []
-        if not tasks:
-            return []
+            response.raise_for_status()
+            data = response.json()
 
-        task = tasks[0]
-        task_status_code = task.get("status_code")
+            envelope_status_code = data.get("status_code")
+            if envelope_status_code != 20000:
+                raise RuntimeError(
+                    f"DataForSEO API error: {envelope_status_code} {data.get('status_message')}"
+                )
 
-        if task_status_code != 20000:
-            raise RuntimeError(
-                f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
+            tasks = data.get("tasks") or []
+            if not tasks:
+                return []
+
+            task = tasks[0]
+            task_status_code = task.get("status_code")
+
+            if task_status_code == _LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE:
+                return []
+
+            if task_status_code != 20000:
+                raise RuntimeError(
+                    f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
+                )
+
+            if attempt > 1:
+                _leadbot_log_provider_diagnostic(
+                    failure_category="recovered",
+                    status_code=task_status_code,
+                    location_name=resolved_location_name,
+                    attempt=attempt,
+                    outcome="recovered",
+                )
+            break
+        except Exception as exc:
+            status_for_log = task_status_code if task_status_code is not None else envelope_status_code
+            is_retryable = task_status_code in _LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES
+            is_last_attempt = attempt == _LEADBOT_DATAFORSEO_MAX_ATTEMPTS
+            will_retry = is_retryable and not is_last_attempt
+
+            _leadbot_log_provider_diagnostic(
+                failure_category=_leadbot_classify_provider_failure(exc),
+                status_code=status_for_log,
+                location_name=resolved_location_name,
+                attempt=attempt,
+                outcome="retrying" if will_retry else "exhausted",
             )
-    except Exception as exc:
-        _leadbot_log_provider_diagnostic(
-            failure_category=_leadbot_classify_provider_failure(exc),
-            status_code=task_status_code if task_status_code is not None else envelope_status_code,
-            location_name=resolved_location_name,
-        )
-        raise
+
+            if will_retry:
+                time.sleep(_LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS[attempt - 1])
+                continue
+
+            raise
 
     result_blocks = task.get("result") or []
     if not result_blocks:
