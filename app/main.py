@@ -19,7 +19,7 @@ except Exception:
 # === LEADBOT EMAIL CLEANER GLOBAL FALLBACK END ===
 
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
 from app.agent import build_agent_insight_html, build_agent_action_plan, enhance_analysis, enhance_quick_wins
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -44,6 +44,7 @@ from agents.url_safety import validate_public_url, UnsafeURLError
 from app.agent_service import run_agent_summary
 from app.competitor_agent import find_competitors
 from agents.seo_agent import run_seo_agent
+from app import seo_meta
 
 app = FastAPI()
 
@@ -53,6 +54,22 @@ templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 static_dir = os.path.join(BASE_DIR, "static")
 if os.path.isdir(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+# === LEADBOT SEO NOINDEX HEADER MIDDLEWARE START ===
+# Applies X-Robots-Tag: noindex, nofollow to every response except the
+# three public indexable pages (app.seo_meta.PUBLIC_INDEXABLE_PATHS) and
+# static assets. Deny-list-based on the public allowlist rather than an
+# allow-list of private routes, so any new account/dynamic/report/export
+# route is noindexed by default the moment it exists, without needing to
+# be individually annotated.
+@app.middleware("http")
+async def leadbot_seo_noindex_header_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if seo_meta.should_apply_noindex_header(request.url.path or ""):
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+# === LEADBOT SEO NOINDEX HEADER MIDDLEWARE END ===
 
 
 reports_static_dir = os.path.join(os.path.dirname(BASE_DIR), "reports")
@@ -1719,8 +1736,20 @@ async def home(request: Request):
             "request": request,
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
+            "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.HOME_PAGE),
+            "seo_jsonld_html": seo_meta.render_homepage_jsonld(),
         },
     )
+
+
+@app.get("/robots.txt")
+async def robots_txt():
+    return PlainTextResponse(seo_meta.render_robots_txt())
+
+
+@app.get("/sitemap.xml")
+async def sitemap_xml():
+    return Response(content=seo_meta.render_sitemap_xml(), media_type="application/xml")
 
 
 
@@ -2114,6 +2143,7 @@ async def compare_page(request: Request):
             "request": request,
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
+            "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.COMPARE_PAGE),
         },
     )
 

@@ -11,6 +11,7 @@ from agents.lead_confidence_agent import calculate_contact_confidence
 from urllib.parse import quote
 from agents.lead_email_cleaner_agent import clean_email_field
 from agents.lead_reason_agent import build_lead_reason
+from app import seo_meta
 
 
 EXPORT_DIR = Path("exports")
@@ -915,7 +916,7 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Lead Finder Dashboard</title>
+__SEO_META__
 <style>
 * { box-sizing: border-box; }
 body {
@@ -9236,6 +9237,7 @@ body.leadbot-live-page button[data-action="block"] {
 </html>
 """
 
+    page = page.replace("__SEO_META__", seo_meta.render_seo_meta_html(seo_meta.LEAD_FINDER_PAGE))
     page = page.replace("__FILES__", "".join(file_links) if file_links else '<div class="empty">No exports yet.</div>')
     page = page.replace("__SELECTED__", html.escape(selected_name))
     page = page.replace("__COUNT__", str(len(rows)))
