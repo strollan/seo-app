@@ -544,6 +544,80 @@ a {
     letter-spacing: 0.01em;
 }
 
+.info-section {
+    margin-top: 28px;
+    border: 1px solid rgba(191, 219, 254, 0.18);
+    border-radius: 24px;
+    padding: 32px;
+    background: rgba(15, 23, 42, 0.72);
+    box-shadow: 0 20px 54px rgba(0,0,0,0.22);
+}
+
+.info-section.light {
+    background: rgba(255, 255, 255, 0.92);
+    color: #0f172a;
+}
+
+.info-section h2 {
+    margin: 0 0 10px;
+    font-size: 28px;
+    letter-spacing: -0.04em;
+}
+
+.info-section p {
+    margin: 10px 0 0;
+    color: rgba(239, 246, 255, 0.82);
+    line-height: 1.62;
+    font-size: 16px;
+    max-width: 760px;
+}
+
+.info-section p:first-of-type {
+    margin-top: 0;
+}
+
+.info-section.light p {
+    color: #475569;
+}
+
+.muted-note {
+    margin-top: 14px;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.62);
+    line-height: 1.5;
+    max-width: 640px;
+}
+
+.secondary .muted-note {
+    color: #64748b;
+}
+
+.final-cta {
+    margin-top: 28px;
+    text-align: center;
+    border: 1px solid rgba(191, 219, 254, 0.18);
+    border-radius: 24px;
+    padding: 40px 32px;
+    background:
+        radial-gradient(circle at 50% 0%, rgba(96, 165, 250, 0.22), transparent 60%),
+        rgba(15, 23, 42, 0.72);
+    box-shadow: 0 20px 54px rgba(0,0,0,0.22);
+}
+
+.final-cta h2 {
+    margin: 0 0 10px;
+    font-size: 30px;
+    letter-spacing: -0.04em;
+}
+
+.final-cta p {
+    margin: 0 auto 22px;
+    max-width: 560px;
+    color: rgba(239, 246, 255, 0.82);
+    font-size: 16px;
+    line-height: 1.6;
+}
+
 @media (max-width: 940px) {
     .hero-grid,
     .section-grid {
@@ -687,13 +761,14 @@ a {
                 <h1>Find local leads worth contacting.</h1>
                 <p class="tagline">Stop hunting. Start finding.</p>
                 <p class="subcopy">
-                    LeadMeLeads helps you turn a service and market into a practical prospect list:
-                    businesses with weak online signals, useful contact clues, and clear reasons to reach out.
+                    Type a keyword and a location. LeadMeLeads finds local businesses worth a
+                    second look, checks what contact information is actually available, and
+                    tells you why each one might be worth contacting.
                 </p>
 
                 <div class="hero-actions">
-                    <a class="btn btn-primary" href="/lead-bot">Open Lead Finder</a>
-                    <a class="btn btn-secondary" href="/compare">Compare Websites</a>
+                    <a class="btn btn-primary" href="/lead-bot">Find Local Leads</a>
+                    <a class="btn btn-secondary" href="/compare">Compare Two Websites</a>
                 </div>
 
                 {% if not user %}
@@ -768,20 +843,40 @@ a {
         </section>
     </main>
 
+    <section class="info-section" aria-label="Why not buy a list instead">
+        <h2>Why not just buy a list?</h2>
+        <p>
+            Buying a giant, generic lead list can look like the easy route. The data may be
+            stale, the businesses may not fit your market, and you still have to figure out who
+            is actually worth contacting.
+        </p>
+        <p>
+            LeadMeLeads takes a different approach: search by keyword and location, then review
+            local businesses that match the search instead of starting with a recycled
+            spreadsheet.
+        </p>
+    </section>
+
     <section class="section-grid">
         <article class="product-card">
             <span class="product-label">Primary tool</span>
             <h2>Lead Finder</h2>
             <p>
-                Find local businesses that need help getting found. Start with a keyword and a market,
-                then review prospects by score, website signals, contact readiness, and “why this lead.”
+                Enter a keyword and a city, state, or ZIP code. LeadMeLeads searches for matching
+                local businesses, then reviews what is publicly available about each one. You get
+                a shortlist of business leads worth contacting, not a spreadsheet of strangers.
             </p>
 
             <ul class="feature-list">
-                <li>Local keyword + market lead scans</li>
-                <li>Lead scores and weak-signal clues</li>
-                <li>Exports for follow-up and outreach</li>
+                <li>Search by keyword and city, state, or ZIP code</li>
+                <li>Review businesses and what is publicly available about them</li>
+                <li>See contact details when we find them, and why the lead may be worth pursuing</li>
             </ul>
+
+            <p class="muted-note">
+                We check for emails, phone numbers, and addresses &mdash; but we do not always
+                find every one, and we are not going to pretend otherwise.
+            </p>
 
             <div class="card-actions">
                 <a class="dark" href="/lead-bot">Open Lead Finder</a>
@@ -790,22 +885,46 @@ a {
 
         <article class="product-card secondary">
             <span class="product-label">Secondary tool</span>
-            <h2>Compare URL</h2>
+            <h2>Website Comparison Tool</h2>
             <p>
-                Compare two websites and uncover practical SEO opportunities. Useful for sales calls,
-                client conversations, and quick before-and-after research.
+                Pick two websites &mdash; yours and a competitor's, or two competitors &mdash; and
+                see the practical differences: titles, meta descriptions, headings, and content
+                gaps. Built for specific answers, not a vague score that means nothing outside a
+                sales pitch.
             </p>
 
             <ul class="feature-list">
-                <li>Compare titles, meta descriptions, and headings</li>
-                <li>Spot content and local SEO gaps</li>
-                <li>Generate client-friendly recommendations</li>
+                <li>Compare titles, meta descriptions, and headings side by side</li>
+                <li>Spot missing content and structural gaps</li>
+                <li>Get plain recommendations, not a mystery score</li>
             </ul>
 
             <div class="card-actions">
-                <a class="dark" href="/compare">Open Compare URL</a>
+                <a class="dark" href="/compare">Open Comparison Tool</a>
             </div>
         </article>
+    </section>
+
+    <section class="info-section light" aria-label="Our approach to reporting information">
+        <h2>Useful information, not a scoreboard</h2>
+        <p>
+            We are not interested in vanity metrics or scary numbers designed to make you
+            panic-buy an SEO package. LeadMeLeads shows you what is actually there: real contact
+            details when we can find them, real website gaps when they exist, and a plain reason
+            for every lead.
+        </p>
+        <p>
+            If we cannot find something, we say so instead of making it up.
+        </p>
+    </section>
+
+    <section class="final-cta" aria-label="Start a Lead Finder search">
+        <h2>Start with a search, not a spreadsheet.</h2>
+        <p>
+            Enter a keyword and a location to find leads worth contacting &mdash; no purchased
+            list, less guesswork.
+        </p>
+        <a class="btn btn-primary" href="/lead-bot">Find Local Leads</a>
     </section>
 
     <p class="footer-note">

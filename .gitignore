@@ -190,3 +190,4 @@ test_*.py
 !scripts/test_dataforseo_city_casing.py
 !scripts/test_dataforseo_nassau_suffolk_locations.py
 !scripts/test_seo_technical_foundation.py
+!scripts/test_homepage_content.py
