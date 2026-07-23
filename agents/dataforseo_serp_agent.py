@@ -13,8 +13,10 @@ Pulls real Google Organic SERP results and returns LeadBot-friendly rows:
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -333,6 +335,79 @@ def _location_name(market: str) -> str:
     )
 
 
+# === LEADBOT PROVIDER FAILURE DIAGNOSTICS START ===
+# journalctl is unavailable in production and this app has no other log
+# file, so a genuine DataForSEO provider failure (as opposed to a user
+# input problem like InvalidMarketLocationError, which is never logged
+# here) previously left no trace beyond a generic "temporarily
+# unavailable" message -- there was no way to tell a rate limit from a
+# timeout from a 5xx after the fact. This appends one sanitized JSON line
+# per failure: provider name, a best-effort failure category, the numeric
+# DataForSEO status code (never the raw response body), and the location
+# that was being searched. Never touches control flow -- the caught
+# exception is always re-raised unchanged, so behavior is identical to
+# before this was added.
+_LEADBOT_PROVIDER_DIAGNOSTICS_LOG = Path(__file__).resolve().parents[1] / "data" / "leadbot_provider_diagnostics.log"
+
+
+def _leadbot_classify_provider_failure(exc: Exception) -> str:
+    """Best-effort sanitized failure category for diagnostics only. Never
+    used for control flow -- a wrong guess here only mislabels a log
+    line, it can't change what error the user sees."""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "timeout_or_connectivity"
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 429:
+            return "rate_limit"
+        if status in (401, 403):
+            return "authentication"
+        if isinstance(status, int) and 500 <= status < 600:
+            return "provider_5xx"
+        return "http_error"
+
+    message = str(exc).lower()
+    if "invalid field" in message:
+        return "malformed_request_field"
+    if "not enough credit" in message or "balance" in message:
+        return "account_balance"
+    if "unauthorized" in message or "auth" in message:
+        return "authentication"
+    if "rate limit" in message or "too many requests" in message:
+        return "rate_limit"
+    return "unknown"
+
+
+def _leadbot_log_provider_diagnostic(
+    failure_category: str,
+    status_code: Optional[int] = None,
+    location_name: str = "",
+    location_code: Optional[int] = None,
+) -> None:
+    """Append one sanitized diagnostic line. Deliberately never includes
+    the raw response body, request headers, credentials, or any lead
+    data -- only a provider name, failure category, numeric status code,
+    and the location being searched. Diagnostics must never break the
+    actual search path, so any failure here is swallowed."""
+    try:
+        _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "provider": "dataforseo",
+            "failure_category": failure_category,
+            "status_code": status_code,
+            "location_code": location_code,
+            "location_name": location_name,
+        }
+        with _LEADBOT_PROVIDER_DIAGNOSTICS_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
+    except Exception:
+        pass
+# === LEADBOT PROVIDER FAILURE DIAGNOSTICS END ===
+
+
 def search_google_organic(
     keyword: str,
     market: str = "",
@@ -359,10 +434,12 @@ def search_google_organic(
 
     url = "https://api.dataforseo.com/v3/serp/google/organic/live/regular"
 
+    resolved_location_name = _location_name(market)
+
     payload = [
         {
             "keyword": keyword,
-            "location_name": _location_name(market),
+            "location_name": resolved_location_name,
             "language_code": language_code,
             "device": device,
             "os": os_name,
@@ -370,31 +447,44 @@ def search_google_organic(
         }
     ]
 
-    response = requests.post(
-        url,
-        headers=_auth_header(),
-        json=payload,
-        timeout=90,
-    )
+    envelope_status_code = None
+    task_status_code = None
 
-    response.raise_for_status()
-    data = response.json()
-
-    if data.get("status_code") != 20000:
-        raise RuntimeError(
-            f"DataForSEO API error: {data.get('status_code')} {data.get('status_message')}"
+    try:
+        response = requests.post(
+            url,
+            headers=_auth_header(),
+            json=payload,
+            timeout=90,
         )
 
-    tasks = data.get("tasks") or []
-    if not tasks:
-        return []
+        response.raise_for_status()
+        data = response.json()
 
-    task = tasks[0]
+        envelope_status_code = data.get("status_code")
+        if envelope_status_code != 20000:
+            raise RuntimeError(
+                f"DataForSEO API error: {envelope_status_code} {data.get('status_message')}"
+            )
 
-    if task.get("status_code") != 20000:
-        raise RuntimeError(
-            f"DataForSEO task error: {task.get('status_code')} {task.get('status_message')}"
+        tasks = data.get("tasks") or []
+        if not tasks:
+            return []
+
+        task = tasks[0]
+        task_status_code = task.get("status_code")
+
+        if task_status_code != 20000:
+            raise RuntimeError(
+                f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
+            )
+    except Exception as exc:
+        _leadbot_log_provider_diagnostic(
+            failure_category=_leadbot_classify_provider_failure(exc),
+            status_code=task_status_code if task_status_code is not None else envelope_status_code,
+            location_name=resolved_location_name,
         )
+        raise
 
     result_blocks = task.get("result") or []
     if not result_blocks:
