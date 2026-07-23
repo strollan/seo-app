@@ -14,10 +14,24 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
+
+
+class InvalidMarketLocationError(Exception):
+    """
+    Raised when a market string can't be confidently resolved into a valid
+    DataForSEO location_name and isn't a ZIP code either -- e.g. a bare
+    city name with no state ("Southampton"). This is a user-input problem,
+    not a provider failure, and is deliberately a distinct exception from
+    business_competitor_finder.SearchProviderUnavailableError so the two
+    are never conflated: run_job() surfaces this one as a validation
+    message ("Enter a City, State or ZIP Code...") rather than "the lead
+    search service is temporarily unavailable".
+    """
 
 # === LEADBOT DATAFORSEO QUERY CLEANUP START ===
 def _leadbot_clean_query_piece(value):
@@ -116,64 +130,130 @@ def _auth_header() -> Dict[str, str]:
     }
 
 
+# DataForSEO only accepts specific canonical location_name values. Keep
+# "Long Island" (and similar informal NY-area names) usable in the search
+# keyword/query, but send a valid nearby canonical location to DataForSEO
+# so the API does not reject it.
+_LEADBOT_LOCATION_ALIASES = {
+    "long island": "New York,New York,United States",
+    "long island ny": "New York,New York,United States",
+    "long island new york": "New York,New York,United States",
+    "nassau county": "New York,New York,United States",
+    "nassau county ny": "New York,New York,United States",
+    "suffolk county": "New York,New York,United States",
+    "suffolk county ny": "New York,New York,United States",
+    "nyc": "New York,New York,United States",
+    "new york city": "New York,New York,United States",
+    "brooklyn": "Brooklyn,New York,United States",
+    "brooklyn ny": "Brooklyn,New York,United States",
+    "queens": "Queens,New York,United States",
+    "queens ny": "Queens,New York,United States",
+    "bronx": "Bronx,New York,United States",
+    "bronx ny": "Bronx,New York,United States",
+    "manhattan": "New York,New York,United States",
+    "manhattan ny": "New York,New York,United States",
+    "staten island": "Staten Island,New York,United States",
+    "staten island ny": "Staten Island,New York,United States",
+}
+
+_LEADBOT_STATE_ABBREVIATIONS = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+    "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+    "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+    "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+    "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+    "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+    "WI": "Wisconsin", "WY": "Wyoming", "DC": "District of Columbia",
+}
+
+_LEADBOT_STATE_FULL_NAMES_LOWER = {
+    full_name.lower(): full_name for full_name in _LEADBOT_STATE_ABBREVIATIONS.values()
+}
+
+_LEADBOT_ZIP_CODE_RE = re.compile(r"^\d{5}(-\d{4})?$")
+
+
+def _leadbot_resolve_state_name(state_token: str) -> Optional[str]:
+    """Return the canonical full state name for a 2-letter abbreviation
+    (with optional periods, e.g. "N.Y.") or a full state name spelled out
+    (case-insensitive, e.g. "New York") -- or None if unrecognized. Full
+    state names are matched as one unit (not word-by-word) so multi-word
+    names like "New York" or "North Carolina" resolve correctly."""
+    token = (state_token or "").strip()
+    if not token:
+        return None
+
+    abbreviation = token.upper().replace(".", "")
+    if abbreviation in _LEADBOT_STATE_ABBREVIATIONS:
+        return _LEADBOT_STATE_ABBREVIATIONS[abbreviation]
+
+    return _LEADBOT_STATE_FULL_NAMES_LOWER.get(token.lower())
+
+
+def _leadbot_is_zip_code(value: str) -> bool:
+    """5-digit ZIP or ZIP+4 -- matches the existing (unchanged) pass-through
+    behavior: a bare ZIP code is sent to DataForSEO as-is, not rewritten
+    into a City,State,Country value."""
+    return bool(_LEADBOT_ZIP_CODE_RE.fullmatch((value or "").strip()))
+
+
 def _location_name(market: str) -> str:
+    """
+    Resolve a free-text market string (as typed by a user: "Albany, NY",
+    "Albany,NY", "Albany , NY", "Albany NY", "New York, NY", a ZIP code,
+    or one of the informal NY-area aliases) into DataForSEO's required
+    canonical "City,State,Country" location_name -- or raise
+    InvalidMarketLocationError if it can't be confidently resolved, rather
+    than sending DataForSEO a malformed value (which it rejects with task
+    error 40501 "Invalid Field: 'location_name'").
+
+    Deliberately does not guess a state for a bare, ambiguous city name
+    with no state or ZIP at all (e.g. "Southampton") -- that's exactly the
+    kind of guess that produced malformed values before this fix.
+    """
     market = (market or "").strip()
 
-    # DataForSEO only accepts specific canonical location_name values.
-    # Keep "Long Island" in the search keyword/query, but send a valid
-    # nearby canonical location to DataForSEO so the API does not reject it.
-    alias_map = {
-        "long island": "New York,New York,United States",
-        "long island ny": "New York,New York,United States",
-        "long island new york": "New York,New York,United States",
-        "nassau county": "New York,New York,United States",
-        "nassau county ny": "New York,New York,United States",
-        "suffolk county": "New York,New York,United States",
-        "suffolk county ny": "New York,New York,United States",
-        "nyc": "New York,New York,United States",
-        "new york city": "New York,New York,United States",
-        "brooklyn": "Brooklyn,New York,United States",
-        "brooklyn ny": "Brooklyn,New York,United States",
-        "queens": "Queens,New York,United States",
-        "queens ny": "Queens,New York,United States",
-        "bronx": "Bronx,New York,United States",
-        "bronx ny": "Bronx,New York,United States",
-        "manhattan": "New York,New York,United States",
-        "manhattan ny": "New York,New York,United States",
-        "staten island": "Staten Island,New York,United States",
-        "staten island ny": "Staten Island,New York,United States",
-    }
-
     normalized_market = " ".join(market.lower().replace(",", " ").split())
-    if normalized_market in alias_map:
-        return alias_map[normalized_market]
+    if normalized_market in _LEADBOT_LOCATION_ALIASES:
+        return _LEADBOT_LOCATION_ALIASES[normalized_market]
 
-    state_map = {
-        "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
-        "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
-        "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
-        "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
-        "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
-        "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
-        "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
-        "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
-        "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
-        "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
-        "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
-        "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
-        "WI": "Wisconsin", "WY": "Wyoming", "DC": "District of Columbia",
-    }
+    if _leadbot_is_zip_code(market):
+        return market
 
-    parts = market.split()
+    # Split on the FINAL comma so a multi-word city ("Winston-Salem") or a
+    # full multi-word state name after the comma ("Albany, New York") both
+    # parse correctly -- unlike splitting on whitespace, which can't tell
+    # a two-word city from a two-word state.
+    if "," in market:
+        city_part, _, state_part = market.rpartition(",")
+        city = city_part.strip().rstrip(",").strip()
+        state_token = state_part.strip()
+    else:
+        # No comma at all: preserve the existing "City ST" (space-only)
+        # convention, e.g. "Albany NY", by treating the last whitespace
+        # token as the state.
+        tokens = market.split()
+        if len(tokens) >= 2:
+            city = " ".join(tokens[:-1]).strip()
+            state_token = tokens[-1].strip()
+        else:
+            city = ""
+            state_token = ""
 
-    if len(parts) >= 2:
-        maybe_state = parts[-1].upper().replace(".", "")
-        city = " ".join(parts[:-1]).strip()
+    resolved_state = _leadbot_resolve_state_name(state_token) if state_token else None
 
-        if maybe_state in state_map and city:
-            return f"{city},{state_map[maybe_state]},United States"
+    if city and resolved_state:
+        return f"{city},{resolved_state},United States"
 
-    return market or "United States"
+    raise InvalidMarketLocationError(
+        "Enter a City, State or ZIP Code, such as Albany, NY or 12207."
+    )
 
 
 def search_google_organic(

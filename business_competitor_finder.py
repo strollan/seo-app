@@ -4,9 +4,15 @@ from serper_client import google_search, get_organic_results
 
 
 try:
-    from agents.dataforseo_serp_agent import search_google_organic
+    from agents.dataforseo_serp_agent import InvalidMarketLocationError, search_google_organic
 except Exception:
     search_google_organic = None
+
+    class InvalidMarketLocationError(Exception):
+        """Fallback definition if agents.dataforseo_serp_agent couldn't be
+        imported at all -- keeps `except InvalidMarketLocationError:`
+        clauses elsewhere in this module resolvable rather than raising
+        NameError, without masking whatever broke the real import above."""
 
 # === LEADBOT NON-SERPER FALLBACK START ===
 
@@ -495,7 +501,7 @@ def _leadbot_non_serper_search(
     depth = max(10, min(depth, 100))
 
     try:
-        from agents.dataforseo_serp_agent import search_google_organic
+        from agents.dataforseo_serp_agent import InvalidMarketLocationError, search_google_organic
 
         results = search_google_organic(
             query,
@@ -510,6 +516,12 @@ def _leadbot_non_serper_search(
 
         return list(results or [])
 
+    except InvalidMarketLocationError:
+        # A market that can't be resolved into a valid location is a user
+        # input problem, not a provider failure -- let it propagate as-is
+        # so run_job() can surface it as validation guidance instead of
+        # "the lead search service is temporarily unavailable".
+        raise
     except Exception as exc:
         print(
             f"LEADBOT DATAFORSEO ORGANIC ONLY ERROR: query={query!r} location={location!r} error={exc}",
@@ -563,6 +575,10 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
                         keyword, location=location, page=serp_page, num=10, raise_on_failure=True
                     )
                 except SearchProviderUnavailableError:
+                    raise
+                except InvalidMarketLocationError:
+                    # Not a provider failure -- a market the caller couldn't
+                    # resolve into a valid location. Let it propagate as-is.
                     raise
                 except Exception as fallback_exc:
                     print(f"LEADBOT FALLBACK SEARCH ALSO FAILED: {fallback_exc}", flush=True)

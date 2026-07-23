@@ -29,6 +29,15 @@ SEARCH_PROVIDER_UNAVAILABLE_MESSAGE = (
     "complete. Please try again shortly."
 )
 
+# Same string-marker technique as PROVIDER_UNAVAILABLE_MARKER, for
+# agents.dataforseo_serp_agent.InvalidMarketLocationError: a market that
+# can't be resolved into a valid provider location (e.g. a bare city name
+# with no state, like "Southampton") is a user-input problem, not a
+# provider failure, and must never be surfaced as one.
+INVALID_MARKET_LOCATION_MARKER = "INVALID_MARKET_LOCATION:"
+
+INVALID_MARKET_LOCATION_MESSAGE = "Enter a City, State or ZIP Code, such as Albany, NY or 12207."
+
 # How often the pre-first-lead heartbeat refreshes its status message.
 # A module-level constant (rather than a literal in the closure) so tests
 # can shrink it to force a real, fast heartbeat/streaming write race
@@ -345,8 +354,11 @@ def call_find_leads_with_timeout(
         return None, "Search ended without returning results"
 
     if status == "error":
+        from agents.dataforseo_serp_agent import InvalidMarketLocationError
         from business_competitor_finder import SearchProviderUnavailableError
 
+        if isinstance(payload, InvalidMarketLocationError):
+            return None, f"{INVALID_MARKET_LOCATION_MARKER}{payload}"
         if isinstance(payload, SearchProviderUnavailableError):
             return None, f"{PROVIDER_UNAVAILABLE_MARKER}{payload}"
         return None, str(payload)
@@ -1090,6 +1102,23 @@ def run_job(job_id):
 
             if is_cancel_requested(job_id):
                 mark_job_cancelled(job_id)
+                return
+
+            if search_error and str(search_error).startswith(INVALID_MARKET_LOCATION_MARKER):
+                # The market string couldn't be resolved into a valid
+                # provider location (agents.dataforseo_serp_agent.
+                # InvalidMarketLocationError) -- a user-input problem, not
+                # a provider failure. Every remaining query would fail the
+                # exact same way (the market is fixed for the whole job),
+                # so stop here rather than retrying. Never represent this
+                # as "search_provider_unavailable" or a zero-result scan;
+                # any leads already streamed before this point are still
+                # preserved (job["leads"] above already carries them).
+                job["status"] = "error"
+                job["error_code"] = "invalid_market_location"
+                job["message"] = INVALID_MARKET_LOCATION_MESSAGE
+                job["updated_at"] = now_iso()
+                write_job(job)
                 return
 
             if search_error and str(search_error).startswith(PROVIDER_UNAVAILABLE_MARKER):
