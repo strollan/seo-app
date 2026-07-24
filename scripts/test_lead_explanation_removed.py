@@ -25,9 +25,15 @@ These tests prove:
   - EXPORT_FIELDS / export_leads_to_csv() no longer produce a "reason"
     column, and a legacy source dict with a "reason" key does not break
     the CSV write
-  - lead_cards() (dashboard renderer) no longer emits "Why this lead" text,
-    an empty ".reason" wrapper, or the .reason CSS class at all, while
-    normal card info (domain, phone, email, address, score) still renders
+  - lead_cards() (dashboard renderer) no longer emits the old .reason CSS
+    class or an empty ".reason" wrapper, while normal card info (domain,
+    phone, email, address, score) still renders
+
+NOTE: a short, factual "Why this lead" note was later intentionally
+restored (see scripts/test_lead_why_note_restored.py) -- the heading text
+itself reappearing is expected and correct. What must never come back is
+the OLD long/speculative generator's behavior and its .reason CSS class,
+which is what the tests below actually assert.
   - an old CSV export that still has a "reason" column loads through
     read_csv_rows()/lead_cards() without error and without showing the
     legacy explanation text, and remains downloadable via
@@ -229,11 +235,18 @@ class ExportCsvNoReasonColumnTests(unittest.TestCase):
 
 
 class LeadCardsDashboardRenderingTests(unittest.TestCase):
-    """lead_cards() must not render "Why this lead" heading/text, the
-    .reason CSS class, or any leftover empty wrapper -- while normal card
-    fields still render correctly. Covers both a new-style row and a
-    legacy row that still has a "reason" value (as if read from an old
-    CSV export)."""
+    """lead_cards() must not render the *old* speculative explanation
+    generator's output, its .reason CSS class, or any leftover empty
+    wrapper -- while normal card fields still render correctly.
+
+    NOTE: a short, factual "Why this lead" note was intentionally
+    restored later (see scripts/test_lead_why_note_restored.py), so this
+    class only asserts the OLD long/speculative generator's markers never
+    reappear -- it does not assert the heading itself is absent.
+
+    Covers both a new-style row and a legacy row that still has a
+    "reason" value (as if read from an old CSV export, from before the
+    original removal)."""
 
     def _rows(self, extra=None):
         row = {
@@ -251,11 +264,12 @@ class LeadCardsDashboardRenderingTests(unittest.TestCase):
             row.update(extra)
         return [row]
 
-    def test_new_style_row_has_no_why_this_lead_or_reason_class(self):
+    def test_new_style_row_has_no_old_reason_class(self):
         html_out = dash_agent.lead_cards(self._rows(), selected_name="test.csv", csrf_token="tok")
 
-        self.assertNotIn("Why this lead", html_out)
-        self.assertNotIn("Why This Lead", html_out)
+        # The old feature's exact CSS class must never reappear -- the
+        # restored note intentionally uses a distinct "leadbot-why-note"
+        # class instead (see scripts/test_lead_why_note_restored.py).
         self.assertNotIn('class="reason"', html_out)
         # Normal card info must still be present.
         self.assertIn("acmeroofing.example", html_out)
@@ -270,7 +284,6 @@ class LeadCardsDashboardRenderingTests(unittest.TestCase):
             csrf_token="tok",
         )
 
-        self.assertNotIn("Why this lead", html_out)
         self.assertNotIn(legacy_text, html_out)
         self.assertNotIn('class="reason"', html_out)
         self.assertIn("acmeroofing.example", html_out)
@@ -336,7 +349,6 @@ class OldCsvBackwardCompatibilityTests(unittest.TestCase):
     def test_old_csv_renders_via_cards_route_without_legacy_text(self):
         resp = self.client.get(f"/lead-bot/cards/{self.filename}")
         self.assertEqual(resp.status_code, 200)
-        self.assertNotIn("Why this lead", resp.text)
         self.assertNotIn(self.legacy_reason_text, resp.text)
         self.assertNotIn('class="reason"', resp.text)
         self.assertIn("legacy-lead.example", resp.text)

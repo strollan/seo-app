@@ -12815,6 +12815,24 @@ body {{
     border-radius: 12px;
     color: #334155;
 }}
+.leadbot-why-note {{
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #dbe4f0;
+}}
+.leadbot-why-note b {{
+    display: block;
+    margin-bottom: 3px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #64748b;
+}}
+.leadbot-why-note p {{
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #475569;
+}}
 .pulse {{
     display: inline-block;
     width: 7px;
@@ -13167,7 +13185,27 @@ function link(value) {{
     return `<a href="${{esc(value)}}" target="_blank" rel="noopener">${{esc(value)}}</a>`;
 }}
 
-function renderLead(lead) {{
+const LEADBOT_WHY_NOTE_BAD_VALUES = ["", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found"];
+
+function leadbotWhyNoteLines(keyword, market, hasContact) {{
+    let keywordClean = String(keyword || "").trim();
+    let marketClean = String(market || "").trim();
+
+    if (LEADBOT_WHY_NOTE_BAD_VALUES.includes(keywordClean.toLowerCase())) keywordClean = "";
+    if (LEADBOT_WHY_NOTE_BAD_VALUES.includes(marketClean.toLowerCase())) marketClean = "";
+
+    const line1 = (keywordClean && marketClean)
+        ? `Matches your search for ${{keywordClean}} in ${{marketClean}}.`
+        : "Matches the search used for this scan.";
+
+    const line2 = hasContact
+        ? "Website and available contact details are ready to review."
+        : "A website was found; contact details may still need research.";
+
+    return [line1, line2];
+}}
+
+function renderLead(lead, jobParams) {{
     const key = lead.domain || lead.url || lead.title;
     if (seen.has(key)) return;
     seen.add(key);
@@ -13177,6 +13215,10 @@ function renderLead(lead) {{
     const contact = lead.contact_page_url ? link(lead.contact_page_url) : "Not found";
     const website = lead.url ? link(lead.url) : "Not found";
     const address = lead.address || lead.full_address || lead.business_address || lead.formatted_address || lead.location || "Not found";
+
+    const jp = jobParams || {{}};
+    const whyHasContact = !!(lead.best_phone || lead.emails);
+    const [whyLine1, whyLine2] = leadbotWhyNoteLines(jp.keyword, jp.market, whyHasContact);
 
     const metaTitle =
         lead.meta_title ||
@@ -13232,6 +13274,12 @@ function renderLead(lead) {{
         <div class="leadbot-live-seo-snapshot" style="margin-top:14px !important; padding-top:14px !important;">
             <div class="leadbot-live-meta-title">${{esc(metaTitle || "Not found")}}</div>
             <div class="leadbot-live-meta-description">${{esc(metaDescription || "Not found")}}</div>
+        </div>
+
+        <div class="leadbot-why-note">
+            <b>Why this lead</b>
+            <p>${{esc(whyLine1)}}</p>
+            <p>${{esc(whyLine2)}}</p>
         </div>
     `;
 
@@ -13361,7 +13409,7 @@ async function poll() {{
             }}
         }}
 
-        (job.leads || []).forEach(renderLead);
+        (job.leads || []).forEach(function (lead) {{ renderLead(lead, params); }});
 
         const exportFileRaw =
             job.export_file ||

@@ -339,6 +339,38 @@ def get_value(row, *keys):
     return ""
 
 
+LEADBOT_WHY_NOTE_FALLBACK_LINE = "Matches the search used for this scan."
+LEADBOT_WHY_NOTE_CONTACT_FOUND_LINE = "Website and available contact details are ready to review."
+LEADBOT_WHY_NOTE_CONTACT_MISSING_LINE = "A website was found; contact details may still need research."
+
+_LEADBOT_WHY_NOTE_BAD_VALUES = {"", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found"}
+
+
+def leadbot_why_note_lines(keyword, market, has_contact):
+    """
+    Builds the two short "Why this lead" body lines from data already on
+    the row/job -- never invents or scores anything. Falls back to a safe
+    generic line rather than ever showing a blank/None/malformed keyword
+    or market.
+    """
+    keyword_clean = str(keyword or "").strip()
+    market_clean = str(market or "").strip()
+
+    if keyword_clean.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
+        keyword_clean = ""
+    if market_clean.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
+        market_clean = ""
+
+    if keyword_clean and market_clean:
+        line1 = f"Matches your search for {keyword_clean} in {market_clean}."
+    else:
+        line1 = LEADBOT_WHY_NOTE_FALLBACK_LINE
+
+    line2 = LEADBOT_WHY_NOTE_CONTACT_FOUND_LINE if has_contact else LEADBOT_WHY_NOTE_CONTACT_MISSING_LINE
+
+    return line1, line2
+
+
 def clean_seo_snapshot_title(value):
     """
     Display cleanup only.
@@ -679,6 +711,11 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         confidence = str(calculate_contact_confidence(row))
         address = get_value(row, "address", "business_address", "street_address", "full_address", "formatted_address") or ""
 
+        why_keyword = get_value(row, "keyword")
+        why_market = get_value(row, "market")
+        why_has_contact = bool(phone) or bool(emails)
+        why_line1, why_line2 = leadbot_why_note_lines(why_keyword, why_market, why_has_contact)
+
         page_title = get_value(row, "page_title", "meta_title", "title") or title
         meta_description = get_value(
             row,
@@ -805,6 +842,12 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             </div>
 
             {seo_snapshot_html}
+
+            <div class="leadbot-why-note">
+                <b>Why this lead</b>
+                <p>{html.escape(why_line1)}</p>
+                <p>{html.escape(why_line2)}</p>
+            </div>
         </article>
         """)
 
@@ -1255,6 +1298,24 @@ input {
 .info-grid a {
     color: #1e3a8a;
     font-weight: 800;
+}
+.leadbot-why-note {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+.leadbot-why-note b {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #64748b;
+}
+.leadbot-why-note p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #475569;
 }
 .empty {
     padding: 28px;

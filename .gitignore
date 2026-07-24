@@ -196,3 +196,4 @@ test_*.py
 !scripts/test_dataforseo_circuit_breaker.py
 !scripts/test_partial_provider_results.py
 !scripts/test_lead_explanation_removed.py
+!scripts/test_lead_why_note_restored.py
