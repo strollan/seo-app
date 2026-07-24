@@ -395,6 +395,24 @@ def _leadbot_preserve_source_metadata(scored, item):
     return scored
 
 
+def _leadbot_is_page_one_organic_result(item):
+    """Return True only for a real organic SERP position from 1 through 10."""
+    if not isinstance(item, dict):
+        return False
+
+    source = str(item.get("source") or "").strip().lower()
+    serp_page = str(item.get("serp_page") or "").strip().lower()
+    if source == "google_places" or serp_page == "google places":
+        return False
+
+    try:
+        position = int(str(item.get("serp_position") or "").strip())
+    except (TypeError, ValueError):
+        return False
+
+    return 1 <= position <= 10
+
+
 def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10, on_candidate=None):
     """
     on_candidate: optional callback invoked synchronously, once, for each
@@ -427,6 +445,13 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
         Identical logic to the original single-pass loop, just callable
         per-item so it can run once a page/supplement item is available
         instead of only after every page has been fetched."""
+        # Page-one organic businesses are already ranking successfully and
+        # are not Lead Finder prospects. Reject them before scoring or
+        # contact crawling so they cannot consume downstream work, stream,
+        # count toward the quota, or reach a new export.
+        if _leadbot_is_page_one_organic_result(item):
+            return None
+
         scored = score_lead(item, industry, market)
 
         scored = _leadbot_preserve_source_metadata(scored, item)

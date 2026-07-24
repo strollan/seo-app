@@ -32,13 +32,13 @@ def fake_contact(url, market=""):
     }
 
 
-def make_item(domain, title="A Local Business", snippet="plumber services"):
+def make_item(domain, title="A Local Business", snippet="plumber services", serp_position=11):
     return {
         "title": title,
         "url": f"https://{domain}/",
         "domain": domain,
         "snippet": snippet,
-        "serp_position": 5,
+        "serp_position": serp_position,
     }
 
 

@@ -607,6 +607,24 @@ def normalize_lead_results(raw):
     return []
 
 
+def _leadbot_is_page_one_organic_result(lead):
+    """Persistence safety guard for newly generated live-job results."""
+    if not isinstance(lead, dict):
+        return False
+
+    source = str(lead.get("source") or "").strip().lower()
+    serp_page = str(lead.get("serp_page") or "").strip().lower()
+    if source == "google_places" or serp_page == "google places":
+        return False
+
+    try:
+        position = int(str(lead.get("serp_position") or "").strip())
+    except (TypeError, ValueError):
+        return False
+
+    return 1 <= position <= 10
+
+
 
 def _leadbot_first_address_value(row):
     if not isinstance(row, dict):
@@ -1020,6 +1038,12 @@ def run_job(job_id):
             published via early streaming is a safe, cheap no-op when the
             final batch loop reaches it again.
             """
+            # Defense in depth for legacy/mocked find_leads call sites:
+            # never persist, count, enrich, or export a new page-one organic
+            # row even if it bypassed lead_finding_agent's earlier guard.
+            if _leadbot_is_page_one_organic_result(lead):
+                return False
+
             if len(job["leads"]) >= total_limit:
                 return False
 
