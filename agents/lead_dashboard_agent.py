@@ -10,7 +10,6 @@ from agents.lead_query_tracking_agent import normalize_query_tracking
 from agents.lead_confidence_agent import calculate_contact_confidence
 from urllib.parse import quote
 from agents.lead_email_cleaner_agent import clean_email_field
-from agents.lead_reason_agent import build_lead_reason
 from app import seo_meta
 
 
@@ -679,7 +678,6 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         score = get_value(row, "final_lead_score", "seo_opportunity_score", "score") or "—"
         confidence = str(calculate_contact_confidence(row))
         address = get_value(row, "address", "business_address", "street_address", "full_address", "formatted_address") or ""
-        reason = build_lead_reason(row)
 
         page_title = get_value(row, "page_title", "meta_title", "title") or title
         meta_description = get_value(
@@ -807,11 +805,6 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             </div>
 
             {seo_snapshot_html}
-
-            <div class="reason">
-                <b>Why this lead</b>
-                <p>{html.escape(reason)}</p>
-            </div>
         </article>
         """)
 
@@ -1262,22 +1255,6 @@ input {
 .info-grid a {
     color: #1e3a8a;
     font-weight: 800;
-}
-.reason {
-    margin-top: 14px;
-    padding: 12px 14px;
-    border-left: 5px solid #1e3a8a;
-    background: #f8fafc;
-    border-radius: 12px;
-}
-.reason b {
-    display: block;
-    margin-bottom: 5px;
-}
-.reason p {
-    margin: 0;
-    line-height: 1.55;
-    color: #334155;
 }
 .empty {
     padding: 28px;
@@ -2140,183 +2117,6 @@ main#results .results-top {
 
 
 
-/* === LEADBOT WHY THIS LEAD FOOTER START === */
-.lead-card {
-    overflow: hidden !important;
-}
-
-.reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 16px 20px 18px !important;
-    border-left: 0 !important;
-    border-top: 1px solid #dbe4f0 !important;
-    background: linear-gradient(180deg, #f8fafc, #eef4ff) !important;
-    border-radius: 0 0 18px 18px !important;
-}
-
-.reason b {
-    display: block !important;
-    margin-bottom: 8px !important;
-    font-size: 15px !important;
-    color: #0f172a !important;
-}
-
-.reason p {
-    margin: 0 !important;
-    color: #334155 !important;
-    line-height: 1.55 !important;
-}
-
-.reason ol {
-    margin: 0 !important;
-    padding-left: 22px !important;
-}
-
-.reason li {
-    margin: 3px 0 !important;
-}
-/* === LEADBOT WHY THIS LEAD FOOTER END === */
-
-
-/* === LEADBOT WHY THIS LEAD DARK BLUE FOOTER START === */
-.reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 16px 20px 18px !important;
-    border-left: 0 !important;
-    border-top: 1px solid rgba(147, 197, 253, 0.35) !important;
-    background: linear-gradient(135deg, #0f172a, #1e3a8a) !important;
-    border-radius: 0 0 18px 18px !important;
-    color: #ffffff !important;
-}
-
-.reason b {
-    display: block !important;
-    margin-bottom: 8px !important;
-    font-size: 15px !important;
-    color: #ffffff !important;
-}
-
-.reason p {
-    margin: 0 !important;
-    color: rgba(255,255,255,0.86) !important;
-    line-height: 1.55 !important;
-}
-
-.reason ol {
-    margin: 0 !important;
-    padding-left: 22px !important;
-    color: rgba(255,255,255,0.86) !important;
-}
-
-.reason li {
-    margin: 3px 0 !important;
-    color: rgba(255,255,255,0.86) !important;
-}
-/* === LEADBOT WHY THIS LEAD DARK BLUE FOOTER END === */
-
-
-/* === LEADBOT WHY THIS LEAD OUTLINE FOOTER START === */
-.reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 15px 20px 17px !important;
-
-    background: #ffffff !important;
-    border-left: 0 !important;
-    border-top: 2px solid #1e3a8a !important;
-    border-right: 0 !important;
-    border-bottom: 0 !important;
-    border-radius: 0 0 18px 18px !important;
-
-    color: #0f172a !important;
-    box-shadow: inset 0 1px 0 rgba(30, 58, 138, 0.08) !important;
-}
-
-.reason b {
-    display: block !important;
-    margin-bottom: 8px !important;
-    font-size: 15px !important;
-    color: #1e3a8a !important;
-}
-
-.reason p,
-.reason ol,
-.reason li {
-    color: #334155 !important;
-}
-
-.reason p {
-    margin: 0 !important;
-    line-height: 1.55 !important;
-}
-
-.reason ol {
-    margin: 0 !important;
-    padding-left: 22px !important;
-}
-
-.reason li {
-    margin: 3px 0 !important;
-}
-/* === LEADBOT WHY THIS LEAD OUTLINE FOOTER END === */
-
-
-/* === LEADBOT WHY THIS LEAD BOTTOM OUTLINE START === */
-.lead-card {
-    overflow: hidden !important;
-    border-bottom: 3px solid #5b21b6 !important;
-}
-
-.reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 15px 20px 17px !important;
-
-    background: #ffffff !important;
-    border-left: 0 !important;
-    border-right: 0 !important;
-    border-top: 1px solid #1e3a8a !important;
-    border-bottom: 0 !important;
-    border-radius: 0 0 18px 18px !important;
-
-    color: #0f172a !important;
-    box-shadow: none !important;
-}
-
-.reason b {
-    display: block !important;
-    margin-bottom: 8px !important;
-    font-size: 15px !important;
-    color: #1e3a8a !important;
-}
-
-.reason p,
-.reason ol,
-.reason li {
-    color: #334155 !important;
-}
-
-.reason p {
-    margin: 0 !important;
-    line-height: 1.55 !important;
-}
-
-.reason ol {
-    margin: 0 !important;
-    padding-left: 22px !important;
-}
-
-.reason li {
-    margin: 3px 0 !important;
-}
-/* === LEADBOT WHY THIS LEAD BOTTOM OUTLINE END === */
-
-
-/* === LEADBOT REMOVE WHY THIS LEAD TOP LINE START === */
-.reason {
-    border-top: 0 !important;
-}
-/* === LEADBOT REMOVE WHY THIS LEAD TOP LINE END === */
-
-
 /* === LEADBOT LEAD CARD TOP CLEANUP START === */
 .lead-card {
     position: relative !important;
@@ -3166,22 +2966,6 @@ main#results .results-top {
     color: #1f2937 !important;
 }
 
-/* Bigger gap before Why This Lead */
-.reason {
-    margin-top: 28px !important;
-    padding-top: 20px !important;
-}
-
-.reason b {
-    margin-bottom: 12px !important;
-}
-
-.reason p,
-.reason ol,
-.reason li {
-    line-height: 1.65 !important;
-}
-
 /* Save Lead should not crowd the reason text */
 .lead-save-btn,
 button.lead-save-btn,
@@ -3193,76 +2977,11 @@ button.lead-save-btn,
 /* === LEADBOT FINAL LEAD CARD INNER SPACING END === */
 
 
-/* === LEADBOT WHY THIS LEAD RAISE + BLACK START === */
-
-/* Raise the Why This Lead section slightly so it does not feel detached */
-.reason {
-    margin-top: 14px !important;
-    padding-top: 14px !important;
-}
-
-/* Make the heading black instead of blue */
-.reason b {
-    color: #0f172a !important;
-    margin-bottom: 8px !important;
-}
-
-/* Make the explanation text black/darker */
-.reason p,
-.reason ol,
-.reason li {
-    color: #0f172a !important;
-}
-
-/* === LEADBOT WHY THIS LEAD RAISE + BLACK END === */
-
-
-/* === LEADBOT WHY THIS LEAD NOTE FONT FINAL START === */
-
-/* This is note text, not a major headline */
-.reason b {
-    font-size: 13px !important;
-    line-height: 1.25 !important;
-    font-weight: 850 !important;
-    color: #0f172a !important;
-    margin-bottom: 7px !important;
-}
-
-.reason p,
-.reason ol,
-.reason li {
-    font-size: 13px !important;
-    line-height: 1.5 !important;
-    color: #0f172a !important;
-}
-
-/* Keep the note tucked up without feeling smashed */
-.reason {
-    margin-top: 14px !important;
-    padding-top: 13px !important;
-    padding-bottom: 14px !important;
-}
-
-/* === LEADBOT WHY THIS LEAD NOTE FONT FINAL END === */
-
-
 /* === LEADBOT SAVE LEAD NOTE GAP FINAL START === */
 
-/* Keep Save Lead from crowding the Why This Lead note */
-.reason + form,
-.reason + .lead-save-form,
-.reason ~ form,
 .lead-card .lead-save-btn,
 .lead-card button.lead-save-btn {
     margin-top: 14px !important;
-}
-
-/* Keep note text calm and compact */
-.reason p,
-.reason ol,
-.reason li {
-    font-size: 13px !important;
-    line-height: 1.55 !important;
 }
 
 /* === LEADBOT SAVE LEAD NOTE GAP FINAL END === */
@@ -3337,16 +3056,12 @@ button.lead-save-btn,
 
 /* Keep final small font sizing, but make the card section labels blue */
 .leadbot-seo-snapshot > strong,
-.leadbot-seo-snapshot-item b,
-.reason b {
+.leadbot-seo-snapshot-item b {
     color: #1e3a8a !important;
 }
 
 /* Keep body/value text dark, not blue */
-.leadbot-seo-snapshot-item p,
-.reason p,
-.reason ol,
-.reason li {
+.leadbot-seo-snapshot-item p {
     color: #0f172a !important;
 }
 /* === LEADBOT REMOVE SAVED LEADS UI FINAL END === */
@@ -5048,32 +4763,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function moveDeleteBlockUnderWhyThisLead(card) {
-        const reason = card.querySelector(".reason");
-        const deleteBtn = card.querySelector(".lead-delete-one-js");
-        const blockBtn = card.querySelector(".lead-block-one-js");
-
-        if (!reason || (!deleteBtn && !blockBtn)) return;
-
-        let row = card.querySelector(".leadbot-card-action-row");
-
-        if (!row) {
-            row = document.createElement("div");
-            row.className = "leadbot-card-action-row";
-        }
-
-        if (deleteBtn && deleteBtn.parentNode !== row) row.appendChild(deleteBtn);
-        if (blockBtn && blockBtn.parentNode !== row) row.appendChild(blockBtn);
-
-        if (reason.nextElementSibling !== row) {
-            reason.insertAdjacentElement("afterend", row);
-        }
-    }
-
     function cleanLeadBotCardLayout() {
         document.querySelectorAll(".lead-card, .card, article").forEach(function (card) {
             moveSaveDetailsAboveSiteTitle(card);
-            moveDeleteBlockUnderWhyThisLead(card);
         });
     }
 
@@ -7774,34 +7466,12 @@ body {
     color: #0f172a !important;
 }
 
-/* Make Why This Lead stand out again. */
-.reason b {
-    font-weight: 950 !important;
-    color: #1e3a8a !important;
-}
 </style>
 <!-- LEADBOT SEO UNBOLD WHY BOLD END -->
 
 
 
 
-<!-- LEADBOT WHY THIS LEAD BODY NORMAL START -->
-<style>
-/* Keep only the Why This Lead label bold. */
-.reason b {
-    font-weight: 950 !important;
-    color: #1e3a8a !important;
-}
-
-/* Body text should be readable, not chunky. */
-.reason p,
-.reason ol,
-.reason li {
-    font-weight: 400 !important;
-    color: #0f172a !important;
-}
-</style>
-<!-- LEADBOT WHY THIS LEAD BODY NORMAL END -->
 
 
 <!-- LEADBOT MOVE BLUE BG TO WHY THIS LEAD START -->
@@ -7844,94 +7514,10 @@ body {
     font-weight: 400 !important;
     color: #0f172a !important;
 }
-
-/* Put the blue background behind Why This Lead only. */
-.lead-card,
-.leadbot-live-card {
-    overflow: hidden !important;
-}
-
-.lead-card .reason,
-.leadbot-live-card .reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 16px 20px 18px !important;
-    background: linear-gradient(135deg, #0f172a, #1e3a8a) !important;
-    border: 0 !important;
-    border-top: 1px solid rgba(147, 197, 253, 0.35) !important;
-    border-radius: 0 0 18px 18px !important;
-    box-shadow: none !important;
-    color: #ffffff !important;
-}
-
-.lead-card .reason b,
-.leadbot-live-card .reason b {
-    display: block !important;
-    margin-bottom: 7px !important;
-    font-size: 13px !important;
-    line-height: 1.25 !important;
-    font-weight: 950 !important;
-    color: #ffffff !important;
-}
-
-.lead-card .reason p,
-.lead-card .reason ol,
-.lead-card .reason li,
-.leadbot-live-card .reason p,
-.leadbot-live-card .reason ol,
-.leadbot-live-card .reason li {
-    font-size: 13px !important;
-    line-height: 1.55 !important;
-    font-weight: 400 !important;
-    color: rgba(255,255,255,.92) !important;
-}
 </style>
 <!-- LEADBOT MOVE BLUE BG TO WHY THIS LEAD END -->
 
 
-<!-- LEADBOT WHY THIS LEAD SOFT BLUE START -->
-<style>
-/* Why This Lead should feel like a soft footer/note, not another header. */
-.lead-card .reason,
-.leadbot-live-card .reason {
-    margin: 18px -20px -20px -20px !important;
-    padding: 16px 20px 18px !important;
-
-    background: linear-gradient(180deg, #f8fbff, #eaf2ff) !important;
-    border-top: 1px solid #bfdbfe !important;
-    border-left: 0 !important;
-    border-right: 0 !important;
-    border-bottom: 0 !important;
-    border-radius: 0 0 18px 18px !important;
-
-    color: #0f172a !important;
-    box-shadow: none !important;
-}
-
-/* Keep the label strong, but blue-on-light instead of white-on-header-blue. */
-.lead-card .reason b,
-.leadbot-live-card .reason b {
-    display: block !important;
-    margin-bottom: 7px !important;
-    font-size: 13px !important;
-    line-height: 1.25 !important;
-    font-weight: 950 !important;
-    color: #1e3a8a !important;
-}
-
-/* Body text normal weight and dark/readable. */
-.lead-card .reason p,
-.lead-card .reason ol,
-.lead-card .reason li,
-.leadbot-live-card .reason p,
-.leadbot-live-card .reason ol,
-.leadbot-live-card .reason li {
-    font-size: 13px !important;
-    line-height: 1.55 !important;
-    font-weight: 400 !important;
-    color: #0f172a !important;
-}
-</style>
-<!-- LEADBOT WHY THIS LEAD SOFT BLUE END -->
 
 
 <!-- LEADBOT SMALLER SAVE DETAILS BUTTON START -->

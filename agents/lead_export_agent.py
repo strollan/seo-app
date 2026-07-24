@@ -56,7 +56,6 @@ EXPORT_FIELDS = [
     "final_lead_score",
     "contact_confidence",
     "contact_flags",
-    "reason",
 ]
 
 
@@ -149,7 +148,6 @@ def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True
                 "final_lead_score": lead.get("final_lead_score", ""),
                 "contact_confidence": calculate_contact_confidence(lead),
                 "contact_flags": ", ".join(lead.get("contact_flags", []) or []),
-                "reason": lead.get("reason", ""),
             })
 
     return {

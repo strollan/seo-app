@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 from business_competitor_finder import find_business_competitors
 from agents.contact_extraction_agent import extract_contact_from_url
 from agents.lead_blacklist_agent import is_blocked_lead_domain
-from agents.lead_reason_agent import build_lead_reason
 
 
 
@@ -283,50 +282,6 @@ def make_query(industry, market, service_keyword=None):
 
 
 
-# === LEADBOT BETTER REASON BUILDER START ===
-def build_lead_reason(lead):
-    domain = str(lead.get("domain") or "").strip()
-    serp_page = str(lead.get("serp_page") or "").strip()
-    serp_position = str(lead.get("serp_position") or "").strip()
-    phone = str(lead.get("best_phone") or lead.get("phone") or "").strip()
-    emails = str(lead.get("emails") or lead.get("email") or "").strip()
-    contact_page = str(lead.get("contact_page_url") or lead.get("contact_page") or "").strip()
-    confidence = str(lead.get("contact_confidence") or "").strip()
-    outreach = str(lead.get("outreach_status") or "").replace("_", " ").strip()
-
-    parts = []
-
-    if domain:
-        parts.append(f"Direct business domain: {domain}.")
-
-    if serp_page and serp_position:
-        parts.append(f"Ranks on page {serp_page}, position {serp_position}, which makes it a realistic SEO outreach target.")
-    elif serp_position:
-        parts.append(f"Ranks around position {serp_position}, suggesting room for organic search improvement.")
-
-    if phone and emails:
-        parts.append("Phone and email are available, so this lead is ready for direct outreach.")
-    elif phone:
-        parts.append("Phone number found, so this is ready for call-first outreach.")
-    elif emails:
-        parts.append("Email found, so this is ready for email-first outreach.")
-    else:
-        parts.append("No direct phone or email found yet, so this needs manual contact research.")
-
-    if contact_page:
-        parts.append("A contact page or contact source was found.")
-    elif not phone and not emails:
-        parts.append("No contact page was found during enrichment.")
-
-    if confidence and confidence not in {"0", "0.0"}:
-        parts.append(f"Contact confidence: {confidence}.")
-    elif outreach:
-        parts.append(f"Status: {outreach.title()}.")
-
-    return " ".join(parts)
-# === LEADBOT BETTER REASON BUILDER END ===
-
-
 def score_lead(item, industry, market):
     industry = (industry or "").lower()
     market = (market or "").lower()
@@ -340,12 +295,10 @@ def score_lead(item, industry, market):
 
     score = 50
     flags = []
-    reasons = []
 
     if any(hint in blob for hint in DIRECTORY_HINTS):
         score -= 50
         flags.append("directory_or_social")
-        reasons.append("Looks like a directory, social profile, or listicle.")
 
     rules = INDUSTRY_TERMS.get(industry, {})
     good_hits = [term for term in rules.get("good", []) if term in blob]
@@ -353,24 +306,19 @@ def score_lead(item, industry, market):
 
     if good_hits:
         score += min(30, len(good_hits) * 8)
-        reasons.append("Matches industry signals: " + ", ".join(good_hits[:4]))
 
     if bad_hits:
         score -= min(35, len(bad_hits) * 12)
         flags.append("mixed_industry")
-        reasons.append("Contains possible wrong-industry terms: " + ", ".join(bad_hits[:4]))
 
     if market and market in blob:
         score += 15
-        reasons.append(f"Mentions target market: {market.title()}")
 
     if domain and not any(x in domain for x in ["facebook", "yelp", "angi", "bbb", "homeadvisor", "thumbtack"]):
         score += 10
-        reasons.append("Has a direct business domain.")
 
     if any(x in blob for x in ["llc", "inc", "company", "contractor", "services", "service"]):
         score += 5
-        reasons.append("Looks like a real service business.")
 
     score = max(0, min(100, score))
 
@@ -389,13 +337,10 @@ def score_lead(item, industry, market):
     if serp_position:
         if 11 <= int(serp_position) <= 40:
             seo_opportunity_score += 20
-            reasons.append(f"Sweet spot: ranking around position {serp_position}, likely page 1/2/3/4 SEO opportunity.")
         elif int(serp_position) <= 10:
             seo_opportunity_score += 10
-            reasons.append(f"Page 1 result at position {serp_position}; strong visibility, still a useful outreach prospect.")
         elif int(serp_position) > 40:
             seo_opportunity_score += 5
-            reasons.append(f"Ranking beyond page 4 at position {serp_position}; may need heavier SEO help.")
 
     seo_opportunity_score = max(0, min(100, seo_opportunity_score))
 
@@ -410,7 +355,6 @@ def score_lead(item, industry, market):
         "serp_position": serp_position,
         "status": status,
         "flags": flags,
-        "reason": build_lead_reason(scored if "scored" in locals() else lead if "lead" in locals() else item).join(reasons) or "Basic business result match.",
     }
 
 
@@ -519,12 +463,6 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
             scored["serp_page"] = "Google Places"
             scored["serp_position"] = item.get("places_position") or item.get("serp_position") or scored.get("serp_position") or ""
             scored["places_position"] = item.get("places_position") or item.get("serp_position") or scored.get("places_position") or scored.get("serp_position") or ""
-
-            if not scored.get("reason"):
-                scored["reason"] = (
-                    "Found through Google Places as a local business match. "
-                    "Has a business website and local profile data."
-                )
 
         domain = scored.get("domain") or ""
 

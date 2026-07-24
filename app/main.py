@@ -12571,7 +12571,7 @@ def leadbot_live_dashboard(job_id: str, request: AuthRequest):
                 "address", "full_address", "business_address", "formatted_address",
                 "serp_page", "serp_position", "page", "position",
                 "contact_confidence", "outreach_status", "final_lead_score",
-                "page_title", "meta_description", "h1", "reason",
+                "page_title", "meta_description", "h1",
             ]
 
             fields = []
@@ -13233,8 +13233,6 @@ function renderLead(lead) {{
             <div class="leadbot-live-meta-title">${{esc(metaTitle || "Not found")}}</div>
             <div class="leadbot-live-meta-description">${{esc(metaDescription || "Not found")}}</div>
         </div>
-
-        <div class="reason"><b>Why this lead</b><br>${{esc(lead.reason || "")}}</div>
     `;
 
     document.getElementById("leads").appendChild(div);

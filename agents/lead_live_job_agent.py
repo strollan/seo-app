@@ -560,7 +560,6 @@ def lead_to_public(lead):
         "outreach_status": lead.get("outreach_status") or "needs_manual_research",
         "contact_confidence": str(lead.get("contact_confidence") or 0),
         "final_lead_score": str(lead.get("final_lead_score") or lead.get("score") or 0),
-        "reason": lead.get("reason") or "",
         "contact_flags": lead.get("contact_flags") or "",
     }
 

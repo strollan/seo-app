@@ -195,3 +195,4 @@ test_*.py
 !scripts/test_dataforseo_retry.py
 !scripts/test_dataforseo_circuit_breaker.py
 !scripts/test_partial_provider_results.py
+!scripts/test_lead_explanation_removed.py
