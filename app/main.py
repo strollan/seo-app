@@ -13208,6 +13208,11 @@ function leadbotWhyNoteClean(value) {{
     return LEADBOT_WHY_NOTE_BAD_VALUES.includes(cleaned.toLowerCase()) ? "" : cleaned;
 }}
 
+function leadbotWhyNotePosition(value) {{
+    const cleaned = leadbotWhyNoteClean(value);
+    return /^\\d+$/.test(cleaned) && Number(cleaned) > 0 ? cleaned : "";
+}}
+
 function leadbotWhyNoteIsMissingMetaDescription(value) {{
     const normalized = String(value || "").trim().replace(/\\s+/g, " ").toLowerCase();
     if (!normalized) return true;
@@ -13223,10 +13228,10 @@ function leadbotWhyNoteIsMissingMetaDescription(value) {{
     ].includes(normalized);
 }}
 
-function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, metaDescriptionMissing, pageTitleMissing) {{
+function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, metaDescriptionMissing, pageTitleMissing, hasAddress, hasContactPage) {{
     const keywordClean = leadbotWhyNoteClean(keyword);
     const marketClean = leadbotWhyNoteClean(market);
-    const positionClean = leadbotWhyNoteClean(serpPosition);
+    const positionClean = leadbotWhyNotePosition(serpPosition);
 
     let line1;
     if (keywordClean && marketClean && positionClean) {{
@@ -13238,23 +13243,35 @@ function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, 
     }}
 
     let line2;
-    if (!hasPhone && !hasEmail) {{
-        line2 = "No direct contact details were found yet.";
-    }} else if (metaDescriptionMissing) {{
-        line2 = "Meta description is missing.";
-    }} else if (pageTitleMissing) {{
-        line2 = "Page title information is missing.";
-    }} else if (hasPhone && !hasEmail) {{
+    if (hasPhone && hasEmail) {{
+        line2 = "Phone and email are available for outreach.";
+    }} else if (hasPhone) {{
         line2 = "Phone found, but no email was located.";
-    }} else if (hasEmail && !hasPhone) {{
+    }} else if (hasEmail) {{
         line2 = "Email found, but no phone number was located.";
-    }} else if (hasPhone && hasEmail) {{
-        line2 = "Contact details are available for outreach.";
     }} else {{
-        line2 = "Website and available business details are ready to review.";
+        line2 = "No direct contact details were found yet.";
     }}
 
-    return [line1, line2];
+    let line3;
+    if (metaDescriptionMissing) {{
+        line3 = "Meta description is missing.";
+    }} else if (pageTitleMissing) {{
+        line3 = "Page title information is missing.";
+    }} else {{
+        line3 = "Title and meta description are both present.";
+    }}
+
+    let line4;
+    if (hasAddress) {{
+        line4 = "A verified business address is available to help confirm the prospect.";
+    }} else if (hasContactPage) {{
+        line4 = "A contact page was found for further review.";
+    }} else {{
+        line4 = "Review the website to confirm fit before outreach.";
+    }}
+
+    return [line1, line2, line3, line4];
 }}
 
 function renderLead(lead, jobParams) {{
@@ -13299,14 +13316,19 @@ function renderLead(lead, jobParams) {{
         ? `<span>Page ${{esc(serpPage)}} · Position ${{esc(serpPosition)}}</span>`
         : "";
 
-    const [whyLine1, whyLine2] = leadbotWhyNoteLines(
+    const [whyLine1, whyLine2, whyLine3, whyLine4] = leadbotWhyNoteLines(
         jp.keyword,
         jp.market,
         serpPosition,
-        !!lead.best_phone,
-        !!lead.emails,
+        !!leadbotWhyNoteClean(lead.best_phone),
+        !!leadbotWhyNoteClean(lead.emails),
         leadbotWhyNoteIsMissingMetaDescription(metaDescription),
         !metaTitle,
+        !!leadbotWhyNoteClean(
+            lead.address || lead.full_address || lead.business_address ||
+            lead.formatted_address || lead.street_address
+        ),
+        !!leadbotWhyNoteClean(lead.contact_page_url),
     );
 
     const div = document.createElement("article");
@@ -13340,6 +13362,8 @@ function renderLead(lead, jobParams) {{
             <b>Why this lead</b>
             <p>${{esc(whyLine1)}}</p>
             <p>${{esc(whyLine2)}}</p>
+            <p>${{esc(whyLine3)}}</p>
+            <p>${{esc(whyLine4)}}</p>
         </div>
     `;
 
@@ -15715,5 +15739,4 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
 
     print(f"LEADBOT DELETE EXPORT deleted={deleted}", flush=True)
     return AuthRedirectResponse(url="/lead-bot?deleted=1", status_code=303)
-
 

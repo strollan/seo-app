@@ -343,10 +343,13 @@ LEADBOT_WHY_NOTE_FALLBACK_LINE = "Found during this Lead Finder scan."
 LEADBOT_WHY_NOTE_NO_CONTACT_LINE = "No direct contact details were found yet."
 LEADBOT_WHY_NOTE_META_MISSING_LINE = "Meta description is missing."
 LEADBOT_WHY_NOTE_TITLE_MISSING_LINE = "Page title information is missing."
+LEADBOT_WHY_NOTE_TITLE_META_PRESENT_LINE = "Title and meta description are both present."
 LEADBOT_WHY_NOTE_PHONE_ONLY_LINE = "Phone found, but no email was located."
 LEADBOT_WHY_NOTE_EMAIL_ONLY_LINE = "Email found, but no phone number was located."
-LEADBOT_WHY_NOTE_BOTH_CONTACT_LINE = "Contact details are available for outreach."
-LEADBOT_WHY_NOTE_FALLBACK_SIGNAL_LINE = "Website and available business details are ready to review."
+LEADBOT_WHY_NOTE_BOTH_CONTACT_LINE = "Phone and email are available for outreach."
+LEADBOT_WHY_NOTE_ADDRESS_LINE = "A verified business address is available to help confirm the prospect."
+LEADBOT_WHY_NOTE_CONTACT_PAGE_LINE = "A contact page was found for further review."
+LEADBOT_WHY_NOTE_REVIEW_FALLBACK_LINE = "Review the website to confirm fit before outreach."
 
 _LEADBOT_WHY_NOTE_BAD_VALUES = {"", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found", "?"}
 
@@ -354,6 +357,13 @@ _LEADBOT_WHY_NOTE_BAD_VALUES = {"", "none", "null", "nan", "undefined", "unknown
 def _leadbot_why_note_clean(value):
     value = str(value or "").strip()
     if value.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
+        return ""
+    return value
+
+
+def _leadbot_why_note_position(value):
+    value = _leadbot_why_note_clean(value)
+    if not value.isdigit() or int(value) <= 0:
         return ""
     return value
 
@@ -366,24 +376,22 @@ def leadbot_why_note_lines(
     has_email,
     meta_description_missing,
     page_title_missing,
+    has_address,
+    has_contact_page,
 ):
     """
-    Builds the two short "Why this lead" body lines from data already
+    Builds the four short "Why this lead" body lines from data already
     verified elsewhere on the row/job -- never invents, scores, or
     fabricates a position/value. Falls back to a safe generic line
     rather than ever showing a blank/None/malformed keyword, market, or
     SERP position.
 
-    Line 1 prefers a real, already-validated SERP position; line 2 picks
-    the single most useful verified signal: an empty-contact gap first
-    (the most actionable), then a genuine SEO content gap (meta
-    description/page title missing -- not already obviously visible
-    elsewhere on the card the way the Phone/Email fields are), then the
-    specific contact-availability shape, then a safe fallback.
+    Each line has a distinct category: search context, contactability,
+    website/search data, and business verification or next review step.
     """
     keyword_clean = _leadbot_why_note_clean(keyword)
     market_clean = _leadbot_why_note_clean(market)
-    position_clean = _leadbot_why_note_clean(serp_position)
+    position_clean = _leadbot_why_note_position(serp_position)
 
     if keyword_clean and market_clean and position_clean:
         line1 = f'Found for "{keyword_clean}" in {market_clean} at position {position_clean}.'
@@ -392,22 +400,30 @@ def leadbot_why_note_lines(
     else:
         line1 = LEADBOT_WHY_NOTE_FALLBACK_LINE
 
-    if not has_phone and not has_email:
-        line2 = LEADBOT_WHY_NOTE_NO_CONTACT_LINE
-    elif meta_description_missing:
-        line2 = LEADBOT_WHY_NOTE_META_MISSING_LINE
-    elif page_title_missing:
-        line2 = LEADBOT_WHY_NOTE_TITLE_MISSING_LINE
-    elif has_phone and not has_email:
-        line2 = LEADBOT_WHY_NOTE_PHONE_ONLY_LINE
-    elif has_email and not has_phone:
-        line2 = LEADBOT_WHY_NOTE_EMAIL_ONLY_LINE
-    elif has_phone and has_email:
+    if has_phone and has_email:
         line2 = LEADBOT_WHY_NOTE_BOTH_CONTACT_LINE
+    elif has_phone:
+        line2 = LEADBOT_WHY_NOTE_PHONE_ONLY_LINE
+    elif has_email:
+        line2 = LEADBOT_WHY_NOTE_EMAIL_ONLY_LINE
     else:
-        line2 = LEADBOT_WHY_NOTE_FALLBACK_SIGNAL_LINE
+        line2 = LEADBOT_WHY_NOTE_NO_CONTACT_LINE
 
-    return line1, line2
+    if meta_description_missing:
+        line3 = LEADBOT_WHY_NOTE_META_MISSING_LINE
+    elif page_title_missing:
+        line3 = LEADBOT_WHY_NOTE_TITLE_MISSING_LINE
+    else:
+        line3 = LEADBOT_WHY_NOTE_TITLE_META_PRESENT_LINE
+
+    if has_address:
+        line4 = LEADBOT_WHY_NOTE_ADDRESS_LINE
+    elif has_contact_page:
+        line4 = LEADBOT_WHY_NOTE_CONTACT_PAGE_LINE
+    else:
+        line4 = LEADBOT_WHY_NOTE_REVIEW_FALLBACK_LINE
+
+    return line1, line2, line3, line4
 
 
 def clean_seo_snapshot_title(value):
@@ -765,7 +781,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
 
         why_keyword = get_value(row, "keyword")
         why_market = get_value(row, "market")
-        why_line1, why_line2 = leadbot_why_note_lines(
+        why_line1, why_line2, why_line3, why_line4 = leadbot_why_note_lines(
             keyword=why_keyword,
             market=why_market,
             serp_position=serp_pos,
@@ -773,6 +789,8 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             has_email=bool(emails),
             meta_description_missing=is_missing_meta_description(meta_description),
             page_title_missing=not bool(page_title_raw),
+            has_address=bool(_leadbot_why_note_clean(address)),
+            has_contact_page=bool(_leadbot_why_note_clean(contact_page)),
         )
 
         seo_snapshot_items = []
@@ -894,6 +912,8 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 <b>Why this lead</b>
                 <p>{html.escape(why_line1)}</p>
                 <p>{html.escape(why_line2)}</p>
+                <p>{html.escape(why_line3)}</p>
+                <p>{html.escape(why_line4)}</p>
             </div>
         </article>
         """)
@@ -9127,5 +9147,4 @@ try:
 except NameError:
     print("[LeadBot dashboard] read_csv_rows was not available for CSV size cap.")
 # === LEADBOT CSV SIZE CAP END ===
-
 

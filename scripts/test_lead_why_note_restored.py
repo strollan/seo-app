@@ -4,7 +4,7 @@ Regression tests for the "Why this lead" note on Lead Finder result cards
 
 History: the old long/speculative explanation generator was removed
 entirely (see scripts/test_lead_explanation_removed.py), then a compact
-two-line note was restored (keyword/market + contact-found/missing).
+four-line factual note was restored (search, contact, website, verification).
 This file now covers the *upgraded* version of that note: line 1 prefers
 a real, already-validated SERP position when one exists; line 2 picks the
 single most useful verified signal already available on the row/job
@@ -38,7 +38,7 @@ Verified fields used (inspected before writing this upgrade):
     fallback.
 
 These tests prove:
-  - the heading appears exactly once per card, with exactly two body
+  - the heading appears exactly once per card, with exactly four body
     lines
   - line 1 uses a real SERP position when present, falls back to the
     keyword/market phrasing when position is unavailable, and falls back
@@ -95,7 +95,8 @@ OLD_SPECULATIVE_FRAGMENTS = [
 
 class WhyNoteLinesHelperTests(unittest.TestCase):
     def _call(self, keyword="plumber", market="Albany, NY", serp_position="", has_phone=True,
-               has_email=True, meta_missing=False, title_missing=False):
+               has_email=True, meta_missing=False, title_missing=False,
+               has_address=False, has_contact_page=False):
         return dash_agent.leadbot_why_note_lines(
             keyword=keyword,
             market=market,
@@ -104,73 +105,112 @@ class WhyNoteLinesHelperTests(unittest.TestCase):
             has_email=has_email,
             meta_description_missing=meta_missing,
             page_title_missing=title_missing,
+            has_address=has_address,
+            has_contact_page=has_contact_page,
         )
 
+    def test_exactly_four_distinct_signal_categories(self):
+        lines = self._call(serp_position="17", has_address=True, meta_missing=True)
+        self.assertEqual(lines, (
+            'Found for "plumber" in Albany, NY at position 17.',
+            "Phone and email are available for outreach.",
+            "Meta description is missing.",
+            "A verified business address is available to help confirm the prospect.",
+        ))
+        self.assertEqual(len(lines), 4)
+        self.assertEqual(len(set(lines)), 4)
+
     def test_real_position_present_uses_specific_position_line(self):
-        line1, _ = self._call(serp_position="7")
+        line1 = self._call(serp_position="7")[0]
         self.assertEqual(line1, 'Found for "plumber" in Albany, NY at position 7.')
 
     def test_missing_position_falls_back_to_keyword_market_line(self):
-        line1, _ = self._call(serp_position="")
+        line1 = self._call(serp_position="")[0]
         self.assertEqual(line1, 'Found in your "plumber" search for Albany, NY.')
 
     def test_fake_or_manual_position_never_appears(self):
-        for junk in ["manual", "?", "not found", "None", "null", "NaN", "unknown"]:
+        for junk in ["manual", "?", "not found", "None", "null", "NaN", "unknown", "outside page one", "-1", "0"]:
             with self.subTest(junk=junk):
-                line1, _ = self._call(serp_position=junk)
+                line1 = self._call(serp_position=junk)[0]
                 self.assertNotIn(junk, line1)
                 self.assertEqual(line1, 'Found in your "plumber" search for Albany, NY.')
 
     def test_missing_keyword_or_market_falls_back_fully(self):
-        line1, _ = self._call(keyword="", serp_position="7")
+        line1 = self._call(keyword="", serp_position="7")[0]
         self.assertEqual(line1, "Found during this Lead Finder scan.")
-        line1b, _ = self._call(market="", serp_position="7")
+        line1b = self._call(market="", serp_position="7")[0]
         self.assertEqual(line1b, "Found during this Lead Finder scan.")
 
     def test_malformed_keyword_or_market_falls_back(self):
         for junk in ["None", "null", "NaN", "unknown", "N/A", "  ", "not found"]:
             with self.subTest(junk=junk):
-                line1, _ = self._call(keyword=junk)
+                line1 = self._call(keyword=junk)[0]
                 self.assertEqual(line1, "Found during this Lead Finder scan.")
-                line1b, _ = self._call(market=junk)
+                line1b = self._call(market=junk)[0]
                 self.assertEqual(line1b, "Found during this Lead Finder scan.")
 
-    def test_no_contact_takes_priority_for_line2(self):
-        _, line2 = self._call(has_phone=False, has_email=False, meta_missing=True, title_missing=True)
-        self.assertEqual(line2, "No direct contact details were found yet.")
+    def test_contact_permutations_are_factual(self):
+        cases = [
+            ((True, True), "Phone and email are available for outreach."),
+            ((True, False), "Phone found, but no email was located."),
+            ((False, True), "Email found, but no phone number was located."),
+            ((False, False), "No direct contact details were found yet."),
+        ]
+        for (has_phone, has_email), expected in cases:
+            with self.subTest(has_phone=has_phone, has_email=has_email):
+                self.assertEqual(
+                    self._call(has_phone=has_phone, has_email=has_email)[1],
+                    expected,
+                )
 
-    def test_meta_missing_takes_priority_over_contact_when_contact_exists(self):
-        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=True)
-        self.assertEqual(line2, "Meta description is missing.")
+    def test_no_contact_does_not_replace_seo_line(self):
+        line2, line3 = self._call(
+            has_phone=False, has_email=False, meta_missing=True, title_missing=True
+        )[1:3]
+        self.assertEqual(line2, "No direct contact details were found yet.")
+        self.assertEqual(line3, "Meta description is missing.")
+
+    def test_meta_missing_is_selected_for_website_signal(self):
+        self.assertEqual(self._call(meta_missing=True)[2], "Meta description is missing.")
 
     def test_title_missing_used_when_meta_present(self):
-        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=False, title_missing=True)
-        self.assertEqual(line2, "Page title information is missing.")
+        self.assertEqual(
+            self._call(meta_missing=False, title_missing=True)[2],
+            "Page title information is missing.",
+        )
 
-    def test_phone_only_wording(self):
-        _, line2 = self._call(has_phone=True, has_email=False, meta_missing=False, title_missing=False)
-        self.assertEqual(line2, "Phone found, but no email was located.")
+    def test_title_and_meta_present_is_objective_website_signal(self):
+        self.assertEqual(
+            self._call(meta_missing=False, title_missing=False)[2],
+            "Title and meta description are both present.",
+        )
 
-    def test_email_only_wording(self):
-        _, line2 = self._call(has_phone=False, has_email=True, meta_missing=False, title_missing=False)
-        self.assertEqual(line2, "Email found, but no phone number was located.")
-
-    def test_both_contact_wording_when_no_seo_gap(self):
-        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=False, title_missing=False)
-        self.assertEqual(line2, "Contact details are available for outreach.")
+    def test_address_preferred_then_contact_page_then_safe_fallback(self):
+        self.assertEqual(
+            self._call(has_address=True, has_contact_page=True)[3],
+            "A verified business address is available to help confirm the prospect.",
+        )
+        self.assertEqual(
+            self._call(has_contact_page=True)[3],
+            "A contact page was found for further review.",
+        )
+        self.assertEqual(
+            self._call()[3],
+            "Review the website to confirm fit before outreach.",
+        )
 
     def test_no_speculative_phrases_in_any_combination(self):
         for has_phone in (True, False):
             for has_email in (True, False):
                 for meta_missing in (True, False):
                     for title_missing in (True, False):
-                        line1, line2 = self._call(
+                        lines = self._call(
                             has_phone=has_phone, has_email=has_email,
                             meta_missing=meta_missing, title_missing=title_missing,
                         )
                         for fragment in OLD_SPECULATIVE_FRAGMENTS:
-                            self.assertNotIn(fragment, line1)
-                            self.assertNotIn(fragment, line2)
+                            for line in lines:
+                                self.assertNotIn(fragment, line)
 
 
 class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
@@ -205,10 +245,10 @@ class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
         html_out = self._cards([self._row()])
         self.assertEqual(html_out.count("Why this lead"), 1)
 
-    def test_body_has_exactly_two_lines(self):
+    def test_body_has_exactly_four_lines(self):
         html_out = self._cards([self._row()])
         body = self._why_note_body(html_out)
-        self.assertEqual(body.count("<p>"), 2)
+        self.assertEqual(body.count("<p>"), 4)
 
     def test_real_serp_position_used_when_available(self):
         html_out = self._cards([self._row(extra={"serp_position": "12"})])
@@ -240,7 +280,7 @@ class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
         html_out = self._cards([self._row()])
         body = self._why_note_body(html_out)
         self.assertNotIn("Meta description is missing.", body)
-        self.assertIn("Contact details are available for outreach.", body)
+        self.assertIn("Title and meta description are both present.", body)
 
         # Meta description genuinely missing -> shown instead of the
         # (already-visible-elsewhere) contact-status line.
@@ -254,6 +294,26 @@ class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
         })])
         body = self._why_note_body(html_out)
         self.assertIn("Page title information is missing.", body)
+
+    def test_address_then_contact_page_then_fourth_line_fallback(self):
+        address_body = self._why_note_body(self._cards([self._row(extra={
+            "address": "10 State St, Albany, NY",
+            "contact_page_url": "https://acmeplumbing.example/contact",
+        })]))
+        self.assertIn("A verified business address is available", address_body)
+        self.assertNotIn("A contact page was found", address_body)
+
+        contact_body = self._why_note_body(self._cards([self._row(extra={
+            "address": "", "contact_page_url": "https://acmeplumbing.example/contact",
+        })]))
+        self.assertIn("A contact page was found for further review.", contact_body)
+
+        fallback_body = self._why_note_body(self._cards([self._row(extra={
+            "address": "unknown", "contact_page_url": "null",
+        })]))
+        self.assertIn("Review the website to confirm fit before outreach.", fallback_body)
+        self.assertNotIn(">unknown<", fallback_body)
+        self.assertNotIn(">null<", fallback_body)
 
     def test_missing_keyword_market_uses_safe_fallback(self):
         html_out = self._cards([self._row(extra={"keyword": "", "market": ""})])
@@ -567,7 +627,7 @@ class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
 
         for note in notes:
             paragraphs = note.query_selector_all("p")
-            self.assertEqual(len(paragraphs), 2, "each why-note must have exactly two body lines")
+            self.assertEqual(len(paragraphs), 4, "each why-note must have exactly four body lines")
 
         cards_text = page.content()
         # Lead with a real SERP position -> specific position line.
@@ -578,7 +638,9 @@ class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
         # Contact-with-SEO-data lead: meta description and title are both
         # present, so line 2 falls through to the contact-availability
         # shape.
-        self.assertIn("Contact details are available for outreach.", cards_text)
+        self.assertIn("Phone and email are available for outreach.", cards_text)
+        self.assertIn("Title and meta description are both present.", cards_text)
+        self.assertIn("Review the website to confirm fit before outreach.", cards_text)
         # No-contact lead.
         self.assertIn("No direct contact details were found yet.", cards_text)
 
@@ -615,9 +677,9 @@ class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
         for note in notes:
             box = note.bounding_box()
             self.assertIsNotNone(box)
-            # A compact two-line note must never balloon into a large
+            # A compact four-line note must never balloon into a large
             # empty-looking panel on a narrow mobile viewport.
-            self.assertLess(box["height"], 120, "why-note wrapper is unexpectedly tall on mobile")
+            self.assertLess(box["height"], 150, "why-note wrapper is unexpectedly tall on mobile")
 
 
 if __name__ == "__main__":
