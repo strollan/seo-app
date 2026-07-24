@@ -1156,6 +1156,13 @@ input {
     font-size: 13px;
     line-height: 1.45;
 }
+.leadbot-value-explanation {
+    margin: 0 0 18px;
+    max-width: 900px;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+}
 .leadbot-field-error {
     color: #dc2626;
     font-size: 12px;
@@ -3531,6 +3538,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
             </nav>
         </div>
     </div>
+    <p class="leadbot-value-explanation">Google helps you find businesses. LeadMeLeads helps you decide which are worth contacting.<br>We organize potential leads and contact details in one place, ready to review and export.</p>
     <div class="app-nav-overlay" data-nav-overlay></div>
 <script src="/static/js/mobile-nav.js" defer></script>
 <script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__"; window.LEADBOT_IS_GUEST = __IS_GUEST_JS__;</script>
