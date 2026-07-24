@@ -339,34 +339,73 @@ def get_value(row, *keys):
     return ""
 
 
-LEADBOT_WHY_NOTE_FALLBACK_LINE = "Matches the search used for this scan."
-LEADBOT_WHY_NOTE_CONTACT_FOUND_LINE = "Website and available contact details are ready to review."
-LEADBOT_WHY_NOTE_CONTACT_MISSING_LINE = "A website was found; contact details may still need research."
+LEADBOT_WHY_NOTE_FALLBACK_LINE = "Found during this Lead Finder scan."
+LEADBOT_WHY_NOTE_NO_CONTACT_LINE = "No direct contact details were found yet."
+LEADBOT_WHY_NOTE_META_MISSING_LINE = "Meta description is missing."
+LEADBOT_WHY_NOTE_TITLE_MISSING_LINE = "Page title information is missing."
+LEADBOT_WHY_NOTE_PHONE_ONLY_LINE = "Phone found, but no email was located."
+LEADBOT_WHY_NOTE_EMAIL_ONLY_LINE = "Email found, but no phone number was located."
+LEADBOT_WHY_NOTE_BOTH_CONTACT_LINE = "Contact details are available for outreach."
+LEADBOT_WHY_NOTE_FALLBACK_SIGNAL_LINE = "Website and available business details are ready to review."
 
-_LEADBOT_WHY_NOTE_BAD_VALUES = {"", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found"}
+_LEADBOT_WHY_NOTE_BAD_VALUES = {"", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found", "?"}
 
 
-def leadbot_why_note_lines(keyword, market, has_contact):
+def _leadbot_why_note_clean(value):
+    value = str(value or "").strip()
+    if value.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
+        return ""
+    return value
+
+
+def leadbot_why_note_lines(
+    keyword,
+    market,
+    serp_position,
+    has_phone,
+    has_email,
+    meta_description_missing,
+    page_title_missing,
+):
     """
-    Builds the two short "Why this lead" body lines from data already on
-    the row/job -- never invents or scores anything. Falls back to a safe
-    generic line rather than ever showing a blank/None/malformed keyword
-    or market.
+    Builds the two short "Why this lead" body lines from data already
+    verified elsewhere on the row/job -- never invents, scores, or
+    fabricates a position/value. Falls back to a safe generic line
+    rather than ever showing a blank/None/malformed keyword, market, or
+    SERP position.
+
+    Line 1 prefers a real, already-validated SERP position; line 2 picks
+    the single most useful verified signal: an empty-contact gap first
+    (the most actionable), then a genuine SEO content gap (meta
+    description/page title missing -- not already obviously visible
+    elsewhere on the card the way the Phone/Email fields are), then the
+    specific contact-availability shape, then a safe fallback.
     """
-    keyword_clean = str(keyword or "").strip()
-    market_clean = str(market or "").strip()
+    keyword_clean = _leadbot_why_note_clean(keyword)
+    market_clean = _leadbot_why_note_clean(market)
+    position_clean = _leadbot_why_note_clean(serp_position)
 
-    if keyword_clean.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
-        keyword_clean = ""
-    if market_clean.lower() in _LEADBOT_WHY_NOTE_BAD_VALUES:
-        market_clean = ""
-
-    if keyword_clean and market_clean:
-        line1 = f"Matches your search for {keyword_clean} in {market_clean}."
+    if keyword_clean and market_clean and position_clean:
+        line1 = f'Found for "{keyword_clean}" in {market_clean} at position {position_clean}.'
+    elif keyword_clean and market_clean:
+        line1 = f'Found in your "{keyword_clean}" search for {market_clean}.'
     else:
         line1 = LEADBOT_WHY_NOTE_FALLBACK_LINE
 
-    line2 = LEADBOT_WHY_NOTE_CONTACT_FOUND_LINE if has_contact else LEADBOT_WHY_NOTE_CONTACT_MISSING_LINE
+    if not has_phone and not has_email:
+        line2 = LEADBOT_WHY_NOTE_NO_CONTACT_LINE
+    elif meta_description_missing:
+        line2 = LEADBOT_WHY_NOTE_META_MISSING_LINE
+    elif page_title_missing:
+        line2 = LEADBOT_WHY_NOTE_TITLE_MISSING_LINE
+    elif has_phone and not has_email:
+        line2 = LEADBOT_WHY_NOTE_PHONE_ONLY_LINE
+    elif has_email and not has_phone:
+        line2 = LEADBOT_WHY_NOTE_EMAIL_ONLY_LINE
+    elif has_phone and has_email:
+        line2 = LEADBOT_WHY_NOTE_BOTH_CONTACT_LINE
+    else:
+        line2 = LEADBOT_WHY_NOTE_FALLBACK_SIGNAL_LINE
 
     return line1, line2
 
@@ -711,12 +750,8 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         confidence = str(calculate_contact_confidence(row))
         address = get_value(row, "address", "business_address", "street_address", "full_address", "formatted_address") or ""
 
-        why_keyword = get_value(row, "keyword")
-        why_market = get_value(row, "market")
-        why_has_contact = bool(phone) or bool(emails)
-        why_line1, why_line2 = leadbot_why_note_lines(why_keyword, why_market, why_has_contact)
-
-        page_title = get_value(row, "page_title", "meta_title", "title") or title
+        page_title_raw = get_value(row, "page_title", "meta_title")
+        page_title = page_title_raw or title
         meta_description = get_value(
             row,
             "meta_description",
@@ -727,6 +762,18 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             "twitter_description",
         )
         h1 = get_value(row, "h1", "h1_text", "page_h1")
+
+        why_keyword = get_value(row, "keyword")
+        why_market = get_value(row, "market")
+        why_line1, why_line2 = leadbot_why_note_lines(
+            keyword=why_keyword,
+            market=why_market,
+            serp_position=serp_pos,
+            has_phone=bool(phone),
+            has_email=bool(emails),
+            meta_description_missing=is_missing_meta_description(meta_description),
+            page_title_missing=not bool(page_title_raw),
+        )
 
         seo_snapshot_items = []
 

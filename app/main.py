@@ -13185,22 +13185,58 @@ function link(value) {{
     return `<a href="${{esc(value)}}" target="_blank" rel="noopener">${{esc(value)}}</a>`;
 }}
 
-const LEADBOT_WHY_NOTE_BAD_VALUES = ["", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found"];
+const LEADBOT_WHY_NOTE_BAD_VALUES = ["", "none", "null", "nan", "undefined", "unknown", "n/a", "manual", "not found", "?"];
 
-function leadbotWhyNoteLines(keyword, market, hasContact) {{
-    let keywordClean = String(keyword || "").trim();
-    let marketClean = String(market || "").trim();
+function leadbotWhyNoteClean(value) {{
+    const cleaned = String(value || "").trim();
+    return LEADBOT_WHY_NOTE_BAD_VALUES.includes(cleaned.toLowerCase()) ? "" : cleaned;
+}}
 
-    if (LEADBOT_WHY_NOTE_BAD_VALUES.includes(keywordClean.toLowerCase())) keywordClean = "";
-    if (LEADBOT_WHY_NOTE_BAD_VALUES.includes(marketClean.toLowerCase())) marketClean = "";
+function leadbotWhyNoteIsMissingMetaDescription(value) {{
+    const normalized = String(value || "").trim().replace(/\\s+/g, " ").toLowerCase();
+    if (!normalized) return true;
+    return [
+        "no meta description",
+        "there is no meta description",
+        "missing meta description",
+        "meta description missing",
+        "none",
+        "null",
+        "nan",
+        "not found",
+    ].includes(normalized);
+}}
 
-    const line1 = (keywordClean && marketClean)
-        ? `Matches your search for ${{keywordClean}} in ${{marketClean}}.`
-        : "Matches the search used for this scan.";
+function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, metaDescriptionMissing, pageTitleMissing) {{
+    const keywordClean = leadbotWhyNoteClean(keyword);
+    const marketClean = leadbotWhyNoteClean(market);
+    const positionClean = leadbotWhyNoteClean(serpPosition);
 
-    const line2 = hasContact
-        ? "Website and available contact details are ready to review."
-        : "A website was found; contact details may still need research.";
+    let line1;
+    if (keywordClean && marketClean && positionClean) {{
+        line1 = `Found for "${{keywordClean}}" in ${{marketClean}} at position ${{positionClean}}.`;
+    }} else if (keywordClean && marketClean) {{
+        line1 = `Found in your "${{keywordClean}}" search for ${{marketClean}}.`;
+    }} else {{
+        line1 = "Found during this Lead Finder scan.";
+    }}
+
+    let line2;
+    if (!hasPhone && !hasEmail) {{
+        line2 = "No direct contact details were found yet.";
+    }} else if (metaDescriptionMissing) {{
+        line2 = "Meta description is missing.";
+    }} else if (pageTitleMissing) {{
+        line2 = "Page title information is missing.";
+    }} else if (hasPhone && !hasEmail) {{
+        line2 = "Phone found, but no email was located.";
+    }} else if (hasEmail && !hasPhone) {{
+        line2 = "Email found, but no phone number was located.";
+    }} else if (hasPhone && hasEmail) {{
+        line2 = "Contact details are available for outreach.";
+    }} else {{
+        line2 = "Website and available business details are ready to review.";
+    }}
 
     return [line1, line2];
 }}
@@ -13217,8 +13253,6 @@ function renderLead(lead, jobParams) {{
     const address = lead.address || lead.full_address || lead.business_address || lead.formatted_address || lead.location || "Not found";
 
     const jp = jobParams || {{}};
-    const whyHasContact = !!(lead.best_phone || lead.emails);
-    const [whyLine1, whyLine2] = leadbotWhyNoteLines(jp.keyword, jp.market, whyHasContact);
 
     const metaTitle =
         lead.meta_title ||
@@ -13248,6 +13282,16 @@ function renderLead(lead, jobParams) {{
     const serpBadge = (serpPage && serpPosition)
         ? `<span>Page ${{esc(serpPage)}} · Position ${{esc(serpPosition)}}</span>`
         : "";
+
+    const [whyLine1, whyLine2] = leadbotWhyNoteLines(
+        jp.keyword,
+        jp.market,
+        serpPosition,
+        !!lead.best_phone,
+        !!lead.emails,
+        leadbotWhyNoteIsMissingMetaDescription(metaDescription),
+        !metaTitle,
+    );
 
     const div = document.createElement("article");
     div.className = "card";

@@ -1,34 +1,59 @@
 """
-Regression tests for restoring a short, factual "Why this lead" note to
-Lead Finder result cards (dashboard cards and live-scan cards), after the
-old long/inaccurate explanation generator was removed entirely (see
-scripts/test_lead_explanation_removed.py).
+Regression tests for the "Why this lead" note on Lead Finder result cards
+(dashboard cards and live-scan cards).
 
-This is a deliberately narrow re-introduction: a compact two-line note
-built only from data already on the row/job (keyword, market, whether a
-phone/email was found) -- never scored, never speculative, never routed
-through the deleted agents/lead_reason_agent.py or the old
-build_lead_reason()/reasons-list logic in agents/lead_finding_agent.py.
+History: the old long/speculative explanation generator was removed
+entirely (see scripts/test_lead_explanation_removed.py), then a compact
+two-line note was restored (keyword/market + contact-found/missing).
+This file now covers the *upgraded* version of that note: line 1 prefers
+a real, already-validated SERP position when one exists; line 2 picks the
+single most useful verified signal already available on the row/job
+(empty-contact gap, then a genuine SEO content gap -- meta description or
+page title missing -- then the specific contact-availability shape),
+never scored, never speculative, never routed through the deleted
+agents/lead_reason_agent.py or the old build_lead_reason()/reasons-list
+logic in agents/lead_finding_agent.py.
+
+Verified fields used (inspected before writing this upgrade):
+  - serp_position / serp_page -- already validated by the pre-existing
+    real_serp_value()/realSerpValue() guards (reject "manual", "?", "not
+    found", "none", "null", "nan") in both the dashboard and live-scan
+    paths, so line 1 reuses that same validated value rather than
+    re-deriving its own.
+  - keyword / market -- row CSV columns (dashboard) / job.params
+    (live-scan), guarded against blank/None/junk values exactly as
+    before.
+  - best_phone / emails -- already used for the card's own Phone/Email
+    fields and for calculate_contact_confidence().
+  - meta_description -- dashboard: get_value() with no fallback to the
+    business title, so a genuine absence is reliably detectable via the
+    existing is_missing_meta_description() helper; live-scan: the same
+    OR-chain used to build the SEO Snapshot's own meta-description
+    display, mirrored by a new leadbotWhyNoteIsMissingMetaDescription()
+    JS helper.
+  - page_title -- dashboard: read WITHOUT the "or title" business-name
+    fallback used for the SEO Snapshot's own display (that fallback
+    would make "missing" undetectable), so a separate page_title_raw is
+    used just for this signal; live-scan: metaTitle already has no such
+    fallback.
 
 These tests prove:
-  - agents.lead_dashboard_agent.leadbot_why_note_lines() produces the
-    exact required copy for every input combination (keyword+market
-    present, either missing, malformed/junk values, contact present vs
-    missing), and never leaks a blank/None/malformed keyword or market
-  - the dashboard card renderer (lead_cards()) renders the "Why this
-    lead" heading exactly once per card, with exactly two body lines,
-    using the correct contact-found/contact-missing wording, and no
-    trace of the old removed speculative copy
-  - the CSV export path still has no explanation column (EXPORT_FIELDS
-    and a real export_leads_to_csv() call)
+  - the heading appears exactly once per card, with exactly two body
+    lines
+  - line 1 uses a real SERP position when present, falls back to the
+    keyword/market phrasing when position is unavailable, and falls back
+    further to a fully generic line when keyword/market are unavailable
+  - a fake/manual/null/unknown position, keyword, or market never leaks
+    into the copy
+  - line 2 correctly reflects contact-found / contact-missing /
+    meta-description-missing / page-title-missing signals, choosing the
+    single most useful one
+  - none of the old speculative/scored phrases ever reappear
+  - the CSV export path still has no explanation column
   - agents/lead_reason_agent.py remains deleted
   - a real end-to-end live scan (create_job()/run_job(), no network)
-    renders the note correctly in a real browser DOM for both a lead
-    with contact details and one without, and does so identically
-    whether the job is partial or a full completion -- proving the JS
-    renderLead() path (which needed job.params threaded through, since
-    keyword/market live on the job, not on each lead) actually works,
-    not just the Python side
+    renders the upgraded note correctly in a real browser DOM, and does
+    so identically whether the job is partial or a full completion
 
 agents.lead_finding_agent.find_leads is monkeypatched in the live-scan
 tests so no real Serper/DataForSEO call is ever made. Playwright/Chromium
@@ -53,7 +78,7 @@ import agents.lead_export_agent as export_agent
 import agents.lead_live_job_agent as job_agent
 
 # Fragments of the old, deliberately-removed generator's speculative/scored
-# copy -- must never reappear now that a note has been restored.
+# copy -- must never reappear.
 OLD_SPECULATIVE_FRAGMENTS = [
     "Direct business domain:",
     "Matches industry signals:",
@@ -64,38 +89,88 @@ OLD_SPECULATIVE_FRAGMENTS = [
     "likely needs help",
     "poor SEO",
     "high-value lead",
+    "likely needs SEO",
 ]
 
 
 class WhyNoteLinesHelperTests(unittest.TestCase):
-    def test_keyword_and_market_present_produces_specific_line(self):
-        line1, line2 = dash_agent.leadbot_why_note_lines("plumber", "Albany, NY", True)
-        self.assertEqual(line1, "Matches your search for plumber in Albany, NY.")
-        self.assertEqual(line2, "Website and available contact details are ready to review.")
+    def _call(self, keyword="plumber", market="Albany, NY", serp_position="", has_phone=True,
+               has_email=True, meta_missing=False, title_missing=False):
+        return dash_agent.leadbot_why_note_lines(
+            keyword=keyword,
+            market=market,
+            serp_position=serp_position,
+            has_phone=has_phone,
+            has_email=has_email,
+            meta_description_missing=meta_missing,
+            page_title_missing=title_missing,
+        )
 
-    def test_missing_keyword_falls_back(self):
-        line1, _ = dash_agent.leadbot_why_note_lines("", "Albany, NY", True)
-        self.assertEqual(line1, "Matches the search used for this scan.")
+    def test_real_position_present_uses_specific_position_line(self):
+        line1, _ = self._call(serp_position="7")
+        self.assertEqual(line1, 'Found for "plumber" in Albany, NY at position 7.')
 
-    def test_missing_market_falls_back(self):
-        line1, _ = dash_agent.leadbot_why_note_lines("plumber", "", True)
-        self.assertEqual(line1, "Matches the search used for this scan.")
+    def test_missing_position_falls_back_to_keyword_market_line(self):
+        line1, _ = self._call(serp_position="")
+        self.assertEqual(line1, 'Found in your "plumber" search for Albany, NY.')
 
-    def test_malformed_values_fall_back(self):
+    def test_fake_or_manual_position_never_appears(self):
+        for junk in ["manual", "?", "not found", "None", "null", "NaN", "unknown"]:
+            with self.subTest(junk=junk):
+                line1, _ = self._call(serp_position=junk)
+                self.assertNotIn(junk, line1)
+                self.assertEqual(line1, 'Found in your "plumber" search for Albany, NY.')
+
+    def test_missing_keyword_or_market_falls_back_fully(self):
+        line1, _ = self._call(keyword="", serp_position="7")
+        self.assertEqual(line1, "Found during this Lead Finder scan.")
+        line1b, _ = self._call(market="", serp_position="7")
+        self.assertEqual(line1b, "Found during this Lead Finder scan.")
+
+    def test_malformed_keyword_or_market_falls_back(self):
         for junk in ["None", "null", "NaN", "unknown", "N/A", "  ", "not found"]:
             with self.subTest(junk=junk):
-                line1, _ = dash_agent.leadbot_why_note_lines(junk, "Albany, NY", True)
-                self.assertEqual(line1, "Matches the search used for this scan.")
-                line1b, _ = dash_agent.leadbot_why_note_lines("plumber", junk, True)
-                self.assertEqual(line1b, "Matches the search used for this scan.")
+                line1, _ = self._call(keyword=junk)
+                self.assertEqual(line1, "Found during this Lead Finder scan.")
+                line1b, _ = self._call(market=junk)
+                self.assertEqual(line1b, "Found during this Lead Finder scan.")
 
-    def test_contact_found_wording(self):
-        _, line2 = dash_agent.leadbot_why_note_lines("plumber", "Albany, NY", True)
-        self.assertEqual(line2, "Website and available contact details are ready to review.")
+    def test_no_contact_takes_priority_for_line2(self):
+        _, line2 = self._call(has_phone=False, has_email=False, meta_missing=True, title_missing=True)
+        self.assertEqual(line2, "No direct contact details were found yet.")
 
-    def test_contact_missing_wording(self):
-        _, line2 = dash_agent.leadbot_why_note_lines("plumber", "Albany, NY", False)
-        self.assertEqual(line2, "A website was found; contact details may still need research.")
+    def test_meta_missing_takes_priority_over_contact_when_contact_exists(self):
+        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=True)
+        self.assertEqual(line2, "Meta description is missing.")
+
+    def test_title_missing_used_when_meta_present(self):
+        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=False, title_missing=True)
+        self.assertEqual(line2, "Page title information is missing.")
+
+    def test_phone_only_wording(self):
+        _, line2 = self._call(has_phone=True, has_email=False, meta_missing=False, title_missing=False)
+        self.assertEqual(line2, "Phone found, but no email was located.")
+
+    def test_email_only_wording(self):
+        _, line2 = self._call(has_phone=False, has_email=True, meta_missing=False, title_missing=False)
+        self.assertEqual(line2, "Email found, but no phone number was located.")
+
+    def test_both_contact_wording_when_no_seo_gap(self):
+        _, line2 = self._call(has_phone=True, has_email=True, meta_missing=False, title_missing=False)
+        self.assertEqual(line2, "Contact details are available for outreach.")
+
+    def test_no_speculative_phrases_in_any_combination(self):
+        for has_phone in (True, False):
+            for has_email in (True, False):
+                for meta_missing in (True, False):
+                    for title_missing in (True, False):
+                        line1, line2 = self._call(
+                            has_phone=has_phone, has_email=has_email,
+                            meta_missing=meta_missing, title_missing=title_missing,
+                        )
+                        for fragment in OLD_SPECULATIVE_FRAGMENTS:
+                            self.assertNotIn(fragment, line1)
+                            self.assertNotIn(fragment, line2)
 
 
 class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
@@ -105,71 +180,103 @@ class DashboardCardWhyNoteRenderingTests(unittest.TestCase):
             "title": "Acme Plumbing Co",
             "url": "https://acmeplumbing.example",
             "best_phone": "555-555-0100",
-            "emails": "owner@acmeplumbing.example",
+            "emails": "owner@acmeplumbing.test",
             "outreach_status": "call_ready",
             "score": "90",
             "final_lead_score": "90",
             "keyword": "plumber",
             "market": "Albany, NY",
+            "page_title": "Acme Plumbing | Official Site",
+            "meta_description": "Fast, licensed plumbing service in Albany, NY.",
         }
         if extra:
             row.update(extra)
         return row
 
+    def _cards(self, rows):
+        return dash_agent.lead_cards(rows, selected_name="test.csv", csrf_token="tok")
+
     def _why_note_body(self, html_out):
-        match = re.search(
-            r'<div class="leadbot-why-note">(.*?)</div>', html_out, re.S
-        )
+        match = re.search(r'<div class="leadbot-why-note">(.*?)</div>', html_out, re.S)
         self.assertIsNotNone(match, "leadbot-why-note wrapper not found")
         return match.group(1)
 
     def test_heading_appears_exactly_once(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+        html_out = self._cards([self._row()])
         self.assertEqual(html_out.count("Why this lead"), 1)
 
     def test_body_has_exactly_two_lines(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+        html_out = self._cards([self._row()])
         body = self._why_note_body(html_out)
         self.assertEqual(body.count("<p>"), 2)
 
-    def test_contact_found_wording_when_phone_and_email_present(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+    def test_real_serp_position_used_when_available(self):
+        html_out = self._cards([self._row(extra={"serp_position": "12"})])
         body = self._why_note_body(html_out)
-        self.assertIn("Website and available contact details are ready to review.", body)
-        self.assertNotIn("may still need research", body)
+        self.assertIn("in Albany, NY at position 12.", body)
+        self.assertIn("plumber", body)
+
+    def test_manual_or_null_position_never_appears(self):
+        for junk in ["manual", "?", "not found", "None", "null"]:
+            with self.subTest(junk=junk):
+                html_out = self._cards([self._row(extra={"serp_position": junk})])
+                body = self._why_note_body(html_out)
+                self.assertNotIn(f"position {junk}", body)
+                self.assertIn('Found in your', body)
+
+    def test_missing_position_falls_back_safely(self):
+        html_out = self._cards([self._row(extra={"serp_position": ""})])
+        body = self._why_note_body(html_out)
+        self.assertIn('Found in your', body)
+        self.assertNotIn("at position", body)
 
     def test_contact_missing_wording_when_no_phone_or_email(self):
-        html_out = dash_agent.lead_cards(
-            [self._row(extra={"best_phone": "", "emails": ""})],
-            selected_name="test.csv",
-            csrf_token="tok",
-        )
+        html_out = self._cards([self._row(extra={"best_phone": "", "emails": ""})])
         body = self._why_note_body(html_out)
-        self.assertIn("A website was found; contact details may still need research.", body)
+        self.assertIn("No direct contact details were found yet.", body)
+
+    def test_seo_gap_signal_used_only_when_genuinely_present(self):
+        # Meta description present (row default) -> not shown.
+        html_out = self._cards([self._row()])
+        body = self._why_note_body(html_out)
+        self.assertNotIn("Meta description is missing.", body)
+        self.assertIn("Contact details are available for outreach.", body)
+
+        # Meta description genuinely missing -> shown instead of the
+        # (already-visible-elsewhere) contact-status line.
+        html_out2 = self._cards([self._row(extra={"meta_description": ""})])
+        body2 = self._why_note_body(html_out2)
+        self.assertIn("Meta description is missing.", body2)
+
+    def test_title_missing_signal(self):
+        html_out = self._cards([self._row(extra={
+            "page_title": "", "meta_title": "", "title": "Acme Plumbing Co",
+        })])
+        body = self._why_note_body(html_out)
+        self.assertIn("Page title information is missing.", body)
 
     def test_missing_keyword_market_uses_safe_fallback(self):
-        html_out = dash_agent.lead_cards(
-            [self._row(extra={"keyword": "", "market": ""})],
-            selected_name="test.csv",
-            csrf_token="tok",
-        )
+        html_out = self._cards([self._row(extra={"keyword": "", "market": ""})])
         body = self._why_note_body(html_out)
-        self.assertIn("Matches the search used for this scan.", body)
-        self.assertNotIn("in .", body)
+        self.assertIn("Found during this Lead Finder scan.", body)
 
-    def test_specific_search_line_uses_real_keyword_and_market(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+    def test_null_unknown_values_never_leak(self):
+        html_out = self._cards([self._row(extra={
+            "keyword": "None", "market": "unknown", "serp_position": "null",
+        })])
         body = self._why_note_body(html_out)
-        self.assertIn("Matches your search for plumber in Albany, NY.", body)
+        self.assertNotIn("None", body)
+        self.assertNotIn("null", body)
+        self.assertIn("Found during this Lead Finder scan.", body)
 
     def test_no_old_speculative_text_returns(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+        html_out = self._cards([self._row()])
         for fragment in OLD_SPECULATIVE_FRAGMENTS:
             with self.subTest(fragment=fragment):
                 self.assertNotIn(fragment, html_out)
 
     def test_no_empty_why_note_wrapper(self):
-        html_out = dash_agent.lead_cards([self._row()], selected_name="test.csv", csrf_token="tok")
+        html_out = self._cards([self._row()])
         self.assertNotIn('<div class="leadbot-why-note">\n            </div>', html_out)
         self.assertNotIn('<div class="leadbot-why-note"></div>', html_out)
 
@@ -199,7 +306,7 @@ class CsvExportHasNoExplanationColumnTests(unittest.TestCase):
                     "title": "Acme Plumbing Co",
                     "url": "https://acmeplumbing.example",
                     "best_phone": "555-555-0100",
-                    "emails": "owner@acmeplumbing.example",
+                    "emails": "owner@acmeplumbing.test",
                     "outreach_status": "call_ready",
                     "score": 90,
                     "final_lead_score": 90,
@@ -227,15 +334,18 @@ class OldReasonGeneratorStillDeletedTests(unittest.TestCase):
         self.assertFalse(hasattr(finding_agent, "build_lead_reason"))
 
 
-CANNED_LEAD_WITH_CONTACT = {
+CANNED_LEAD_WITH_CONTACT_AND_POSITION = {
     "domain": "livewhynote-contact.example",
     "url": "https://livewhynote-contact.example",
     "title": "Live Why Note Contact Plumbing",
     "best_phone": "555-555-0122",
-    "emails": "owner@livewhynote-contact.example",
+    "emails": "owner@livewhynotecontact.test",
     "outreach_status": "call_ready",
     "contact_confidence": 80,
     "final_lead_score": 90,
+    "serp_position": "9",
+    "meta_description": "Live why note test meta description.",
+    "page_title": "Live Why Note Contact Plumbing | Home",
 }
 
 CANNED_LEAD_NO_CONTACT = {
@@ -247,11 +357,12 @@ CANNED_LEAD_NO_CONTACT = {
     "outreach_status": "needs_manual_research",
     "contact_confidence": 0,
     "final_lead_score": 55,
+    "serp_position": "",
 }
 
 
 def fake_find_leads_both(industry, market, service_keyword=None, own_domain=None, limit=10):
-    return {"leads": [dict(CANNED_LEAD_WITH_CONTACT), dict(CANNED_LEAD_NO_CONTACT)]}
+    return {"leads": [dict(CANNED_LEAD_WITH_CONTACT_AND_POSITION), dict(CANNED_LEAD_NO_CONTACT)]}
 
 
 class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
@@ -459,9 +570,17 @@ class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
             self.assertEqual(len(paragraphs), 2, "each why-note must have exactly two body lines")
 
         cards_text = page.content()
-        self.assertIn(f"Matches your search for plumber in {market}.", cards_text)
-        self.assertIn("Website and available contact details are ready to review.", cards_text)
-        self.assertIn("A website was found; contact details may still need research.", cards_text)
+        # Lead with a real SERP position -> specific position line.
+        self.assertIn(f'Found for "plumber" in {market} at position 9.', cards_text)
+        # Lead with no SERP position -> keyword/market fallback, never a
+        # fake position.
+        self.assertIn(f'Found in your "plumber" search for {market}.', cards_text)
+        # Contact-with-SEO-data lead: meta description and title are both
+        # present, so line 2 falls through to the contact-availability
+        # shape.
+        self.assertIn("Contact details are available for outreach.", cards_text)
+        # No-contact lead.
+        self.assertIn("No direct contact details were found yet.", cards_text)
 
         for fragment in OLD_SPECULATIVE_FRAGMENTS:
             self.assertNotIn(fragment, cards_text)
