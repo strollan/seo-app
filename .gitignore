@@ -197,3 +197,4 @@ test_*.py
 !scripts/test_partial_provider_results.py
 !scripts/test_lead_explanation_removed.py
 !scripts/test_lead_why_note_restored.py
+!scripts/test_invalid_location_value_message.py

@@ -37,6 +37,28 @@ class InvalidMarketLocationError(Exception):
     search service is temporarily unavailable".
     """
 
+
+class InvalidLocationValueError(Exception):
+    """
+    Raised when DataForSEO itself rejects our location_name value as
+    invalid (task status 40501, "Invalid Field: 'location_name'") -- e.g.
+    a misspelled or unrecognized city name ("Beverley Hills" instead of
+    "Beverly Hills") that looked well-formed to _location_name() (correct
+    "City,State,United States" shape, plausible casing) but doesn't match
+    any real place DataForSEO knows about.
+
+    Distinct from InvalidMarketLocationError, which is raised locally
+    before ever contacting the provider for a market string that can't be
+    parsed into that shape at all. This one is a provider-confirmed
+    rejection of a value we believed was valid. Never retried and never
+    counted toward the circuit breaker -- exactly like any other
+    permanent/non-retryable DataForSEO error -- since retrying the exact
+    same rejected value can never succeed. Surfaced to the user with
+    distinct, accurate guidance ("we couldn't find that location") rather
+    than the generic provider-unavailable message, which is misleading for
+    a permanent input problem.
+    """
+
 # === LEADBOT DATAFORSEO QUERY CLEANUP START ===
 def _leadbot_clean_query_piece(value):
     value = str(value or "").strip()
@@ -358,6 +380,7 @@ _LEADBOT_PROVIDER_DIAGNOSTICS_LOG = Path(__file__).resolve().parents[1] / "data"
 #   40102 = No Search Results -- NOT an error, a legitimate empty result.
 _LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES = {40101, 40103}
 _LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE = 40102
+_LEADBOT_DATAFORSEO_INVALID_LOCATION_TASK_STATUS_CODE = 40501
 _LEADBOT_DATAFORSEO_MAX_ATTEMPTS = 3  # 1 initial attempt + 2 retries
 _LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS = [1, 2]  # before retry 1, before retry 2
 
@@ -669,6 +692,11 @@ def search_google_organic(
                     # as any other successful response.
                     _circuit_breaker_record_success()
                     return []
+
+                if task_status_code == _LEADBOT_DATAFORSEO_INVALID_LOCATION_TASK_STATUS_CODE:
+                    raise InvalidLocationValueError(
+                        f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
+                    )
 
                 if task_status_code != 20000:
                     raise RuntimeError(

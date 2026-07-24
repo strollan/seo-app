@@ -152,7 +152,7 @@ class FailureClassificationTests(_DiagnosticLogTestCase):
                 }
 
         with mock.patch.object(dfs.requests, "post", return_value=FakeResponse()):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dfs.InvalidLocationValueError):
                 dfs.search_google_organic("plumber", "Albany, NY", depth=10)
 
         records = self._read_log_records()
@@ -208,7 +208,7 @@ class SanitizedNoSecretsTests(_DiagnosticLogTestCase):
                 return {"status_code": 20000, "tasks": [{"status_code": 40501, "status_message": "Invalid Field: 'location_name'"}]}
 
         with mock.patch.object(dfs.requests, "post", return_value=FakeResponse()):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dfs.InvalidLocationValueError):
                 dfs.search_google_organic("plumber", "Albany, NY", depth=10)
 
         raw_log_text = self.log_path.read_text()

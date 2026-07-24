@@ -165,9 +165,13 @@ class DataForSeoRetryTests(unittest.TestCase):
 
     def test_non_retryable_task_error_does_not_retry(self):
         """40501 Invalid Field is not in the retryable set -- must raise
-        on the very first attempt, exactly as before this change."""
+        on the very first attempt, exactly as before this change. It now
+        raises the more specific InvalidLocationValueError (see
+        scripts/test_invalid_location_value_message.py) instead of a
+        generic RuntimeError, but the no-retry behavior itself is
+        unchanged."""
         with mock.patch.object(dfs.requests, "post", return_value=_fake_response(40501, task_message="Invalid Field: 'location_name'")) as mock_post:
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dfs.InvalidLocationValueError):
                 dfs.search_google_organic("plumber", "Albany, NY", depth=10)
 
         mock_post.assert_called_once()

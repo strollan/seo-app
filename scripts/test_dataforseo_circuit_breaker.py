@@ -290,7 +290,7 @@ class CooldownAndProbeTests(_CircuitBreakerTestCase):
         self._advance(121)
 
         with mock.patch.object(dfs.requests, "post", return_value=_fake_response(40501, "Invalid Field: 'location_name'")):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(dfs.InvalidLocationValueError):
                 dfs.search_google_organic("plumber", "Albany, NY", depth=10)
 
         self.assertFalse(dfs._circuit_breaker_state["probe_in_progress"])
@@ -303,7 +303,7 @@ class NonContributingFailureTests(_CircuitBreakerTestCase):
     def test_permanent_errors_do_not_contribute_to_threshold(self):
         for _ in range(5):
             with mock.patch.object(dfs.requests, "post", return_value=_fake_response(40501, "Invalid Field: 'location_name'")):
-                with self.assertRaises(RuntimeError):
+                with self.assertRaises(dfs.InvalidLocationValueError):
                     dfs.search_google_organic("plumber", "Albany, NY", depth=10)
 
         # Circuit must still be closed -- a normal request proceeds.

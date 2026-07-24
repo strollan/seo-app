@@ -38,6 +38,19 @@ INVALID_MARKET_LOCATION_MARKER = "INVALID_MARKET_LOCATION:"
 
 INVALID_MARKET_LOCATION_MESSAGE = "Enter a City, State or ZIP Code, such as Albany, NY or 12207."
 
+# Same string-marker technique, for
+# agents.dataforseo_serp_agent.InvalidLocationValueError: DataForSEO itself
+# rejected our location_name value as invalid (e.g. a misspelled city like
+# "Beverley Hills" instead of "Beverly Hills") -- a user-input problem
+# confirmed by the provider, not a provider outage, and must never be
+# surfaced with the generic "temporarily unavailable" wording (retrying an
+# unrecognized location can never succeed).
+INVALID_LOCATION_VALUE_MARKER = "INVALID_LOCATION_VALUE:"
+
+INVALID_LOCATION_VALUE_MESSAGE = (
+    "We couldn't find that location. Check the city and state spelling and try again."
+)
+
 # Shown when at least one query in a scan hit a genuine provider failure
 # (PROVIDER_UNAVAILABLE_MARKER) but at least one OTHER query in the same
 # scan succeeded (with results or a legitimate zero-result outcome). A
@@ -398,11 +411,13 @@ def call_find_leads_with_timeout(
         return None, "Search ended without returning results"
 
     if status == "error":
-        from agents.dataforseo_serp_agent import InvalidMarketLocationError
+        from agents.dataforseo_serp_agent import InvalidMarketLocationError, InvalidLocationValueError
         from business_competitor_finder import SearchProviderUnavailableError
 
         if isinstance(payload, InvalidMarketLocationError):
             return None, f"{INVALID_MARKET_LOCATION_MARKER}{payload}"
+        if isinstance(payload, InvalidLocationValueError):
+            return None, f"{INVALID_LOCATION_VALUE_MARKER}{payload}"
         if isinstance(payload, SearchProviderUnavailableError):
             return None, f"{PROVIDER_UNAVAILABLE_MARKER}{payload}"
         return None, str(payload)
@@ -1170,6 +1185,23 @@ def run_job(job_id):
                 job["status"] = "error"
                 job["error_code"] = "invalid_market_location"
                 job["message"] = INVALID_MARKET_LOCATION_MESSAGE
+                job["updated_at"] = now_iso()
+                write_job(job)
+                return
+
+            if search_error and str(search_error).startswith(INVALID_LOCATION_VALUE_MARKER):
+                # DataForSEO itself rejected the location value as invalid
+                # (agents.dataforseo_serp_agent.InvalidLocationValueError,
+                # e.g. a misspelled city) -- also a user-input problem, not
+                # a provider failure. The location value is fixed for the
+                # whole job (only the keyword phrasing varies between
+                # query variants), so every remaining query would be
+                # rejected the exact same way -- stop here rather than
+                # burning more paid requests on a location that will never
+                # resolve. Any leads already streamed are still preserved.
+                job["status"] = "error"
+                job["error_code"] = "invalid_location_value"
+                job["message"] = INVALID_LOCATION_VALUE_MESSAGE
                 job["updated_at"] = now_iso()
                 write_job(job)
                 return

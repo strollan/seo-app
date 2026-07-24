@@ -4,7 +4,11 @@ from serper_client import google_search, get_organic_results
 
 
 try:
-    from agents.dataforseo_serp_agent import InvalidMarketLocationError, search_google_organic
+    from agents.dataforseo_serp_agent import (
+        InvalidMarketLocationError,
+        InvalidLocationValueError,
+        search_google_organic,
+    )
 except Exception:
     search_google_organic = None
 
@@ -13,6 +17,10 @@ except Exception:
         imported at all -- keeps `except InvalidMarketLocationError:`
         clauses elsewhere in this module resolvable rather than raising
         NameError, without masking whatever broke the real import above."""
+
+    class InvalidLocationValueError(Exception):
+        """Fallback definition, same reasoning as InvalidMarketLocationError
+        above."""
 
 # === LEADBOT NON-SERPER FALLBACK START ===
 
@@ -501,7 +509,11 @@ def _leadbot_non_serper_search(
     depth = max(10, min(depth, 100))
 
     try:
-        from agents.dataforseo_serp_agent import InvalidMarketLocationError, search_google_organic
+        from agents.dataforseo_serp_agent import (
+            InvalidMarketLocationError,
+            InvalidLocationValueError,
+            search_google_organic,
+        )
 
         results = search_google_organic(
             query,
@@ -521,6 +533,13 @@ def _leadbot_non_serper_search(
         # input problem, not a provider failure -- let it propagate as-is
         # so run_job() can surface it as validation guidance instead of
         # "the lead search service is temporarily unavailable".
+        raise
+    except InvalidLocationValueError:
+        # DataForSEO itself rejected our location_name value as invalid
+        # (e.g. a misspelled city) -- also a user-input problem, not a
+        # provider failure. Let it propagate as-is (same reasoning as
+        # InvalidMarketLocationError above) instead of being converted
+        # into the generic provider-unavailable error below.
         raise
     except Exception as exc:
         print(
@@ -579,6 +598,11 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
                 except InvalidMarketLocationError:
                     # Not a provider failure -- a market the caller couldn't
                     # resolve into a valid location. Let it propagate as-is.
+                    raise
+                except InvalidLocationValueError:
+                    # Not a provider failure either -- DataForSEO itself
+                    # rejected the location value as unrecognized. Let it
+                    # propagate as-is, same as InvalidMarketLocationError.
                     raise
                 except Exception as fallback_exc:
                     print(f"LEADBOT FALLBACK SEARCH ALSO FAILED: {fallback_exc}", flush=True)
