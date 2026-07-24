@@ -200,3 +200,4 @@ test_*.py
 !scripts/test_invalid_location_value_message.py
 !scripts/test_lead_finder_value_explanation.py
 !scripts/test_failed_scan_retry_search.py
+!scripts/test_history_card_identity.py

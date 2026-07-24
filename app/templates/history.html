@@ -65,9 +65,22 @@
             margin-bottom: 8px;
         }
 
-        .date {
+        .compared-urls {
             color: #64748b;
-            font-size: 14px;
+            font-size: 13px;
+            margin-bottom: 8px;
+            overflow-wrap: anywhere;
+        }
+
+        .date-pill {
+            display: inline-block;
+            background: #f1f5f9;
+            color: #0f172a;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-weight: 800;
+            font-size: 13px;
             margin-bottom: 16px;
         }
 
@@ -371,7 +384,13 @@
                 {{ item.site_domain }} vs {{ item.competitor_domain }}
             </div>
 
-            <div class="date">{{ item.date }}</div>
+            {% if item.site_url or item.competitor_url %}
+                <div class="compared-urls">
+                    {% if item.site_url %}{{ item.site_url }}{% endif %}{% if item.site_url and item.competitor_url %} vs {% endif %}{% if item.competitor_url %}{{ item.competitor_url }}{% endif %}
+                </div>
+            {% endif %}
+
+            <div class="date-pill">{{ item.date }}</div>
 
             <div class="score-row">
                 <span class="score-pill">Your Score: {{ item.site_score }}</span>
