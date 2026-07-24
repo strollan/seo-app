@@ -69,6 +69,15 @@ class PublicPageMetadataTests(unittest.TestCase):
             ),
             "canonical": "https://leadmeleads.com/compare",
         },
+        "/what-makes-a-good-lead": {
+            "title": "What Makes a Good Lead? How to Find Leads Worth Contacting",
+            "description": (
+                "A good lead fits your target market, is reachable, and "
+                "gives you a real reason to reach out. See what separates "
+                "a lead worth contacting from a purchased list of names."
+            ),
+            "canonical": "https://leadmeleads.com/what-makes-a-good-lead",
+        },
     }
 
     @classmethod
@@ -351,7 +360,7 @@ class SitemapXmlTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("xml", response.headers.get("content-type", ""))
 
-    def test_sitemap_contains_exactly_the_three_intended_pages(self):
+    def test_sitemap_contains_exactly_the_four_intended_pages(self):
         body = self.client.get("/sitemap.xml").text
         urls = re.findall(r"<loc>([^<]+)</loc>", body)
         self.assertEqual(
@@ -360,9 +369,10 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/",
                 "https://leadmeleads.com/lead-bot",
                 "https://leadmeleads.com/compare",
+                "https://leadmeleads.com/what-makes-a-good-lead",
             },
         )
-        self.assertEqual(len(urls), 3)
+        self.assertEqual(len(urls), 4)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text

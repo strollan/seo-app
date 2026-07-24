@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{{ seo_meta_html | safe }}
+{{ faq_jsonld_html | safe }}
+
+<style>
+* { box-sizing: border-box; }
+
+.good-lead-content .card {
+    background: white;
+    color: #0f172a;
+    border: 1px solid #dbe4f0;
+    border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(15,23,42,.07);
+    overflow: hidden;
+}
+
+.good-lead-content .card + .card {
+    margin-top: 22px;
+}
+
+.good-lead-content .section {
+    padding: 30px 34px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.good-lead-content .section:first-child {
+    border-top: 0;
+}
+
+.good-lead-content .section h2 {
+    margin: 0 0 14px 0;
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+}
+
+.good-lead-content .section p {
+    margin: 0 0 14px 0;
+    font-size: 16px;
+    line-height: 1.7;
+    color: #1e293b;
+    overflow-wrap: anywhere;
+}
+
+.good-lead-content .section p:last-child {
+    margin-bottom: 0;
+}
+
+.good-lead-content .lede {
+    padding: 32px 34px;
+    font-size: 19px;
+    line-height: 1.6;
+    color: #0f172a;
+    background: #eff6ff;
+    border-bottom: 1px solid #dbe4f0;
+}
+
+.good-lead-content .lede strong {
+    color: #1e3a8a;
+}
+
+.good-lead-content .inline-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 6px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    background: #1e3a8a;
+    color: #ffffff !important;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.good-lead-content .final-cta {
+    padding: 34px;
+    text-align: center;
+    background: linear-gradient(135deg, #0f172a, #1e3a8a);
+}
+
+.good-lead-content .final-cta h2 {
+    margin: 0 0 10px 0;
+    font-size: 24px;
+    color: #ffffff;
+}
+
+.good-lead-content .final-cta p {
+    margin: 0 0 18px 0;
+    font-size: 16px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.9);
+}
+
+.good-lead-content .final-cta .inline-cta {
+    background: #ffffff;
+    color: #0f2f7f !important;
+}
+
+.good-lead-content .faq-item {
+    margin-bottom: 22px;
+}
+
+.good-lead-content .faq-item:last-child {
+    margin-bottom: 0;
+}
+
+.good-lead-content .faq-item h3 {
+    margin: 0 0 8px 0;
+    font-size: 17px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.good-lead-content .faq-item p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #1e293b;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+    .good-lead-content .section,
+    .good-lead-content .lede,
+    .good-lead-content .final-cta {
+        padding: 22px 18px;
+    }
+
+    .good-lead-content .section h2 {
+        font-size: 20px;
+    }
+
+    .good-lead-content .lede {
+        font-size: 17px;
+    }
+}
+
+@media (max-width: 480px) {
+    .good-lead-content .section,
+    .good-lead-content .lede,
+    .good-lead-content .final-cta {
+        padding: 16px 14px;
+    }
+}
+</style>
+    <link rel="icon" href="/static/favicon.ico?v=2">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=2">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-07-08-compare-nav-fix">
+</head>
+
+<body class="compare-page good-lead-page">
+<div class="container">
+
+    <div class="hero">
+        <div class="header">
+            <div class="header-left">
+                {% if logo_url %}
+                    <a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" alt="LeadMeLeads Logo"></a>
+                {% endif %}
+                <div>
+                    <h1>What Makes a Good Lead?</h1>
+                    <p>What separates a lead worth contacting from just another name on a list.</p>
+                </div>
+            </div>
+
+            <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+            </button>
+
+            <div class="nav" id="compareNav">
+                <a href="/">Home</a>
+                <a href="/lead-bot">Lead Finder</a>
+                <a href="/compare">Compare</a>
+                {% if user %}
+                    <a href="/history">History</a>
+                    <a href="/settings">Settings</a>
+                    <a href="/logout">Logout</a>
+                {% else %}
+                    <a href="/login">Login</a>
+                    <a href="/create-account">Create Account</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="app-nav-overlay" data-nav-overlay></div>
+
+    <div class="good-lead-content">
+        <div class="card">
+            <p class="lede">
+                <strong>A good lead is a business that fits your target market, is reachable, and gives you a real reason to start a sales conversation.</strong>
+                The goal isn't more names &mdash; it's finding prospects worth your time.
+            </p>
+
+            <section class="section" aria-label="What makes a good lead">
+                <h2>What makes a good lead?</h2>
+                <p>
+                    A lead earns the name when three things are true at once: it fits the kind
+                    of business you actually sell to, you can reach someone there, and there is
+                    a specific, visible reason to start a conversation.
+                </p>
+                <p>
+                    Drop any one of those and the "lead" is really just a name. A perfect-fit
+                    business with no working contact info is not a lead yet. A reachable
+                    business outside your market is not a lead either &mdash; it is a distraction.
+                </p>
+            </section>
+
+            <section class="section" aria-label="Good leads versus more leads">
+                <h2>Good leads vs. more leads</h2>
+                <p>
+                    A list of five thousand names is not five thousand opportunities. Without
+                    fit or context, it is five thousand cold, identical outreach attempts that
+                    mostly go nowhere.
+                </p>
+                <p>
+                    A shorter list of businesses that match your target market, with a real
+                    reason attached to each one, is worth more than a bigger pile of unfiltered
+                    contacts. Fewer, better leads mean less time wasted on the wrong prospects.
+                </p>
+            </section>
+
+            <section class="section" aria-label="What makes a lead worth contacting">
+                <h2>What makes a lead worth contacting</h2>
+                <p>
+                    A lead is worth contacting when you can answer these plainly: does this
+                    business match who you sell to, can you actually reach them, and can you
+                    open the conversation with something specific instead of a generic pitch.
+                </p>
+                <p>
+                    That specific reason can be almost anything concrete &mdash; a gap in their
+                    online presence, a service they don't appear to offer yet, or a detail about
+                    their business that makes your outreach relevant instead of random.
+                </p>
+            </section>
+
+            <section class="section" aria-label="Why local context matters">
+                <h2>Why local context matters</h2>
+                <p>
+                    Local businesses share a market: the same region, similar competition, and
+                    often the same seasonal pressures. That context makes it easier to research
+                    a business quickly and reference something real in your first message.
+                </p>
+                <p>
+                    A message that mentions a specific city or a detail only a local competitor
+                    would know reads as researched. A generic message that could go to anyone,
+                    anywhere, usually reads that way too.
+                </p>
+            </section>
+
+            <section class="section" aria-label="Why giant purchased lead lists often disappoint">
+                <h2>Why giant purchased lead lists often disappoint</h2>
+                <p>
+                    Purchased lists are built for volume, not fit. They mix businesses that
+                    match what you sell with ones that never could, and contact details go
+                    stale the moment a business changes phone numbers, closes, or gets sold.
+                </p>
+                <p>
+                    The result is time spent dialing dead numbers and emailing bounced
+                    addresses before you ever reach someone who might actually care &mdash; and
+                    no way to tell, in advance, which names on the list were worth the call.
+                </p>
+            </section>
+
+            <section class="section" aria-label="How LeadMeLeads helps you find businesses worth reviewing">
+                <h2>How LeadMeLeads helps you find businesses worth reviewing</h2>
+                <p>
+                    Instead of starting from a purchased list, <a href="/lead-bot">Lead Finder</a>
+                    searches by keyword and location, then reviews what's publicly available
+                    about each business it finds &mdash; contact details when we can find them,
+                    and a plain reason each one may be worth a look.
+                </p>
+                <p>
+                    Once you've found a business worth a closer look, the
+                    <a href="/compare">Website Comparison Tool</a> can show you specific,
+                    practical gaps &mdash; missing titles, thin meta descriptions, weak
+                    content &mdash; that can shape what you actually say when you reach out.
+                </p>
+                <p>
+                    We show you what's there and let you decide. We don't claim to know
+                    whether any business is ready to buy.
+                </p>
+                <p>
+                    <a class="inline-cta" href="/lead-bot">Find businesses worth contacting</a>
+                </p>
+            </section>
+
+            <section class="section" aria-label="Good lead versus qualified lead">
+                <h2>Good lead vs. qualified lead</h2>
+                <p>
+                    A good lead is a business worth your first outreach attempt &mdash; it
+                    fits your market, you can reach it, and there's a real reason to start
+                    talking. A qualified lead is further along: through an actual conversation,
+                    you've confirmed real need, budget, and timing.
+                </p>
+                <p>
+                    LeadMeLeads helps you find good leads worth contacting. Turning a good lead
+                    into a qualified one still depends on the conversation you have with them,
+                    not on anything we can determine in advance.
+                </p>
+            </section>
+
+            <section class="section" aria-label="Frequently asked questions">
+                <h2>FAQ</h2>
+                {% for item in faq %}
+                <div class="faq-item">
+                    <h3>{{ item.question }}</h3>
+                    <p>{{ item.answer }}</p>
+                </div>
+                {% endfor %}
+            </section>
+        </div>
+
+        <div class="card">
+            <div class="final-cta">
+                <h2>Start finding leads worth contacting.</h2>
+                <p>Search by keyword and location instead of working through a purchased list.</p>
+                <a class="inline-cta" href="/lead-bot">Open Lead Finder</a>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="/static/js/mobile-nav.js" defer></script>
+</body>
+</html>

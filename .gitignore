@@ -202,3 +202,4 @@ test_*.py
 !scripts/test_failed_scan_retry_search.py
 !scripts/test_history_card_identity.py
 !scripts/test_report_mobile_layout.py
+!scripts/test_good_lead_page.py

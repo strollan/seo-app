@@ -23,7 +23,7 @@ SITE_BASE_URL = "https://leadmeleads.com"
 # noindex response middleware (see app/main.py) all key off this set --
 # anything not listed here is noindexed by default, so a new dynamic
 # route can't accidentally become indexable just by existing.
-PUBLIC_INDEXABLE_PATHS = ("/", "/lead-bot", "/compare")
+PUBLIC_INDEXABLE_PATHS = ("/", "/lead-bot", "/compare", "/what-makes-a-good-lead")
 
 # Static assets are served from here and must never be noindexed or
 # disallowed -- that would risk crawlers being told not to fetch CSS/JS.
@@ -102,9 +102,97 @@ COMPARE_PAGE = SeoPage(
     canonical_path="/compare",
 )
 
+GOOD_LEAD_PAGE = SeoPage(
+    title="What Makes a Good Lead? How to Find Leads Worth Contacting",
+    description=(
+        "A good lead fits your target market, is reachable, and gives you "
+        "a real reason to reach out. See what separates a lead worth "
+        "contacting from a purchased list of names."
+    ),
+    canonical_path="/what-makes-a-good-lead",
+)
+
+# Single source of truth for the /what-makes-a-good-lead FAQ: the same
+# list drives both the visible FAQ section (rendered by the Jinja
+# template) and the FAQPage JSON-LD below, so the schema can never drift
+# from what a visitor actually sees on the page.
+GOOD_LEAD_FAQ = [
+    {
+        "question": "What makes a good lead?",
+        "answer": (
+            "A good lead is a business that fits your target market, is "
+            "reachable, and gives you a clear reason to reach out. It is "
+            "not about how many contacts you have -- it is about how many "
+            "of them are actually worth pursuing."
+        ),
+    },
+    {
+        "question": "How do I find good leads?",
+        "answer": (
+            "Start with a specific search instead of a purchased list -- "
+            "a keyword and a location narrows results to businesses that "
+            "plausibly fit what you sell. Then review each business "
+            "individually: is it reachable, does it match your target "
+            "market, and is there a real, specific reason to contact it."
+        ),
+    },
+    {
+        "question": "What is the difference between a good lead and a qualified lead?",
+        "answer": (
+            "A good lead is a business worth a first outreach attempt; a "
+            "qualified lead is one that has been confirmed, usually "
+            "through a conversation, to have real need, budget, and "
+            "timing. LeadMeLeads helps you find good leads worth "
+            "contacting -- qualifying them still happens through your own "
+            "outreach and discovery process."
+        ),
+    },
+    {
+        "question": "Are local leads better?",
+        "answer": (
+            "Local leads are not automatically better, but local context "
+            "usually makes outreach easier. Businesses that share your "
+            "market, region, or local search competition are simpler to "
+            "research and reference specifically, which tends to make a "
+            "first message land better than something generic."
+        ),
+    },
+    {
+        "question": "Is buying a large lead list worth it?",
+        "answer": (
+            "Usually not, unless the list is genuinely targeted and "
+            "current. Most purchased lead lists mix outdated contact "
+            "information with businesses that do not match your target "
+            "market, so a large list often means more time spent "
+            "filtering rather than more real opportunities."
+        ),
+    },
+]
+
 
 def _jsonld_script(data: dict) -> str:
     return f'<script type="application/ld+json">{json.dumps(data, separators=(",", ":"))}</script>'
+
+
+def render_faq_jsonld(faq_items: list) -> str:
+    """FAQPage JSON-LD built directly from the same faq_items list the
+    calling template renders as visible copy, so schema and visible
+    content can't drift out of sync with each other."""
+    return _jsonld_script({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": item["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": item["answer"],
+                },
+            }
+            for item in faq_items
+        ],
+    })
 
 
 def render_homepage_jsonld() -> str:
