@@ -13397,12 +13397,20 @@ async function poll() {{
             if (liveLine3) liveLine3.textContent = "";
 
             if (leadsWrap && !document.getElementById("leadbotProviderUnavailable")) {{
+                const retryParams = new URLSearchParams();
+                if (params.keyword) retryParams.set("retry_keyword", params.keyword);
+                if (params.market) retryParams.set("retry_market", params.market);
+                if (params.own_domain) retryParams.set("retry_own_domain", params.own_domain);
+                const retryQuery = retryParams.toString();
+                const retryHref = retryQuery ? `/lead-bot?${{retryQuery}}` : "/lead-bot";
+
                 const unavailable = document.createElement("div");
                 unavailable.id = "leadbotProviderUnavailable";
                 unavailable.className = "leadbot-provider-unavailable";
                 unavailable.innerHTML = `
                     <h3>Lead search temporarily unavailable</h3>
                     <p>This scan could not be completed. Please try again shortly.</p>
+                    <a class="btn" href="${{retryHref}}">Try this search again</a>
                     <a class="btn" href="/lead-bot">Back to Lead Finder</a>
                 `;
                 leadsWrap.appendChild(unavailable);

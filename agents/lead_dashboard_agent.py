@@ -3596,6 +3596,30 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 
 </form>
 
+<!-- LEADBOT RETRY SEARCH PREFILL START -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    // Prefill only -- never submits the form, never starts a scan, never
+    // consumes a guest attempt. Populated from a "Try this search again"
+    // link on a failed live-scan page (never auto-run).
+    var retryParams = new URLSearchParams(window.location.search);
+    var keywordInput = document.getElementById("leadbotKeywordInput");
+    var marketInput = document.getElementById("leadbotMarketInput");
+    var ownDomainInput = document.querySelector('#leadbotRunForm input[name="own_domain"]');
+
+    if (retryParams.has("retry_keyword") && keywordInput) {
+        keywordInput.value = retryParams.get("retry_keyword");
+    }
+    if (retryParams.has("retry_market") && marketInput) {
+        marketInput.value = retryParams.get("retry_market");
+    }
+    if (retryParams.has("retry_own_domain") && ownDomainInput) {
+        ownDomainInput.value = retryParams.get("retry_own_domain");
+    }
+});
+</script>
+<!-- LEADBOT RETRY SEARCH PREFILL END -->
+
             <p class="help">Live results appear as prospects are found and contact details are filled in.</p>
 
 
