@@ -1237,9 +1237,6 @@ input {
     background: #fee2e2;
     border: 1px solid #fecaca;
 }
-#leadbotRefreshPageBtn {
-    margin-top: 8px;
-}
 .file-list {
     display: grid;
     gap: 8px;
@@ -3639,7 +3636,6 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 </button>
 
 <p class="leadbot-start-scan-message" id="leadbotStartScanMessage" role="alert" hidden></p>
-<button type="button" class="leadbot-secondary-btn" id="leadbotRefreshPageBtn" hidden>Refresh page</button>
 
 </form>
 
@@ -8794,7 +8790,6 @@ body.leadbot-live-page button[data-action="block"] {
     // search." below, which is the ONLY place that exact copy is used.
     function setStartScanMessage(text, kind) {
         var el = document.getElementById("leadbotStartScanMessage");
-        var refreshBtn = document.getElementById("leadbotRefreshPageBtn");
 
         if (!text) {
             if (el) {
@@ -8802,7 +8797,6 @@ body.leadbot-live-page button[data-action="block"] {
                 el.textContent = "";
                 el.removeAttribute("data-kind");
             }
-            if (refreshBtn) refreshBtn.hidden = true;
             return;
         }
 
@@ -8811,11 +8805,6 @@ body.leadbot-live-page button[data-action="block"] {
             el.textContent = text;
             el.setAttribute("data-kind", kind || "server-error");
         }
-
-        // Only the guest/session-expired case gets a refresh action, and it
-        // is never triggered automatically -- the visitor has to click it,
-        // and clicking it does not itself resubmit the scan.
-        if (refreshBtn) refreshBtn.hidden = kind !== "session-expired";
     }
 
     function formatRetryAfterSeconds(value) {
@@ -8826,10 +8815,77 @@ body.leadbot-live-page button[data-action="block"] {
         return " Try again in about " + minutes + (minutes === 1 ? " minute." : " minutes.");
     }
 
-    var refreshPageBtnEl = document.getElementById("leadbotRefreshPageBtn");
-    if (refreshPageBtnEl) {
-        refreshPageBtnEl.addEventListener("click", function () {
-            window.location.reload();
+    // A stale embedded CSRF token is recovered automatically -- the
+    // visitor never has to understand or click anything for it. Logged-in
+    // users get a fresh token from /lead-bot/csrf-token (the same
+    // always-current-token endpoint already used elsewhere) and the exact
+    // same submission is retried silently, once. Guests use a separate
+    // cookie-based double-submit CSRF pair that can only be re-minted by
+    // an actual page load (see _ensure_guest_cookies() in app/main.py), so
+    // for guests -- and as the final fallback if a logged-in user's retry
+    // still 403s -- a real reload happens automatically instead.
+    function recoverExpiredSessionAndReload() {
+        setStartScanMessage("Your session expired. Refreshing the page...", "session-expired");
+        window.location.reload();
+    }
+
+    function submitLiveStart(form, isRetry) {
+        fetch("/lead-bot/live-start", {
+            method: "POST",
+            body: buildLiveStartFormData(form),
+        }).then(function (resp) {
+            if (resp.ok || resp.redirected) {
+                window.location.href = resp.url;
+                return;
+            }
+
+            // A rejected submission always restores the form -- it never
+            // redirects or reloads into the results view, since that would
+            // be indistinguishable from a scan that actually ran and found
+            // nothing.
+            resetStartScanButton();
+
+            if (resp.status === 429) {
+                var retryText = formatRetryAfterSeconds(resp.headers.get("Retry-After"));
+                setStartScanMessage(
+                    "Guest scan limit reached. You can run up to 3 guest scans per hour. "
+                    + "Create an account for full access or try again later." + retryText,
+                    "rate-limit"
+                );
+                return;
+            }
+
+            if (resp.status === 403) {
+                if (!isRetry && !window.LEADBOT_IS_GUEST) {
+                    fetch("/lead-bot/csrf-token")
+                        .then(function (tokenResp) { return tokenResp.ok ? tokenResp.json() : null; })
+                        .then(function (data) {
+                            if (data && data.csrf_token) {
+                                var tokenInput = form.querySelector('input[name="csrf_token"]');
+                                if (tokenInput) tokenInput.value = data.csrf_token;
+                                window.LEADBOT_CSRF_TOKEN = data.csrf_token;
+                                submitLiveStart(form, true);
+                            } else {
+                                recoverExpiredSessionAndReload();
+                            }
+                        })
+                        .catch(recoverExpiredSessionAndReload);
+                    return;
+                }
+
+                recoverExpiredSessionAndReload();
+                return;
+            }
+
+            if (resp.status === 400) {
+                setStartScanMessage("Please check the keyword and market fields and try again.", "validation");
+                return;
+            }
+
+            setStartScanMessage("Something went wrong starting the scan. Please try again in a moment.", "server-error");
+        }).catch(function () {
+            resetStartScanButton();
+            setStartScanMessage("Could not reach the server. Please check your connection and try again.", "network-error");
         });
     }
 
@@ -8877,50 +8933,7 @@ body.leadbot-live-page button[data-action="block"] {
         }
         setStartScanMessage("");
 
-        fetch("/lead-bot/live-start", {
-            method: "POST",
-            body: buildLiveStartFormData(form),
-        }).then(function (resp) {
-            if (resp.ok || resp.redirected) {
-                window.location.href = resp.url;
-                return;
-            }
-
-            // A rejected submission always restores the form -- it never
-            // redirects or reloads into the results view, since that would
-            // be indistinguishable from a scan that actually ran and found
-            // nothing.
-            resetStartScanButton();
-
-            if (resp.status === 429) {
-                var retryText = formatRetryAfterSeconds(resp.headers.get("Retry-After"));
-                setStartScanMessage(
-                    "Guest scan limit reached. You can run up to 3 guest scans per hour. "
-                    + "Create an account for full access or try again later." + retryText,
-                    "rate-limit"
-                );
-                return;
-            }
-
-            if (resp.status === 403) {
-                if (window.LEADBOT_IS_GUEST) {
-                    setStartScanMessage("Your guest session expired. Refresh this page and try again.", "session-expired");
-                } else {
-                    setStartScanMessage("Your session expired. Refresh this page and try again.", "session-expired");
-                }
-                return;
-            }
-
-            if (resp.status === 400) {
-                setStartScanMessage("Please check the keyword and market fields and try again.", "validation");
-                return;
-            }
-
-            setStartScanMessage("Something went wrong starting the scan. Please try again in a moment.", "server-error");
-        }).catch(function () {
-            resetStartScanButton();
-            setStartScanMessage("Could not reach the server. Please check your connection and try again.", "network-error");
-        });
+        submitLiveStart(form, false);
     }
 
     var marketInputEl = document.getElementById("leadbotMarketInput");

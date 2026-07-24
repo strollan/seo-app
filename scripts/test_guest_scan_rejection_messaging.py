@@ -28,8 +28,11 @@ that does and doesn't prove):
   - the old alert()/reload() bug pattern is gone from the dashboard's
     fetch handler
   - the button-reset helper is invoked on every rejection branch
-  - the guest-session-expired refresh action is wired to an explicit click
-    listener only, never called automatically (no auto-resubmit)
+  - the manual "Refresh page" button is gone entirely (see "Simplify
+    failed scan recovery"): expired-session recovery is now automatic --
+    a logged-in user's 403 gets one silent CSRF-token refetch + resubmit,
+    with a single automatic reload as the bounded fallback (guests, or a
+    still-failing retry)
 
 agents.auth_agent.AUTH_DB is monkeypatched to a temp sqlite file, and the
 in-process guest scan rate limiter dict is isolated per test, same pattern
@@ -358,25 +361,43 @@ class DashboardFetchHandlerSourceTests(unittest.TestCase):
         # and again in the network-failure .catch().
         self.assertGreaterEqual(block.count("resetStartScanButton()"), 2)
 
-    def test_refresh_action_is_click_only_not_automatic(self):
-        # The refresh button's reload() must live inside an addEventListener
-        # ("click", ...) callback, and must not also be called directly
-        # (unconditionally) anywhere else in the fetch handler.
-        self.assertIn("refreshPageBtnEl.addEventListener(\"click\"", self.source)
-        click_handler_match = re.search(
-            r'refreshPageBtnEl\.addEventListener\("click", function \(\) \{(.*?)\}\);',
-            self.source,
-            re.S,
-        )
-        self.assertIsNotNone(click_handler_match)
-        self.assertIn("window.location.reload()", click_handler_match.group(1))
+    def test_no_manual_refresh_page_button_remains(self):
+        # The old manual "Refresh page" control (button markup, its id,
+        # and its click-only listener) is gone entirely -- expired-session
+        # recovery is now automatic, so there is nothing left for a
+        # visitor to click.
+        self.assertNotIn("leadbotRefreshPageBtn", self.source)
+        self.assertNotIn(">Refresh page<", self.source)
+        self.assertNotIn("refreshPageBtnEl", self.source)
 
-        then_block_match = re.search(
-            r"fetch\(\"/lead-bot/live-start\".*?\}\)\.catch\(function \(\) \{.*?\}\);",
+    def test_expired_session_recovery_is_automatic_and_bounded(self):
+        # A logged-in user's 403 triggers exactly one silent CSRF-token
+        # refetch + resubmit (via submitLiveStart(form, true)), never a
+        # button click. Guests -- who use a separate cookie-based CSRF
+        # pair that can only be re-minted by a real page load -- and a
+        # logged-in user's still-failing retry both fall through to one
+        # automatic reload, with no user action required either way.
+        self.assertIn("function submitLiveStart(form, isRetry)", self.source)
+        self.assertIn("/lead-bot/csrf-token", self.source)
+        self.assertIn("submitLiveStart(form, true)", self.source)
+        self.assertIn("function recoverExpiredSessionAndReload()", self.source)
+
+        submit_fn_match = re.search(
+            r"function submitLiveStart\(form, isRetry\) \{(.*?)\n    \}\n\n    function launchLiveStart",
             self.source,
             re.S,
         )
-        self.assertNotIn("window.location.reload()", then_block_match.group(0))
+        self.assertIsNotNone(submit_fn_match, "could not locate submitLiveStart()")
+        body = submit_fn_match.group(1)
+
+        # The retry must be gated on !isRetry, so it can only ever fire
+        # once per original submission -- never a second time on the
+        # retry's own response.
+        self.assertIn("if (!isRetry && !window.LEADBOT_IS_GUEST)", body)
+        # A bare, unconditional reload() must not exist inside this
+        # function -- every path to recovery goes through the named,
+        # single-purpose recoverExpiredSessionAndReload() helper instead.
+        self.assertNotIn("window.location.reload()", body)
 
     def test_no_recursive_or_delayed_auto_resubmit_in_fetch_handler(self):
         then_block_match = re.search(
