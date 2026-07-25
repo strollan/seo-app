@@ -11625,6 +11625,70 @@ button {{
 """)
 
 
+# Password recovery uses the same bounded, in-process, IP-keyed sliding-window
+# convention as signup. The two scopes are deliberately independent so reset
+# form mistakes cannot consume the forgot-email allowance (or vice versa).
+FORGOT_PASSWORD_RATE_LIMIT_MAX_ATTEMPTS = 3
+FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+RESET_PASSWORD_RATE_LIMIT_MAX_ATTEMPTS = 5
+RESET_PASSWORD_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+PASSWORD_RESET_RATE_LIMIT_MESSAGE = (
+    "Too many attempts. Please wait a few minutes and try again."
+)
+
+_password_reset_rate_limit_lock = threading.Lock()
+_forgot_password_rate_limit_attempts = {}
+_reset_password_rate_limit_attempts = {}
+
+
+def _password_reset_rate_limit_key(client_host):
+    return str(client_host or "").strip()[:80] or "unknown"
+
+
+def _password_reset_client_host(request):
+    try:
+        return request.client.host if request.client else ""
+    except Exception:
+        return ""
+
+
+def _password_reset_rate_limit_state(scope):
+    if scope == "forgot":
+        return (
+            _forgot_password_rate_limit_attempts,
+            FORGOT_PASSWORD_RATE_LIMIT_MAX_ATTEMPTS,
+            FORGOT_PASSWORD_RATE_LIMIT_WINDOW_SECONDS,
+        )
+    if scope == "reset":
+        return (
+            _reset_password_rate_limit_attempts,
+            RESET_PASSWORD_RATE_LIMIT_MAX_ATTEMPTS,
+            RESET_PASSWORD_RATE_LIMIT_WINDOW_SECONDS,
+        )
+    raise ValueError("unknown password-reset rate-limit scope")
+
+
+def password_reset_is_rate_limited(scope, client_host):
+    attempts_by_key, max_attempts, window_seconds = _password_reset_rate_limit_state(scope)
+    key = _password_reset_rate_limit_key(client_host)
+    cutoff = time.time() - window_seconds
+    with _password_reset_rate_limit_lock:
+        attempts = [value for value in attempts_by_key.get(key, []) if value >= cutoff]
+        attempts_by_key[key] = attempts
+        return len(attempts) >= max_attempts
+
+
+def password_reset_record_attempt(scope, client_host):
+    attempts_by_key, _max_attempts, window_seconds = _password_reset_rate_limit_state(scope)
+    key = _password_reset_rate_limit_key(client_host)
+    now = time.time()
+    cutoff = now - window_seconds
+    with _password_reset_rate_limit_lock:
+        attempts = [value for value in attempts_by_key.get(key, []) if value >= cutoff]
+        attempts.append(now)
+        attempts_by_key[key] = attempts
+
+
 @app.get("/forgot-password", response_class=AuthHTMLResponse)
 def forgot_password_get():
     return forgot_password_page()
@@ -11636,8 +11700,13 @@ def forgot_password_post(request: AuthRequest, identifier: str = AuthForm(...)):
 
     clean_identifier = str(identifier or "").strip().lower()[:254]
     base_url = _get_base_url(request)
+    client_host = _password_reset_client_host(request)
 
     GENERIC_MSG = "If an account exists for that username or email, a reset link has been sent."
+
+    if password_reset_is_rate_limited("forgot", client_host):
+        return forgot_password_page(error=PASSWORD_RESET_RATE_LIMIT_MESSAGE)
+    password_reset_record_attempt("forgot", client_host)
 
     raw_token, user = create_reset_token(clean_identifier)
 
@@ -11823,6 +11892,7 @@ def reset_password_get(token: str = AuthQuery("")):
 
 @app.post("/reset-password")
 def reset_password_post(
+    request: AuthRequest,
     token: str = AuthForm(...),
     password: str = AuthForm(...),
     confirm_password: str = AuthForm(...),
@@ -11837,6 +11907,14 @@ def reset_password_post(
     token = str(token or "").strip()
     password = str(password or "")[:256]
     confirm_password = str(confirm_password or "")[:256]
+
+    client_host = _password_reset_client_host(request)
+    if password_reset_is_rate_limited("reset", client_host):
+        return reset_password_page(
+            token=token,
+            error=PASSWORD_RESET_RATE_LIMIT_MESSAGE,
+        )
+    password_reset_record_attempt("reset", client_host)
 
     user = get_user_for_reset_token(token)
     if not user:
