@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{{ seo_meta_html | safe }}
+{{ faq_jsonld_html | safe }}
+<style>
+* { box-sizing: border-box; }
+.public-guide-content { max-width: 980px; margin: 0 auto; }
+.public-guide-content .card { background:#fff; color:#0f172a; border:1px solid #dbe4f0; border-radius:20px; box-shadow:0 10px 28px rgba(15,23,42,.07); overflow:hidden; }
+.public-guide-content .section { padding:30px 34px; border-top:1px solid #e5e7eb; }
+.public-guide-content .section:first-child { border-top:0; }
+.public-guide-content h2 { margin:0 0 14px; font-size:24px; font-weight:800; color:#0f172a; letter-spacing:-.01em; }
+.public-guide-content h3 { margin:20px 0 8px; font-size:18px; color:#0f172a; }
+.public-guide-content p, .public-guide-content li { font-size:16px; line-height:1.7; color:#1e293b; overflow-wrap:anywhere; }
+.public-guide-content p { margin:0 0 14px; }
+.public-guide-content p:last-child { margin-bottom:0; }
+.public-guide-content ul, .public-guide-content ol { margin:10px 0 0; padding-left:24px; }
+.public-guide-content li + li { margin-top:8px; }
+.public-guide-content .lede { padding:32px 34px; font-size:19px; line-height:1.6; color:#0f172a; background:#eff6ff; border-bottom:1px solid #dbe4f0; }
+.public-guide-content .lede strong { color:#1e3a8a; }
+.public-guide-content .example { margin:16px 0 0; padding:16px 18px; background:#f8fafc; border-left:4px solid #1e3a8a; border-radius:0 10px 10px 0; }
+.public-guide-content .faq-item { margin-bottom:22px; }
+.public-guide-content .faq-item:last-child { margin-bottom:0; }
+.public-guide-content .faq-item h3 { margin:0 0 8px; font-size:17px; }
+.public-guide-content .faq-item p { margin:0; font-size:15px; line-height:1.65; }
+.public-guide-content .final-cta { margin-top:22px; padding:34px; text-align:center; color:#fff; background:linear-gradient(135deg,#0f172a,#1e3a8a); border-radius:20px; }
+.public-guide-content .final-cta h2 { color:#fff; }
+.public-guide-content .final-cta p { color:rgba(255,255,255,.9); }
+.public-guide-content .inline-cta { display:inline-flex; align-items:center; justify-content:center; padding:12px 20px; border-radius:10px; background:#fff; color:#0f2f7f!important; font-weight:800; text-decoration:none; max-width:100%; text-align:center; }
+@media (max-width:700px) {
+  .public-guide-content .section, .public-guide-content .lede, .public-guide-content .final-cta { padding:22px 18px; }
+  .public-guide-content h2 { font-size:20px; }
+  .public-guide-content .lede { font-size:17px; }
+}
+@media (max-width:480px) {
+  .public-guide-content .section, .public-guide-content .lede, .public-guide-content .final-cta { padding:16px 14px; }
+  .public-guide-content ul, .public-guide-content ol { padding-left:20px; }
+}
+</style>
+<link rel="icon" href="/static/favicon.ico?v=2">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-07-08-compare-nav-fix">
+</head>
+<body class="compare-page public-guide-page">
+<div class="container">
+  <div class="hero">
+    <div class="header">
+      <div class="header-left">
+        {% if logo_url %}<a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" alt="LeadMeLeads Logo"></a>{% endif %}
+        <div>
+          <h1>{% block h1 %}{% endblock %}</h1>
+          <p>{% block subtitle %}{% endblock %}</p>
+        </div>
+      </div>
+      <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
+      <div class="nav" id="compareNav">
+        <a href="/">Home</a><a href="/lead-bot">Lead Finder</a><a href="/compare">Compare</a>
+        {% if user %}<a href="/history">History</a><a href="/settings">Settings</a><a href="/logout">Logout</a>
+        {% else %}<a href="/login">Login</a><a href="/create-account">Create Account</a>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="app-nav-overlay" data-nav-overlay></div>
+  <main class="public-guide-content">
+    <article class="card">
+      {% block content %}{% endblock %}
+      <section class="section" aria-label="Frequently asked questions">
+        <h2>FAQ</h2>
+        {% for item in faq %}<div class="faq-item"><h3>{{ item.question }}</h3><p>{{ item.answer }}</p></div>{% endfor %}
+      </section>
+    </article>
+    <div class="final-cta">
+      <h2>{% block cta_heading %}Find businesses worth reviewing.{% endblock %}</h2>
+      <p>{% block cta_copy %}Search by business type and location, then decide which prospects deserve a closer look.{% endblock %}</p>
+      <a class="inline-cta" href="/lead-bot">Open Lead Finder</a>
+    </div>
+  </main>
+</div>
+<script src="/static/js/mobile-nav.js" defer></script>
+</body>
+</html>

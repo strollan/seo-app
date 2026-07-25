@@ -4,7 +4,7 @@ Reusable SEO metadata for LeadMeLeads' public pages.
 Single source of truth for title/description/canonical/robots/Open-Graph/
 Twitter-card markup and the public-page allowlist, so the three indexable
 routes (/, /lead-bot, /compare) render consistent tags instead of
-duplicating <head> markup across two Jinja templates and a hand-built
+duplicating <head> markup across Jinja templates and a hand-built
 HTML string (agents/lead_dashboard_agent.py). robots.txt, sitemap.xml,
 and the noindex response middleware all read from the same
 PUBLIC_INDEXABLE_PATHS set so they can't drift out of sync with each other.
@@ -23,7 +23,15 @@ SITE_BASE_URL = "https://leadmeleads.com"
 # noindex response middleware (see app/main.py) all key off this set --
 # anything not listed here is noindexed by default, so a new dynamic
 # route can't accidentally become indexable just by existing.
-PUBLIC_INDEXABLE_PATHS = ("/", "/lead-bot", "/compare", "/what-makes-a-good-lead")
+PUBLIC_INDEXABLE_PATHS = (
+    "/",
+    "/lead-bot",
+    "/compare",
+    "/what-makes-a-good-lead",
+    "/how-to-find-local-leads",
+    "/local-lead-generation",
+    "/lead-list-vs-lead-finder",
+)
 
 # Static assets are served from here and must never be noindexed or
 # disallowed -- that would risk crawlers being told not to fetch CSS/JS.
@@ -111,6 +119,33 @@ GOOD_LEAD_PAGE = SeoPage(
     canonical_path="/what-makes-a-good-lead",
 )
 
+FIND_LOCAL_LEADS_PAGE = SeoPage(
+    title="How to Find Local Leads Worth Contacting | LeadMeLeads",
+    description=(
+        "Learn how to find local businesses worth reviewing, check contact "
+        "details and website signals, and organize prospects before outreach."
+    ),
+    canonical_path="/how-to-find-local-leads",
+)
+
+LOCAL_LEAD_GENERATION_PAGE = SeoPage(
+    title="Local Lead Generation: A Practical Guide for Finding Prospects",
+    description=(
+        "Compare practical local lead generation methods, from referrals and "
+        "directories to search-based prospect research for outbound outreach."
+    ),
+    canonical_path="/local-lead-generation",
+)
+
+LEAD_LIST_VS_FINDER_PAGE = SeoPage(
+    title="Lead Lists vs Lead Finders: Which Is Better for Prospecting?",
+    description=(
+        "Compare purchased lead lists with active lead finders across freshness, "
+        "targeting, contact data, research time, and prospect relevance."
+    ),
+    canonical_path="/lead-list-vs-lead-finder",
+)
+
 # Single source of truth for the /what-makes-a-good-lead FAQ: the same
 # list drives both the visible FAQ section (rendered by the Jinja
 # template) and the FAQPage JSON-LD below, so the schema can never drift
@@ -164,6 +199,112 @@ GOOD_LEAD_FAQ = [
             "information with businesses that do not match your target "
             "market, so a large list often means more time spent "
             "filtering rather than more real opportunities."
+        ),
+    },
+]
+
+FIND_LOCAL_LEADS_FAQ = [
+    {
+        "question": "What is a local lead?",
+        "answer": (
+            "A local lead is a business in a defined geographic market that "
+            "plausibly fits what you sell and is worth reviewing for outreach. "
+            "It is not automatically a qualified buyer."
+        ),
+    },
+    {
+        "question": "How do I find local business leads?",
+        "answer": (
+            "Choose a specific service or business type and a real market, find "
+            "businesses through search or a lead finder, then check each "
+            "business for fit, reachable contact details, and useful context."
+        ),
+    },
+    {
+        "question": "What should I check before contacting a local business?",
+        "answer": (
+            "Check that the business serves the market you target, its website "
+            "and contact details appear current, and you have a specific reason "
+            "for reaching out. Verify important details yourself before sending."
+        ),
+    },
+    {
+        "question": "Does a low Google position make a business a qualified lead?",
+        "answer": (
+            "No. Search position can provide context for your research, but it "
+            "does not prove need, budget, authority, timing, or willingness to "
+            "buy. Qualification happens through direct conversation."
+        ),
+    },
+]
+
+LOCAL_LEAD_GENERATION_FAQ = [
+    {
+        "question": "What is local lead generation?",
+        "answer": (
+            "Local lead generation is the process of creating or identifying "
+            "potential business opportunities within a defined geographic "
+            "market. It can include inbound marketing, referrals, networking, "
+            "directories, and outbound prospect research."
+        ),
+    },
+    {
+        "question": "What is the difference between inbound and outbound local lead generation?",
+        "answer": (
+            "Inbound methods encourage potential customers to contact you, while "
+            "outbound methods involve finding relevant businesses and starting "
+            "the conversation yourself. They solve different parts of growth."
+        ),
+    },
+    {
+        "question": "Are directories useful for local lead generation?",
+        "answer": (
+            "Directories can be useful for discovering businesses in a category "
+            "or area, but entries may be incomplete or outdated. Treat them as "
+            "a starting point and verify each business before outreach."
+        ),
+    },
+    {
+        "question": "Does LeadMeLeads generate inbound customer inquiries?",
+        "answer": (
+            "No. LeadMeLeads helps users find and review local businesses for "
+            "outbound outreach. It does not run inbound campaigns or claim that "
+            "the businesses it finds are ready to buy."
+        ),
+    },
+]
+
+LEAD_LIST_VS_FINDER_FAQ = [
+    {
+        "question": "What is the main difference between a lead list and a lead finder?",
+        "answer": (
+            "A lead list is a prepared dataset you receive at once, while a lead "
+            "finder lets you search for prospects using current targeting choices "
+            "and review the results before outreach."
+        ),
+    },
+    {
+        "question": "Are purchased lead lists always bad?",
+        "answer": (
+            "No. A reputable, recent, well-targeted list can make sense when you "
+            "need broad coverage and have a process for verification, filtering, "
+            "and compliant outreach."
+        ),
+    },
+    {
+        "question": "Does a lead finder guarantee accurate contact information?",
+        "answer": (
+            "No. Public business information can change, so contact data from any "
+            "source should be checked before use. A lead finder can make review "
+            "easier, but it cannot eliminate stale or incomplete data."
+        ),
+    },
+    {
+        "question": "Which option is better for local prospecting?",
+        "answer": (
+            "A lead finder is often better when geographic precision and "
+            "business-by-business review matter. A purchased list may be more "
+            "efficient when scale and standardized coverage matter more."
         ),
     },
 ]

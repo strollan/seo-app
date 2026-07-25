@@ -39,7 +39,7 @@ TITLE_RE = re.compile(r"<title>([^<]*)</title>")
 
 
 class PublicPageMetadataTests(unittest.TestCase):
-    """Each of the three public pages must render exactly one of every
+    """Each public page must render exactly one of every
     required tag, with the exact required title/description/canonical."""
 
     EXPECTED = {
@@ -77,6 +77,33 @@ class PublicPageMetadataTests(unittest.TestCase):
                 "collecting more names."
             ),
             "canonical": "https://leadmeleads.com/what-makes-a-good-lead",
+        },
+        "/how-to-find-local-leads": {
+            "title": "How to Find Local Leads Worth Contacting | LeadMeLeads",
+            "description": (
+                "Learn how to find local businesses worth reviewing, check "
+                "contact details and website signals, and organize prospects "
+                "before outreach."
+            ),
+            "canonical": "https://leadmeleads.com/how-to-find-local-leads",
+        },
+        "/local-lead-generation": {
+            "title": "Local Lead Generation: A Practical Guide for Finding Prospects",
+            "description": (
+                "Compare practical local lead generation methods, from referrals "
+                "and directories to search-based prospect research for outbound "
+                "outreach."
+            ),
+            "canonical": "https://leadmeleads.com/local-lead-generation",
+        },
+        "/lead-list-vs-lead-finder": {
+            "title": "Lead Lists vs Lead Finders: Which Is Better for Prospecting?",
+            "description": (
+                "Compare purchased lead lists with active lead finders across "
+                "freshness, targeting, contact data, research time, and prospect "
+                "relevance."
+            ),
+            "canonical": "https://leadmeleads.com/lead-list-vs-lead-finder",
         },
     }
 
@@ -360,7 +387,7 @@ class SitemapXmlTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("xml", response.headers.get("content-type", ""))
 
-    def test_sitemap_contains_exactly_the_four_intended_pages(self):
+    def test_sitemap_contains_exactly_the_intended_pages(self):
         body = self.client.get("/sitemap.xml").text
         urls = re.findall(r"<loc>([^<]+)</loc>", body)
         self.assertEqual(
@@ -370,9 +397,12 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/lead-bot",
                 "https://leadmeleads.com/compare",
                 "https://leadmeleads.com/what-makes-a-good-lead",
+                "https://leadmeleads.com/how-to-find-local-leads",
+                "https://leadmeleads.com/local-lead-generation",
+                "https://leadmeleads.com/lead-list-vs-lead-finder",
             },
         )
-        self.assertEqual(len(urls), 4)
+        self.assertEqual(len(urls), 7)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text

@@ -2164,6 +2164,51 @@ async def good_lead_page(request: Request):
     )
 
 
+def render_public_guide(request: Request, template_name, page, faq):
+    return templates.TemplateResponse(
+        request,
+        template_name,
+        {
+            "request": request,
+            "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
+            "seo_meta_html": seo_meta.render_seo_meta_html(page),
+            "faq_jsonld_html": seo_meta.render_faq_jsonld(faq),
+            "faq": faq,
+        },
+    )
+
+
+@app.get("/how-to-find-local-leads")
+async def find_local_leads_page(request: Request):
+    return render_public_guide(
+        request,
+        "find_local_leads.html",
+        seo_meta.FIND_LOCAL_LEADS_PAGE,
+        seo_meta.FIND_LOCAL_LEADS_FAQ,
+    )
+
+
+@app.get("/local-lead-generation")
+async def local_lead_generation_page(request: Request):
+    return render_public_guide(
+        request,
+        "local_lead_generation.html",
+        seo_meta.LOCAL_LEAD_GENERATION_PAGE,
+        seo_meta.LOCAL_LEAD_GENERATION_FAQ,
+    )
+
+
+@app.get("/lead-list-vs-lead-finder")
+async def lead_list_vs_finder_page(request: Request):
+    return render_public_guide(
+        request,
+        "lead_list_vs_finder.html",
+        seo_meta.LEAD_LIST_VS_FINDER_PAGE,
+        seo_meta.LEAD_LIST_VS_FINDER_FAQ,
+    )
+
+
 @app.get("/analyze")
 async def analyze_get_redirect():
     return RedirectResponse(url="/")
@@ -15739,4 +15784,3 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
 
     print(f"LEADBOT DELETE EXPORT deleted={deleted}", flush=True)
     return AuthRedirectResponse(url="/lead-bot?deleted=1", status_code=303)
-
