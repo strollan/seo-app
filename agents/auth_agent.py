@@ -329,6 +329,64 @@ def delete_all_sessions_for_user(user_id):
         conn.commit()
 
 
+def list_users_for_admin():
+    """Return only fields safe for the admin user-management screen."""
+    init_auth_db()
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, username, email, role, is_active, created_at
+            FROM users
+            ORDER BY LOWER(username), id
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_user_by_id_for_admin(user_id):
+    """Load one target fresh without returning password or token material."""
+    init_auth_db()
+    try:
+        clean_id = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, username, email, role, is_active, created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (clean_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def count_active_admins():
+    init_auth_db()
+    with connect() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1"
+        ).fetchone()[0]
+    return int(count or 0)
+
+
+def set_user_active(user_id, active):
+    """Set only is_active for a server-loaded target id."""
+    init_auth_db()
+    try:
+        clean_id = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    with connect() as conn:
+        cursor = conn.execute(
+            "UPDATE users SET is_active = ? WHERE id = ?",
+            (1 if active else 0, clean_id),
+        )
+        conn.commit()
+    return cursor.rowcount == 1
+
+
 def _active_session_row(conn, session_token_hash, columns):
     return conn.execute(
         f"""

@@ -1886,6 +1886,244 @@ def _csrf_token_valid(request: Request, submitted_token: str) -> bool:
     return verify_csrf_token(session_token, submitted_token)
 
 
+_admin_user_toggle_lock = threading.Lock()
+
+_ADMIN_USER_RESULTS = {
+    "disabled": "User disabled and existing sessions removed.",
+    "enabled": "User re-enabled.",
+    "reset_sent": "Password reset email sent.",
+}
+
+_ADMIN_USER_ERRORS = {
+    "self_disable": "You cannot disable your own account.",
+    "last_admin": "The last active admin cannot be disabled.",
+    "not_found": "That user account is not available.",
+    "reset_unavailable": "A reset email cannot be sent for that account.",
+    "reset_failed": "The reset email could not be sent. Please try again.",
+}
+
+
+def _admin_users_redirect(value, *, error=False):
+    key = "error" if error else "result"
+    return RedirectResponse(url=f"/admin/users?{key}={quote(str(value or ''))}", status_code=303)
+
+
+def _render_admin_users_page(request, result="", error=""):
+    import html as html_lib
+    from agents.auth_agent import count_active_admins, list_users_for_admin
+
+    current_user = auth_current_user(request)
+    current_user_id = int(current_user.get("id") or 0)
+    users = list_users_for_admin()
+    active_admins = count_active_admins()
+    csrf_token = _get_or_create_csrf_token(request) or ""
+    safe_csrf = html_lib.escape(csrf_token, quote=True)
+
+    result_message = _ADMIN_USER_RESULTS.get(str(result or ""), "")
+    error_message = _ADMIN_USER_ERRORS.get(str(error or ""), "")
+    notice = ""
+    if result_message:
+        notice = f'<div class="notice success">{html_lib.escape(result_message)}</div>'
+    elif error_message:
+        notice = f'<div class="notice error">{html_lib.escape(error_message)}</div>'
+
+    cards = []
+    for user in users:
+        user_id = int(user["id"])
+        username = html_lib.escape(str(user.get("username") or ""))
+        email = html_lib.escape(str(user.get("email") or "Not provided"))
+        role = str(user.get("role") or "standard").strip().lower()
+        safe_role = html_lib.escape(role.title())
+        created = html_lib.escape(str(user.get("created_at") or "Unknown"))
+        active = bool(user.get("is_active"))
+        status = "Active" if active else "Disabled"
+        status_class = "active" if active else "disabled"
+        is_self = user_id == current_user_id
+        is_last_active_admin = active and role == "admin" and active_admins <= 1
+
+        actions = []
+        if active:
+            if is_self:
+                actions.append('<span class="action-note">Current account</span>')
+            elif is_last_active_admin:
+                actions.append('<span class="action-note">Last active admin</span>')
+            else:
+                actions.append(
+                    f'<form method="post" action="/admin/users/{user_id}/toggle-active" '
+                    'onsubmit="return confirm(\'Disable this user and end their active sessions?\');">'
+                    f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
+                    '<button class="button danger" type="submit">Disable</button></form>'
+                )
+            if str(user.get("email") or "").strip():
+                actions.append(
+                    f'<form method="post" action="/admin/users/{user_id}/send-reset">'
+                    f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
+                    '<button class="button" type="submit">Send password reset</button></form>'
+                )
+        else:
+            actions.append(
+                f'<form method="post" action="/admin/users/{user_id}/toggle-active">'
+                f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
+                '<button class="button primary" type="submit">Re-enable</button></form>'
+            )
+
+        cards.append(
+            f"""
+            <article class="user-card">
+                <div class="user-heading">
+                    <div><h2>{username}</h2><div class="email">{email}</div></div>
+                    <span class="status {status_class}">{status}</span>
+                </div>
+                <dl>
+                    <div><dt>Role</dt><dd>{safe_role}</dd></div>
+                    <div><dt>Created</dt><dd>{created}</dd></div>
+                </dl>
+                <div class="actions">{''.join(actions)}</div>
+            </article>
+            """
+        )
+
+    return HTMLResponse(
+        f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Users | LeadMeLeads Admin</title>
+<style>
+* {{ box-sizing: border-box; }}
+body {{ margin:0; min-height:100vh; padding:32px 16px; font-family:Arial,sans-serif;
+background:linear-gradient(135deg,#0f172a,#1e3a8a); color:#0f172a; }}
+.wrap {{ width:min(920px,100%); margin:0 auto; }}
+.header,.user-card {{ background:#fff; border:1px solid #e2e8f0; border-radius:18px;
+box-shadow:0 18px 42px rgba(15,23,42,.18); }}
+.header {{ padding:24px; margin-bottom:18px; display:flex; justify-content:space-between;
+align-items:center; gap:16px; flex-wrap:wrap; }}
+h1,h2 {{ margin:0; }} h1 {{ font-size:30px; }} h2 {{ font-size:21px; overflow-wrap:anywhere; }}
+.header p,.email {{ color:#64748b; overflow-wrap:anywhere; }}
+.nav {{ display:flex; gap:8px; flex-wrap:wrap; }}
+.nav a,.button {{ min-height:40px; display:inline-flex; align-items:center; justify-content:center;
+padding:9px 13px; border:1px solid #cbd5e1; border-radius:10px; background:#fff;
+color:#1e3a8a; font-weight:800; text-decoration:none; cursor:pointer; font-size:14px; }}
+.button.primary {{ background:#2563eb; border-color:#2563eb; color:#fff; }}
+.button.danger {{ background:#991b1b; border-color:#991b1b; color:#fff; }}
+.notice {{ padding:12px 14px; margin:0 0 16px; border-radius:12px; font-weight:800; }}
+.notice.success {{ background:#dcfce7; color:#166534; }} .notice.error {{ background:#fee2e2; color:#991b1b; }}
+.users {{ display:grid; gap:14px; }}
+.user-card {{ padding:20px; min-width:0; }}
+.user-heading {{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }}
+.status {{ flex:0 0 auto; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:900; }}
+.status.active {{ background:#dcfce7; color:#166534; }} .status.disabled {{ background:#e2e8f0; color:#475569; }}
+dl {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0; }}
+dl div {{ min-width:0; }} dt {{ color:#64748b; font-size:12px; font-weight:800; text-transform:uppercase; }}
+dd {{ margin:4px 0 0; overflow-wrap:anywhere; }} .actions {{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }}
+.actions form {{ margin:0; }} .action-note {{ color:#64748b; font-size:13px; font-weight:800; }}
+@media(max-width:420px) {{
+ body {{ padding:16px 10px; }} .header,.user-card {{ padding:16px; border-radius:14px; }}
+ h1 {{ font-size:26px; }} .user-heading {{ align-items:flex-start; }} dl {{ grid-template-columns:1fr; }}
+ .actions,.actions form,.button {{ width:100%; }} .nav,.nav a {{ width:100%; }}
+}}
+</style>
+</head>
+<body><main class="wrap">
+<header class="header"><div><h1>User Management</h1><p>Manage access and password-reset delivery.</p></div>
+<nav class="nav"><a href="/settings">Settings</a><a href="/">Back to App</a></nav></header>
+{notice}<section class="users">{''.join(cards)}</section>
+</main></body></html>"""
+    )
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users_page(
+    request: Request,
+    result: str = "",
+    error: str = "",
+):
+    admin_block = _admin_only_response(request)
+    if admin_block:
+        return admin_block
+    return _render_admin_users_page(request, result=result, error=error)
+
+
+@app.post("/admin/users/{user_id}/toggle-active")
+def admin_toggle_user_active(
+    user_id: int,
+    request: Request,
+    csrf_token: str = Form(""),
+):
+    from agents.auth_agent import (
+        count_active_admins,
+        delete_all_sessions_for_user,
+        get_user_by_id_for_admin,
+        set_user_active,
+    )
+
+    admin_block = _admin_only_response(request)
+    if admin_block:
+        return admin_block
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
+    acting_admin = auth_current_user(request)
+    with _admin_user_toggle_lock:
+        target = get_user_by_id_for_admin(user_id)
+        if not target:
+            return _admin_users_redirect("not_found", error=True)
+
+        if bool(target["is_active"]):
+            if int(target["id"]) == int(acting_admin.get("id") or 0):
+                return _admin_users_redirect("self_disable", error=True)
+            if target["role"] == "admin" and count_active_admins() <= 1:
+                return _admin_users_redirect("last_admin", error=True)
+            if not set_user_active(target["id"], False):
+                return _admin_users_redirect("not_found", error=True)
+            delete_all_sessions_for_user(target["id"])
+            return _admin_users_redirect("disabled")
+
+        if not set_user_active(target["id"], True):
+            return _admin_users_redirect("not_found", error=True)
+        return _admin_users_redirect("enabled")
+
+
+@app.post("/admin/users/{user_id}/send-reset")
+def admin_send_user_reset(
+    user_id: int,
+    request: Request,
+    csrf_token: str = Form(""),
+):
+    from agents.auth_agent import create_reset_token, get_user_by_id_for_admin
+
+    admin_block = _admin_only_response(request)
+    if admin_block:
+        return admin_block
+    if not _csrf_token_valid(request, csrf_token):
+        return HTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
+    target = get_user_by_id_for_admin(user_id)
+    if not target or not bool(target["is_active"]) or not str(target.get("email") or "").strip():
+        return _admin_users_redirect("reset_unavailable", error=True)
+
+    raw_token, reset_user = create_reset_token(target["username"])
+    if not raw_token or not reset_user or int(reset_user["id"]) != int(target["id"]):
+        return _admin_users_redirect("reset_unavailable", error=True)
+
+    reset_url = f"{_get_base_url(request)}/reset-password?token={raw_token}"
+    try:
+        _send_reset_email(target["email"], reset_url)
+    except Exception:
+        print("ADMIN USER RESET EMAIL ERROR", flush=True)
+        return _admin_users_redirect("reset_failed", error=True)
+
+    return _admin_users_redirect("reset_sent")
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     admin_block = _admin_only_response(request)
