@@ -4382,9 +4382,39 @@ document.addEventListener("DOMContentLoaded", function () {
         download.href = "/lead-bot/export/" + encodeURIComponent(file);
 
         complete.textContent = "Find Missing Contact Details";
-        complete.href = "/lead-bot/complete-details/" + encodeURIComponent(file);
-        complete.onclick = function () {
-            return confirm("Complete missing addresses for this scan? This may take a little while.");
+        complete.href = "#";
+        complete.onclick = async function (event) {
+            event.preventDefault();
+            if (!confirm("Complete missing addresses for this scan? This may take a little while.")) {
+                return false;
+            }
+
+            complete.setAttribute("aria-disabled", "true");
+            try {
+                const response = await fetch(
+                    "/lead-bot/complete-details/" + encodeURIComponent(file),
+                    {
+                        method: "POST",
+                        credentials: "same-origin",
+                        cache: "no-store",
+                        body: new URLSearchParams({
+                            csrf_token: window.LEADBOT_CSRF_TOKEN || ""
+                        })
+                    }
+                );
+                if (response.status === 409) {
+                    window.location.href = "/lead-bot?file=" + encodeURIComponent(file) + "&details=running#results";
+                    return false;
+                }
+                if (!response.ok) {
+                    throw new Error("Complete Details request failed");
+                }
+                window.location.href = "/lead-bot?file=" + encodeURIComponent(file) + "&details=running#results";
+            } catch (err) {
+                complete.removeAttribute("aria-disabled");
+                alert("Details could not be started. Please try again.");
+            }
+            return false;
         };
 
         box.classList.add("is-active");
@@ -5475,10 +5505,13 @@ btn.dataset.busy = "1";
             console.log("LeadBot auto Enrich Website Details running on fresh export:", file);
 
             fetch(url, {
-                method: "GET",
+                method: "POST",
                 credentials: "same-origin",
                 cache: "no-store",
-                redirect: "follow"
+                redirect: "follow",
+                body: new URLSearchParams({
+                    csrf_token: window.LEADBOT_CSRF_TOKEN || ""
+                })
             }).then(function () {
                 const nextUrl = "/lead-bot?file=" + encodeURIComponent(file) + "&addresses=complete#results";
                 window.location.href = nextUrl;
@@ -5491,7 +5524,7 @@ btn.dataset.busy = "1";
     }
 
     function bootAutoCompleteDetails() {
-        setTimeout(autoCompleteDetails, 1200);
+        // Enrichment is deliberately user-initiated through the Complete Details control.
     }
 
     if (document.readyState === "loading") {
@@ -6706,7 +6739,10 @@ btn.dataset.busy = "1";
             var res = await fetch("/lead-bot/dataforseo-toggle", {
                 method: "POST",
                 cache: "no-store",
-                credentials: "same-origin"
+                credentials: "same-origin",
+                body: new URLSearchParams({
+                    csrf_token: window.LEADBOT_CSRF_TOKEN || ""
+                })
             });
 
             var data = await res.json();

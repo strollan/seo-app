@@ -11903,7 +11903,10 @@ async def leadbot_dataforseo_status(request: AuthRequest):
 
 # === LEADBOT DATAFORSEO SIDEBAR TOGGLE API START ===
 @app.post("/lead-bot/dataforseo-toggle")
-async def leadbot_dataforseo_toggle(request: AuthRequest):
+async def leadbot_dataforseo_toggle(
+    request: AuthRequest,
+    csrf_token: str = AuthForm(""),
+):
     """
     Toggle LeadBot DataForSEO without redirecting to Settings.
 
@@ -11928,6 +11931,12 @@ async def leadbot_dataforseo_toggle(request: AuthRequest):
     if role != "admin":
         return JSONResponse(
             {"ok": False, "error": "Admin required."},
+            status_code=403,
+        )
+
+    if not _csrf_token_valid(request, csrf_token):
+        return JSONResponse(
+            {"ok": False, "error": "Invalid or missing CSRF token."},
             status_code=403,
         )
 
@@ -12486,14 +12495,20 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
     except Exception:
         user = None
 
-    from agents.lead_live_job_agent import read_job
+    from agents.lead_live_job_agent import (
+        job_belongs_to_authenticated_user,
+        read_job,
+    )
 
     job = read_job(job_id)
 
-    if not job:
-        return {"status": "missing", "message": "Job not found.", "leads": []}
-
-    if not user:
+    if user:
+        if not job_belongs_to_authenticated_user(job, user):
+            return JSONResponse(
+                {"status": "missing", "message": "Job not found.", "leads": []},
+                status_code=404,
+            )
+    else:
         # Guest beta testing: a guest may only poll a job their own guest
         # session started (matched via the unpredictable job_id plus the
         # job's stored guest_id, never a user-supplied identifier).
@@ -12507,19 +12522,46 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
 
 
 @app.post("/lead-bot/live-cancel/{job_id}")
-def leadbot_live_cancel(job_id: str, request: AuthRequest):
+def leadbot_live_cancel(
+    job_id: str,
+    request: AuthRequest,
+    csrf_token: str = AuthForm(""),
+):
     try:
         user = auth_current_user(request)
     except Exception:
         user = None
 
-    from agents.lead_live_job_agent import read_job, cancel_job
+    from agents.lead_live_job_agent import (
+        cancel_job,
+        job_belongs_to_authenticated_user,
+        read_job,
+    )
 
-    if not user:
+    existing_job = read_job(job_id)
+
+    if user:
+        if not job_belongs_to_authenticated_user(existing_job, user):
+            return JSONResponse(
+                {"status": "missing", "message": "Job not found."},
+                status_code=404,
+            )
+        if not _csrf_token_valid(request, csrf_token):
+            return JSONResponse(
+                {"status": "forbidden", "message": "Invalid or missing CSRF token."},
+                status_code=403,
+            )
+    else:
         # Guest beta testing: same job-ownership match as live-status.
         guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
-        if not job_belongs_to_guest(read_job(job_id), guest_id):
+        if not job_belongs_to_guest(existing_job, guest_id):
             return {"status": "auth_required", "message": "Login required."}
+        guest_csrf_cookie = request.cookies.get(GUEST_CSRF_COOKIE, "")
+        if not guest_csrf_valid(guest_csrf_cookie, csrf_token):
+            return JSONResponse(
+                {"status": "forbidden", "message": "Invalid or missing CSRF token."},
+                status_code=403,
+            )
 
     job = cancel_job(job_id)
 
@@ -12698,15 +12740,27 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
     except Exception:
         user = None
 
-    if not user:
+    from agents.lead_live_job_agent import (
+        job_belongs_to_authenticated_user,
+        read_job as _leadbot_read_job_for_access,
+    )
+    access_job = _leadbot_read_job_for_access(job_id)
+
+    if user:
+        if not job_belongs_to_authenticated_user(access_job, user):
+            return AuthHTMLResponse(
+                "<h1>Live scan not found</h1>",
+                status_code=404,
+            )
+        live_csrf_token = _get_or_create_csrf_token(request) or ""
+    else:
         # Guest beta testing: same job-ownership match as live-status /
         # live-cancel. A guest may view only the live scan their own guest
         # session started.
-        from agents.lead_live_job_agent import read_job as _leadbot_read_job_for_guest_check
-
         guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
-        if not job_belongs_to_guest(_leadbot_read_job_for_guest_check(job_id), guest_id):
+        if not job_belongs_to_guest(access_job, guest_id):
             return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+        live_csrf_token = request.cookies.get(GUEST_CSRF_COOKIE, "")
 
     is_guest_js = "true" if not user else "false"
 
@@ -13180,6 +13234,7 @@ body.leadbot-live-final .live-progress-bar {{
 <script>
 const jobId = "{job_id}";
 const IS_GUEST = {is_guest_js};
+const LIVE_CSRF_TOKEN = {json.dumps(live_csrf_token)};
 
 function showGuestSavePrompt() {{
     const prompt = document.getElementById("guestSavePrompt");
@@ -13211,7 +13266,9 @@ async function cancelScan() {{
     try {{
         const res = await fetch(`/lead-bot/live-cancel/${{jobId}}`, {{
             method: "POST",
-            cache: "no-store"
+            cache: "no-store",
+            credentials: "same-origin",
+            body: new URLSearchParams({{ csrf_token: LIVE_CSRF_TOKEN }})
         }});
 
         const data = await res.json();
@@ -13626,16 +13683,16 @@ poll();
 # === LEADBOT LIVE JOBS V1 END ===
 
 
-@app.get("/lead-bot/add-domain")
+@app.post("/lead-bot/add-domain")
 def leadbot_real_manual_add_domain(
     request: AuthRequest,
-    domain: str = "",
-    industry: str = "",
-    market: str = "",
-    keyword: str = "",
-    serp_page: str = "",
-    serp_position: str = "",
+    domain: str = AuthForm(""),
+    market: str = AuthForm(""),
+    keyword: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
 ):
+    import html as html_lib
+
     try:
         user = auth_current_user(request)
     except Exception:
@@ -13644,6 +13701,12 @@ def leadbot_real_manual_add_domain(
     if not user:
         return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
 
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
     if not str(domain or "").strip():
         return LeadBotRedirectResponse(url="/lead-bot?error=missing_domain", status_code=303)
 
@@ -13651,15 +13714,16 @@ def leadbot_real_manual_add_domain(
         from agents.lead_manual_add_agent import manual_add_domain
         out_name, lead = manual_add_domain(
             domain=domain,
-            industry=industry,
+            industry="",
             market=market,
             keyword=keyword,
-            serp_page=serp_page,
-            serp_position=serp_position,
+            serp_page="",
+            serp_position="",
         )
     except Exception as e:
         return LeadBotHTMLResponse(
-            f"<h1>Could not add domain</h1><p>{str(e)}</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
+            f"<h1>Could not add domain</h1><p>{html_lib.escape(str(e))}</p>"
+            "<p><a href='/lead-bot'>Back to Lead Finder</a></p>",
             status_code=400,
         )
 
@@ -13878,8 +13942,12 @@ def leadbot_mark_export_owner(filename, request=None):
 # === LEADBOT EXPORT OWNER HELPER END ===
 
 
-@app.get("/lead-bot/enrich/{filename}")
-def leadbot_enrich_this_scan(filename: str, request: AuthRequest):
+@app.post("/lead-bot/enrich/{filename}")
+def leadbot_enrich_this_scan(
+    filename: str,
+    request: AuthRequest,
+    csrf_token: str = AuthForm(""),
+):
     from agents.lead_email_cleaner_agent import clean_lead_emails
     import csv
     import html as html_lib
@@ -13898,10 +13966,23 @@ def leadbot_enrich_this_scan(filename: str, request: AuthRequest):
     if not user:
         return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
 
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
     source_path = safe_export_file(filename)
 
     if not source_path:
         return LeadBotHTMLResponse("Export file not found.", status_code=404)
+
+    try:
+        allowed = leadbot_user_can_access_export(source_path.name, request)
+    except Exception:
+        allowed = False
+    if not allowed:
+        return LeadBotHTMLResponse("Export not available.", status_code=403)
 
     def clean_domain(value):
         value = str(value or "").strip()
@@ -14653,8 +14734,17 @@ def leadbot_update_address(
 # === REMOVE ROGUE USERS PREFIX ALL HTML START ===
 
 
-@app.get("/lead-bot/complete-details/{filename}")
-def leadbot_complete_details(filename: str, request: Request):
+_LEADBOT_COMPLETE_DETAILS_LOCK = threading.Lock()
+_LEADBOT_COMPLETE_DETAILS_RUNNING = set()
+_LEADBOT_COMPLETE_DETAILS_COMPLETED = set()
+
+
+@app.post("/lead-bot/complete-details/{filename}")
+def leadbot_complete_details(
+    filename: str,
+    request: Request,
+    csrf_token: str = AuthForm(""),
+):
     """
     Tippy-toe background cleanup:
     - Keep the existing Enrich Website Details button.
@@ -14663,21 +14753,49 @@ def leadbot_complete_details(filename: str, request: Request):
     """
     from pathlib import Path
     from urllib.parse import quote
-    import threading
-
     safe_name = Path(str(filename or "")).name
 
     if not safe_name:
         return LeadBotRedirectResponse(url="/lead-bot", status_code=303)
 
+    user = auth_current_user(request)
+    if not user:
+        return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
     try:
-        if not leadbot_user_can_access_export(safe_name, request):
-            return LeadBotHTMLResponse(
-                "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p><p><a href='/lead-bot'>Back to Lead Finder</a></p>",
-                status_code=403,
-            )
+        allowed = leadbot_user_can_access_export(safe_name, request)
     except Exception:
-        pass
+        allowed = False
+    if not allowed:
+        return LeadBotHTMLResponse(
+            "<h1>Export not available</h1><p>You can only edit your own Lead Finder exports.</p>"
+            "<p><a href='/lead-bot'>Back to Lead Finder</a></p>",
+            status_code=403,
+        )
+
+    work_key = safe_name.lower()
+    with _LEADBOT_COMPLETE_DETAILS_LOCK:
+        if work_key in _LEADBOT_COMPLETE_DETAILS_RUNNING:
+            return LeadBotHTMLResponse(
+                "<h1>Details already running</h1><p>This export is already being checked.</p>",
+                status_code=409,
+            )
+        if (
+            work_key in _LEADBOT_COMPLETE_DETAILS_COMPLETED
+            or "_enriched" in Path(safe_name).stem.lower()
+        ):
+            return LeadBotRedirectResponse(
+                url=f"/lead-bot?file={quote(safe_name)}&details=complete#results",
+                status_code=303,
+            )
+        _LEADBOT_COMPLETE_DETAILS_RUNNING.add(work_key)
+
     # === LEADBOT SYNC ADDRESS BEFORE BACKGROUND START ===
     # Run address completion before returning, so the dashboard has addresses
     # when the browser reloads after Enrich Website Details.
@@ -14694,24 +14812,38 @@ def leadbot_complete_details(filename: str, request: Request):
     def _leadbot_background_complete_details():
         print(f"LEADBOT BACKGROUND COMPLETE DETAILS START: {safe_name}", flush=True)
 
+        completed = False
         try:
-            leadbot_fill_missing_addresses(safe_name, request)
             leadbot_fill_missing_seo_snapshot(safe_name, request)
         except Exception as exc:
-            print(f"LEADBOT BACKGROUND COMPLETE DETAILS ADDRESS/SEO ERROR: {safe_name} {exc}", flush=True)
+            print(f"LEADBOT BACKGROUND COMPLETE DETAILS SEO ERROR: {safe_name} {exc}", flush=True)
 
         try:
-            leadbot_enrich_this_scan(safe_name, request)
+            result = leadbot_enrich_this_scan(
+                safe_name,
+                request,
+                csrf_token=csrf_token,
+            )
+            completed = int(getattr(result, "status_code", 500)) < 400
         except Exception as exc:
             print(f"LEADBOT BACKGROUND COMPLETE DETAILS ENRICH ERROR: {safe_name} {exc}", flush=True)
+        finally:
+            with _LEADBOT_COMPLETE_DETAILS_LOCK:
+                _LEADBOT_COMPLETE_DETAILS_RUNNING.discard(work_key)
+                if completed:
+                    _LEADBOT_COMPLETE_DETAILS_COMPLETED.add(work_key)
+            print(f"LEADBOT BACKGROUND COMPLETE DETAILS END: {safe_name}", flush=True)
 
-        print(f"LEADBOT BACKGROUND COMPLETE DETAILS END: {safe_name}", flush=True)
-
-    threading.Thread(
-        target=_leadbot_background_complete_details,
-        daemon=True,
-        name=f"leadbot-complete-details-{safe_name}",
-    ).start()
+    try:
+        threading.Thread(
+            target=_leadbot_background_complete_details,
+            daemon=True,
+            name=f"leadbot-complete-details-{safe_name}",
+        ).start()
+    except Exception:
+        with _LEADBOT_COMPLETE_DETAILS_LOCK:
+            _LEADBOT_COMPLETE_DETAILS_RUNNING.discard(work_key)
+        raise
 
     return LeadBotRedirectResponse(
         url=f"/lead-bot?file={quote(safe_name)}&details=running#results",

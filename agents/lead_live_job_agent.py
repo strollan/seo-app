@@ -472,6 +472,31 @@ def read_job(job_id):
         return None
 
 
+def job_belongs_to_authenticated_user(job, user) -> bool:
+    """Match a live job to its authenticated owner without admin bypass."""
+    if not isinstance(job, dict) or not user:
+        return False
+
+    params = job.get("params")
+    if not isinstance(params, dict):
+        return False
+
+    def values(source, keys):
+        if isinstance(source, dict):
+            raw = (source.get(key) for key in keys)
+        else:
+            raw = (getattr(source, key, "") for key in keys)
+        return {
+            str(value or "").strip().lower()
+            for value in raw
+            if str(value or "").strip()
+        }
+
+    job_owners = values(params, ("owner_email", "owner_username"))
+    user_owners = values(user, ("email", "username"))
+    return bool(job_owners and user_owners and job_owners & user_owners)
+
+
 # === LEADBOT LIVE CANCEL SUPPORT START ===
 def is_cancel_requested(job_id):
     job = read_job(job_id)
