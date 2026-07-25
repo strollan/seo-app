@@ -22,6 +22,33 @@ contact or change.
 Production target: `root@165.245.238.122:/var/www/leadmeleads`, systemd unit
 `leadmeleads`, live site `https://leadmeleads.com`.
 
+## Production nginx policy
+
+The active site configuration is
+`/etc/nginx/sites-available/leadmeleads` (enabled by the matching symlink in
+`sites-enabled`). `https://leadmeleads.com` is the canonical origin. Both
+HTTP hosts and HTTPS `www.leadmeleads.com` redirect directly to the same path
+and query string on the apex HTTPS host. The Let's Encrypt certificate covers
+both hostnames.
+
+Nginx is the authoritative security-header layer. The current baseline is:
+
+```text
+Strict-Transport-Security: max-age=86400
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+X-Frame-Options: DENY
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; connect-src 'self'
+```
+
+The CSP's two `unsafe-inline` allowances are transitional requirements of the
+current inline-heavy templates; `unsafe-eval`, wildcard sources, HSTS
+`includeSubDomains`, and HSTS `preload` are intentionally absent. Apply nginx
+changes only after a timestamped copy of the active site file, require
+`nginx -t` to pass, and use a graceful nginx reload. An application service
+restart is not needed for nginx-only changes.
+
 ## Required production environment variable
 
 The real production `.env` (not committed, not `.env.example`) must contain:
