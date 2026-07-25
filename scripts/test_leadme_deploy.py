@@ -10,7 +10,9 @@ None of these tests deploy, push, commit, or restart anything.
 
 import io
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -67,6 +69,85 @@ def contains(*tokens):
         haystack = " ".join(argv_or_str) if isinstance(argv_or_str, list) else argv_or_str
         return all(tok in haystack for tok in tokens)
     return matcher
+
+
+class WorktreeRepoResolutionTests(unittest.TestCase):
+    def test_repo_root_derives_from_checked_in_script(self):
+        expected = Path(ld.__file__).resolve().parent.parent
+        self.assertEqual(ld.REPO_PATH, expected)
+        self.assertTrue((ld.REPO_PATH / "app/main.py").is_file())
+
+    def test_protected_original_path_is_not_required(self):
+        source = Path(ld.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("/mnt/c/Users/scott/ai-project/seo-app", source)
+        self.assertNotEqual(ld.REPO_PATH, Path("/mnt/c/Users/scott/ai-project/seo-app"))
+
+    def test_wrong_non_git_directory_stops_before_remote_contact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = mock.Mock(side_effect=AssertionError("must not contact production"))
+            curl = mock.Mock(side_effect=AssertionError("must not contact live site"))
+            with mock.patch.object(ld, "REPO_PATH", Path(tmp)), \
+                 mock.patch.object(ld, "run_remote", remote), \
+                 mock.patch.object(ld, "curl_status_code", curl):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = ld.main(["--status"])
+        self.assertEqual(rc, 1)
+        self.assertIn("STOPPED", buf.getvalue())
+        remote.assert_not_called()
+        curl.assert_not_called()
+
+    def test_status_mode_uses_temporary_git_worktree_without_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            seed = root / "seed"
+            worktree = root / "worktree"
+            seed.mkdir()
+            subprocess.run(["git", "init", "-b", "main"], cwd=seed, check=True, capture_output=True)
+            for relative in ld.REPO_IDENTITY_FILES:
+                path = seed / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"test marker: {relative}\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=seed, check=True, capture_output=True)
+            subprocess.run(
+                [
+                    "git", "-c", "user.name=LeadMeLeads Test",
+                    "-c", "user.email=test@leadmeleads.invalid",
+                    "commit", "-m", "test fixture",
+                ],
+                cwd=seed,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "worktree", "add", "-b", "status-test", str(worktree)],
+                cwd=seed,
+                check=True,
+                capture_output=True,
+            )
+
+            remote = mock.Mock(return_value=FakeResult(255, "", "mocked offline"))
+            with mock.patch.object(ld, "REPO_PATH", worktree), \
+                 mock.patch.object(ld, "run_remote", remote), \
+                 mock.patch.object(ld, "curl_status_code", return_value=(200, "")):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = ld.main(["--status"])
+
+        self.assertEqual(rc, 0)
+        out = buf.getvalue()
+        self.assertIn("branch:       status-test", out)
+        self.assertIn("local HEAD:", out)
+        self.assertNotIn("/mnt/c/Users/scott/ai-project/seo-app", out)
+        self.assertTrue(all("systemctl restart" not in str(call) for call in remote.call_args_list))
+
+    def test_production_constants_are_unchanged(self):
+        self.assertEqual(ld.PROD_HOST, "165.245.238.122")
+        self.assertEqual(ld.PROD_USER, "root")
+        self.assertEqual(ld.PROD_APP_PATH, "/var/www/leadmeleads")
+        self.assertEqual(ld.PROD_BACKUPS_DIR, "/var/www/leadmeleads-backups")
+        self.assertEqual(ld.PROD_SERVICE, "leadmeleads")
+        self.assertEqual(ld.LIVE_SITE, "https://leadmeleads.com")
 
 
 class UntrackedAllowlistTests(unittest.TestCase):

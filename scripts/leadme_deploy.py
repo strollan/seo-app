@@ -33,8 +33,19 @@ from urllib.parse import urlparse
 # Configuration
 # ---------------------------------------------------------------------------
 
-REPO_PATH = Path("/mnt/c/Users/scott/ai-project/seo-app")
+# Resolve from this checked-in script, not the caller's CWD. The wrapper may
+# be invoked through a user-local symlink, but it ultimately executes this
+# real file inside whichever linked worktree contains it.
+REPO_PATH = Path(__file__).resolve().parent.parent
 PRIMARY_BRANCH = "main"
+
+REPO_IDENTITY_FILES = (
+    "app/main.py",
+    "agents/lead_dashboard_agent.py",
+    "scripts/leadme-deploy",
+    "scripts/leadme_deploy.py",
+    "docs/leadme-deploy.md",
+)
 
 # WSL drvfs mount prefix for the Windows C: drive. git operations whose cwd
 # lives under here are eligible to run through git.exe instead of Linux git
@@ -56,12 +67,6 @@ PROD_SERVICE = "leadmeleads"
 LIVE_SITE = "https://leadmeleads.com"
 
 # Preferred local compile interpreter, falling back if unavailable.
-LOCAL_VENV_CANDIDATES = [
-    Path.home() / ".venvs" / "leadmeleads" / "bin" / "python",
-    REPO_PATH / "venv" / "bin" / "python",
-    Path(sys.executable),
-]
-
 COMPILE_TARGETS = [
     "app/main.py",
     "agents/auth_agent.py",
@@ -303,8 +308,38 @@ class Reporter:
 # Local git helpers
 # ---------------------------------------------------------------------------
 
-def repo_exists(repo=REPO_PATH):
-    return Path(repo).is_dir() and (Path(repo) / ".git").exists()
+def _repo_path(repo=None):
+    return Path(repo) if repo is not None else REPO_PATH
+
+
+def repo_exists(repo=None):
+    repo = _repo_path(repo)
+    return repo.is_dir() and (repo / ".git").exists()
+
+
+def validate_repo_identity(repo=None):
+    """Fail closed unless repo is this script's LeadMeLeads Git worktree."""
+    repo = _repo_path(repo).resolve()
+    if not repo_exists(repo):
+        return False, f"{repo} is not a Git worktree"
+
+    root_result = run_local(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=repo,
+        timeout=10,
+    )
+    if not root_result.ok or not root_result.stdout.strip():
+        return False, "Git top-level could not be resolved"
+
+    resolved_root = Path(root_result.stdout.strip()).resolve()
+    if resolved_root != repo:
+        return False, f"resolved Git root is {resolved_root}, expected {repo}"
+
+    missing = [relative for relative in REPO_IDENTITY_FILES if not (repo / relative).is_file()]
+    if missing:
+        return False, "LeadMeLeads identity files missing: " + ", ".join(missing)
+
+    return True, str(repo)
 
 
 def git_available():
@@ -312,26 +347,29 @@ def git_available():
     return res.ok
 
 
-def current_branch(repo=REPO_PATH):
+def current_branch(repo=None):
+    repo = _repo_path(repo)
     res = run_local(["git", "branch", "--show-current"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def head_sha(repo=REPO_PATH):
+def head_sha(repo=None):
+    repo = _repo_path(repo)
     res = run_local(["git", "rev-parse", "HEAD"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def tracked_tree_clean(repo=REPO_PATH):
+def tracked_tree_clean(repo=None):
     """True only if there are no staged or unstaged changes to tracked files.
 
     Uses `git diff --quiet` / `git diff --cached --quiet` per project
     guidance rather than parsing full `git status` output.
     """
+    repo = _repo_path(repo)
     unstaged = run_local(["git", "diff", "--quiet"], cwd=repo, timeout=15)
     staged = run_local(["git", "diff", "--cached", "--quiet"], cwd=repo, timeout=15)
     if unstaged.returncode not in (0, 1) or staged.returncode not in (0, 1):
@@ -346,8 +384,9 @@ def is_known_untracked(path):
     return any(norm.startswith(p) for p in KNOWN_UNTRACKED_PREFIXES)
 
 
-def classify_untracked(repo=REPO_PATH):
+def classify_untracked(repo=None):
     """Return (known, unexpected) lists of untracked paths."""
+    repo = _repo_path(repo)
     res = run_local(
         ["git", "status", "--porcelain", "--untracked-files=normal"],
         cwd=repo,
@@ -364,23 +403,26 @@ def classify_untracked(repo=REPO_PATH):
     return known, unexpected
 
 
-def fetch_origin(repo=REPO_PATH, branch=PRIMARY_BRANCH, timeout=30):
+def fetch_origin(repo=None, branch=PRIMARY_BRANCH, timeout=30):
+    repo = _repo_path(repo)
     res = run_local(["git", "fetch", "origin", branch], cwd=repo, timeout=timeout)
     return res.ok, res.stderr.strip()
 
 
-def origin_branch_sha(repo=REPO_PATH, branch=PRIMARY_BRANCH):
+def origin_branch_sha(repo=None, branch=PRIMARY_BRANCH):
+    repo = _repo_path(repo)
     res = run_local(["git", "rev-parse", f"origin/{branch}"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def divergence_state(repo=REPO_PATH, branch=PRIMARY_BRANCH):
+def divergence_state(repo=None, branch=PRIMARY_BRANCH):
     """Return (state, ahead, behind) comparing HEAD to origin/<branch>.
 
     state is one of: "in-sync", "ahead", "behind", "diverged", "unknown".
     """
+    repo = _repo_path(repo)
     res = run_local(
         ["git", "rev-list", "--left-right", "--count", f"origin/{branch}...HEAD"],
         cwd=repo,
@@ -401,20 +443,27 @@ def divergence_state(repo=REPO_PATH, branch=PRIMARY_BRANCH):
     return "in-sync", ahead, behind
 
 
-def push_origin(repo=REPO_PATH, branch=PRIMARY_BRANCH, timeout=60):
+def push_origin(repo=None, branch=PRIMARY_BRANCH, timeout=60):
+    repo = _repo_path(repo)
     res = run_local(["git", "push", "origin", branch], cwd=repo, timeout=timeout)
     return res.ok, (res.stdout + res.stderr).strip()
 
 
 def local_python_for_compile():
-    for candidate in LOCAL_VENV_CANDIDATES:
+    candidates = [
+        Path.home() / ".venvs" / "leadmeleads" / "bin" / "python",
+        REPO_PATH / "venv" / "bin" / "python",
+        Path(sys.executable),
+    ]
+    for candidate in candidates:
         if Path(candidate).exists():
             return str(candidate)
     return sys.executable
 
 
-def compile_targets(python_bin, repo=REPO_PATH, targets=None, timeout=COMPILE_TIMEOUT):
+def compile_targets(python_bin, repo=None, targets=None, timeout=COMPILE_TIMEOUT):
     """Compile each target individually so one bad file doesn't hide others."""
+    repo = _repo_path(repo)
     targets = targets if targets is not None else COMPILE_TARGETS
     results = []
     for target in targets:
@@ -1016,6 +1065,10 @@ def cmd_deploy(args):
         if not r.step("repo exists", repo_exists(), str(REPO_PATH)):
             raise DeployHalt("local repo path missing or not a git repo", ctx)
 
+        identity_ok, identity_detail = validate_repo_identity()
+        if not r.step("LeadMeLeads repo identity", identity_ok, identity_detail):
+            raise DeployHalt("local repository identity check failed", ctx)
+
         branch = current_branch()
         if not r.step("branch main", branch == PRIMARY_BRANCH, branch or "unknown"):
             raise DeployHalt(
@@ -1268,6 +1321,14 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    identity_ok, identity_detail = validate_repo_identity()
+    if not identity_ok:
+        print("LeadMeLeads Repository Check")
+        print("────────────────────────────")
+        print(f"[FAIL] repository identity — {identity_detail}")
+        print("STOPPED: refusing to contact or modify production from the wrong repository")
+        return 1
 
     if args.check:
         return cmd_check(args)

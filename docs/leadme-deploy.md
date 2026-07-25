@@ -10,6 +10,15 @@ smoke-test deploy loop for LeadMeLeads.
 - Installed command: `~/.local/bin/leadme-deploy` — a symlink to
   `scripts/leadme-deploy`. Works as long as `~/.local/bin` is on `PATH`.
 
+The Python tool resolves its local repository from the checked-in
+`scripts/leadme_deploy.py` file, so invoking a worktree's own
+`scripts/leadme-deploy` operates on that worktree. It does not trust an
+arbitrary current directory or fall back to the protected primary checkout.
+Before any mode runs, it verifies the resolved directory is the Git top-level
+and contains the expected LeadMeLeads application, agent, deploy, and
+documentation files. A mismatched repository stops before any production
+contact or change.
+
 Production target: `root@165.245.238.122:/var/www/leadmeleads`, systemd unit
 `leadmeleads`, live site `https://leadmeleads.com`.
 
