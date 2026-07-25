@@ -137,7 +137,7 @@ class DuplicateAccountTests(SignupProtectionTestCase):
         # Simulate a pre-existing row stored with mixed case (e.g. created
         # before normalization was enforced everywhere) rather than through
         # create_user(), which already lowercases.
-        with auth_agent.connect() as conn:
+        with auth_agent.managed_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, password_hash, role, is_active, created_at, email) "
                 "VALUES (?, ?, 'standard', 1, ?, ?)",
@@ -151,7 +151,7 @@ class DuplicateAccountTests(SignupProtectionTestCase):
         self.assertIn(appmain.SIGNUP_DUPLICATE_MESSAGE, resp.text)
 
     def test_inactive_account_email_is_still_protected(self):
-        with auth_agent.connect() as conn:
+        with auth_agent.managed_connection() as conn:
             conn.execute(
                 "INSERT INTO users (username, password_hash, role, is_active, created_at, email) "
                 "VALUES (?, ?, 'standard', 0, ?, ?)",
@@ -174,7 +174,7 @@ class DuplicateAccountTests(SignupProtectionTestCase):
         with self.assertRaises(Exception):
             auth_agent.create_user("second", VALID_PASSWORD, role="standard", email="RACE@EXAMPLE.COM")
 
-        with auth_agent.connect() as conn:
+        with auth_agent.managed_connection() as conn:
             count = conn.execute(
                 "SELECT COUNT(*) FROM users WHERE LOWER(email) = ?", ("race@example.com",)
             ).fetchone()[0]

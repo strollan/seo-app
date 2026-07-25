@@ -4,6 +4,7 @@ import hmac
 import os
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,8 +30,19 @@ def connect():
     return conn
 
 
+@contextmanager
+def managed_connection():
+    """Commit/rollback like sqlite's context manager, then always close."""
+    conn = connect()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def init_auth_db():
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -181,7 +193,7 @@ def create_user(username, password, role="standard", email=None):
     clean_email = normalize_email(email) if email else None
     password_hash = hash_password(password)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             INSERT INTO users (username, password_hash, role, is_active, created_at, email)
@@ -198,7 +210,7 @@ def get_user_by_username(username):
     init_auth_db()
     username = normalize_username(username)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT * FROM users WHERE username = ? AND is_active = 1",
             (username,),
@@ -213,7 +225,7 @@ def get_user_by_email(email):
     if not email:
         return None
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT * FROM users WHERE email = ? AND is_active = 1",
             (email,),
@@ -260,7 +272,7 @@ def create_session(user):
     now = utc_now()
     expires = now + timedelta(days=SESSION_DAYS)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             INSERT INTO sessions (user_id, token_hash, created_at, expires_at)
@@ -281,7 +293,7 @@ def get_user_from_token(token):
 
     token_hash = hash_token(token)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             """
             SELECT users.id, users.username, users.role, sessions.expires_at
@@ -315,7 +327,7 @@ def delete_session(token):
 
     token_hash = hash_token(token)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
         conn.commit()
 
@@ -324,7 +336,7 @@ def delete_all_sessions_for_user(user_id):
     if not user_id:
         return
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.commit()
 
@@ -332,7 +344,7 @@ def delete_all_sessions_for_user(user_id):
 def list_users_for_admin():
     """Return only fields safe for the admin user-management screen."""
     init_auth_db()
-    with connect() as conn:
+    with managed_connection() as conn:
         rows = conn.execute(
             """
             SELECT id, username, email, role, is_active, created_at
@@ -350,7 +362,7 @@ def get_user_by_id_for_admin(user_id):
         clean_id = int(user_id)
     except (TypeError, ValueError):
         return None
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             """
             SELECT id, username, email, role, is_active, created_at
@@ -364,7 +376,7 @@ def get_user_by_id_for_admin(user_id):
 
 def count_active_admins():
     init_auth_db()
-    with connect() as conn:
+    with managed_connection() as conn:
         count = conn.execute(
             "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1"
         ).fetchone()[0]
@@ -378,7 +390,7 @@ def set_user_active(user_id, active):
         clean_id = int(user_id)
     except (TypeError, ValueError):
         return False
-    with connect() as conn:
+    with managed_connection() as conn:
         cursor = conn.execute(
             "UPDATE users SET is_active = ? WHERE id = ?",
             (1 if active else 0, clean_id),
@@ -411,7 +423,7 @@ def issue_csrf_token(raw_session_token):
 
     session_token_hash = hash_token(raw_session_token)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = _active_session_row(conn, session_token_hash, "sessions.id, sessions.expires_at")
         if not row:
             return None
@@ -440,7 +452,7 @@ def verify_csrf_token(raw_session_token, submitted_csrf_token):
 
     session_token_hash = hash_token(raw_session_token)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = _active_session_row(
             conn, session_token_hash, "sessions.csrf_token_hash, sessions.expires_at"
         )
@@ -470,7 +482,7 @@ LOGIN_WINDOW_SECONDS = 10 * 60
 
 def _ensure_login_attempts_table():
     init_auth_db()
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS login_attempts (
@@ -500,7 +512,7 @@ def login_is_limited(client_host, username):
     key = login_rate_key(client_host, username)
     cutoff = int(time.time()) - LOGIN_WINDOW_SECONDS
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
         count = conn.execute(
             "SELECT COUNT(*) FROM login_attempts WHERE key = ? AND attempted_at >= ?",
@@ -520,7 +532,7 @@ def login_record_failure(client_host, username):
     now = int(time.time())
     cutoff = now - LOGIN_WINDOW_SECONDS
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
         conn.execute(
             "INSERT INTO login_attempts (key, attempted_at) VALUES (?, ?)",
@@ -534,7 +546,7 @@ def login_clear_failures(client_host, username):
 
     key = login_rate_key(client_host, username)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute("DELETE FROM login_attempts WHERE key = ?", (key,))
         conn.commit()
 # === LOGIN RATE LIMIT DB HELPERS END ===
@@ -553,7 +565,7 @@ def user_exists(username):
     if not username:
         return False
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT 1 FROM users WHERE LOWER(username) = ? LIMIT 1",
             (username,),
@@ -574,7 +586,7 @@ def email_exists(email):
     if not email:
         return False
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT 1 FROM users WHERE email IS NOT NULL AND LOWER(email) = ? LIMIT 1",
             (email,),
@@ -604,7 +616,7 @@ def create_reset_token(identifier):
     now = utc_now()
     expires = now + timedelta(minutes=RESET_TOKEN_MINUTES)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             "UPDATE password_reset_tokens SET used = 1 WHERE user_id = ? AND used = 0",
             (user["id"],),
@@ -630,7 +642,7 @@ def get_user_for_reset_token(raw_token):
 
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             """
             SELECT password_reset_tokens.expires_at,
@@ -670,7 +682,7 @@ def consume_reset_token(raw_token):
     _ensure_reset_tokens_table()
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT user_id FROM password_reset_tokens WHERE token_hash = ?",
             (token_hash,),
@@ -688,7 +700,7 @@ def set_user_password(user_id, new_password):
     init_auth_db()
     new_hash = hash_password(new_password)
 
-    with connect() as conn:
+    with managed_connection() as conn:
         cursor = conn.execute(
             "UPDATE users SET password_hash = ? WHERE id = ?",
             (new_hash, user_id),
