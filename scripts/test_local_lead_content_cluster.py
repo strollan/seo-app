@@ -29,7 +29,7 @@ class AsgiClient:
 
 PAGES = {
     "/how-to-find-local-leads": {
-        "h1": "How to Find Local Leads Worth Contacting",
+        "h1": "How to Find Local Leads",
         "page": seo_meta.FIND_LOCAL_LEADS_PAGE,
         "faq": seo_meta.FIND_LOCAL_LEADS_FAQ,
     },

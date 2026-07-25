@@ -72,7 +72,7 @@ class GoodLeadPageBasicsTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(
             match.group(1),
-            "What Makes a Good Lead? How to Find Leads Worth Contacting",
+            "What Makes a Good Lead? A Practical Guide | LeadMeLeads",
         )
 
     def test_exact_meta_description(self):

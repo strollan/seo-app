@@ -70,7 +70,7 @@ class PublicPageMetadataTests(unittest.TestCase):
             "canonical": "https://leadmeleads.com/compare",
         },
         "/what-makes-a-good-lead": {
-            "title": "What Makes a Good Lead? How to Find Leads Worth Contacting",
+            "title": "What Makes a Good Lead? A Practical Guide | LeadMeLeads",
             "description": (
                 "Learn what makes a good lead, how to identify businesses "
                 "worth contacting, and why quality matters more than "
@@ -79,7 +79,7 @@ class PublicPageMetadataTests(unittest.TestCase):
             "canonical": "https://leadmeleads.com/what-makes-a-good-lead",
         },
         "/how-to-find-local-leads": {
-            "title": "How to Find Local Leads Worth Contacting | LeadMeLeads",
+            "title": "How to Find Local Leads: A Step-by-Step Process | LeadMeLeads",
             "description": (
                 "Learn how to find local businesses worth reviewing, check "
                 "contact details and website signals, and organize prospects "

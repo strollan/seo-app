@@ -112,7 +112,7 @@ COMPARE_PAGE = SeoPage(
 )
 
 GOOD_LEAD_PAGE = SeoPage(
-    title="What Makes a Good Lead? How to Find Leads Worth Contacting",
+    title="What Makes a Good Lead? A Practical Guide | LeadMeLeads",
     description=(
         "Learn what makes a good lead, how to identify businesses worth "
         "contacting, and why quality matters more than collecting more names."
@@ -121,7 +121,7 @@ GOOD_LEAD_PAGE = SeoPage(
 )
 
 FIND_LOCAL_LEADS_PAGE = SeoPage(
-    title="How to Find Local Leads Worth Contacting | LeadMeLeads",
+    title="How to Find Local Leads: A Step-by-Step Process | LeadMeLeads",
     description=(
         "Learn how to find local businesses worth reviewing, check contact "
         "details and website signals, and organize prospects before outreach."

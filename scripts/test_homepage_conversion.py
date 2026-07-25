@@ -13,6 +13,8 @@ os.environ.setdefault("OPENAI_API_KEY", "test-placeholder-not-a-real-key")
 import httpx
 
 import app.main as appmain
+import app.seo_meta as seo_meta
+from agents import lead_export_agent
 
 
 class AsgiClient:
@@ -47,6 +49,10 @@ class HomepageConversionTests(unittest.TestCase):
         self.assertGreaterEqual(len(ctas), 2)
         self.assertTrue(all(text.strip() == "Find Local Leads" for text in ctas))
         self.assertTrue(any(route.path == "/lead-bot" for route in appmain.app.routes))
+        primary_css = re.search(r"\.btn-primary\s*\{(.*?)\}", self.body, re.DOTALL).group(1)
+        secondary_css = re.search(r"\.btn-secondary\s*\{(.*?)\}", self.body, re.DOTALL).group(1)
+        self.assertIn("background: #ffffff", primary_css)
+        self.assertIn("background: rgba(15, 23, 42, 0.58)", secondary_css)
 
     def test_how_it_works_three_steps(self):
         self.assertIn('id="how-it-works-heading">How It Works</h2>', self.body)
@@ -67,6 +73,45 @@ class HomepageConversionTests(unittest.TestCase):
         )
         for copy in required:
             self.assertIn(copy, self.body)
+
+    def test_export_copy_matches_real_csv_fields(self):
+        copy = (
+            "Export prospect lists as CSV with business details, keyword and market, "
+            "search position, and phone, email, and contact-page URL when available."
+        )
+        self.assertIn(copy, self.visible)
+        for field in (
+            "title", "domain", "url", "keyword", "market", "serp_position",
+            "best_phone", "emails", "contact_page_url",
+        ):
+            self.assertIn(field, lead_export_agent.EXPORT_FIELDS)
+        self.assertNotIn("Why This Lead", copy)
+
+    def test_homepage_owns_worth_contacting_title_and_h1_intent(self):
+        self.assertEqual(
+            seo_meta.HOME_PAGE.title,
+            "LeadMeLeads — Find Local Leads Worth Contacting",
+        )
+        guide_expectations = {
+            "/how-to-find-local-leads": (
+                "How to Find Local Leads: A Step-by-Step Process | LeadMeLeads",
+                "How to Find Local Leads",
+            ),
+            "/what-makes-a-good-lead": (
+                "What Makes a Good Lead? A Practical Guide | LeadMeLeads",
+                "What Makes a Good Lead?",
+            ),
+        }
+        for path, (title, h1) in guide_expectations.items():
+            page = self.client.get(path).text
+            self.assertIn(f"<title>{title}</title>", page)
+            self.assertEqual(re.findall(r"<h1>(.*?)</h1>", page, re.DOTALL), [h1])
+            self.assertNotIn("worth contacting", title.lower())
+            self.assertNotIn("worth contacting", h1.lower())
+            self.assertIn(
+                f'rel="canonical" href="{seo_meta.canonical_url(path)}"',
+                page,
+            )
 
     def test_balanced_google_comparison_and_quality_positioning(self):
         self.assertIn("Google helps you find businesses.", self.body)
