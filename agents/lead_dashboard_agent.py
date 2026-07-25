@@ -592,7 +592,6 @@ def leadbot_search_summary_row(rows, selected_name=""):
     <div class="leadbot-search-summary-row">
         <div class="leadbot-search-summary-title">Current Search</div>
         <div class="leadbot-search-summary-line">
-            <span><b>Industry</b> {html.escape(str(industry))}</span>
             <span><b>Keyword</b> {html.escape(str(keyword))}</span>
             <span><b>Market</b> {html.escape(str(market))}</span>
             <span><b>Leads</b> {html.escape(str(len(rows)))}</span>
@@ -1051,7 +1050,7 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
         if selected.name != "leadbot_master.csv":
             append_button_html = f'<button type="submit" name="append_to" value="{html.escape(selected.name)}">Append 8 More</button>' 
         download = (
-        f'<a class="btn dark" href="/lead-bot/export/{html.escape(selected.name)}">Download This Scan</a>'
+        f'<a class="btn dark" href="/lead-bot/export/{html.escape(selected.name)}">Download CSV</a>'
     )
 
     page = """
@@ -3627,10 +3626,10 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
             __GUEST_NOTE__
             <form id="leadbotRunForm" action="/lead-bot/live-start" method="post" novalidate>
                 <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
-                <label for="leadbotKeywordInput">Keyword</label>
-                <input id="leadbotKeywordInput" name="keyword" value="" required>
+                <label for="leadbotKeywordInput">Keyword (Required)</label>
+                <input id="leadbotKeywordInput" name="keyword" value="" placeholder="plumber, dentist, web designer" required>
 
-                <label for="leadbotMarketInput">City, State, or ZIP Code</label>
+                <label for="leadbotMarketInput">City, State, or ZIP Code (Required)</label>
                 <input id="leadbotMarketInput" name="market" value="" placeholder="Albany, NY or 10001" required>
                 <p class="leadbot-field-error" id="leadbotMarketError" hidden>Enter a city, state, or ZIP code.</p>
 
@@ -3705,7 +3704,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 
 <div class="leadbot-complete-details-above-exports">
-    <a class="leadbot-current-fill-addresses" href="/lead-bot/open-desktop">Open Desktop</a>
+    <a class="leadbot-current-fill-addresses" href="/lead-bot/open-desktop">Open Results &amp; Exports</a>
 </div>
 <h2 id="exports" style="margin-top:22px;">Exports</h2>
 
@@ -3716,7 +3715,7 @@ document.addEventListener("DOMContentLoaded", function () {
     <div class="leadbot-current-scan-direct-name" id="leadbotCurrentScanName"></div>
     <p class="leadbot-current-scan-direct-count" id="leadbotCurrentScanCount"></p>
     <div class="leadbot-current-scan-direct-actions">
-        <a class="leadbot-current-download" id="leadbotCurrentScanDownload" href="#">Download</a>
+        <a class="leadbot-current-download" id="leadbotCurrentScanDownload" href="#">Download CSV</a>
 </div>
 </div>
 

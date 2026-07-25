@@ -13158,7 +13158,7 @@ body.leadbot-live-final .live-progress-bar {{
         </div>
         
         <p id="exportWrap" style="display:none; margin:18px 0 0; text-align:center;">
-            <a id="exportLink" href="/lead-bot/live-dashboard/{job_id}" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:12px;background:#1e3a8a;color:#fff!important;font-weight:900;text-decoration:none;box-shadow:0 8px 18px rgba(30,58,138,.22);">Open Desktop</a>
+            <a id="exportLink" href="/lead-bot/live-dashboard/{job_id}" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:12px;background:#1e3a8a;color:#fff!important;font-weight:900;text-decoration:none;box-shadow:0 8px 18px rgba(30,58,138,.22);">Review Results &amp; Export CSV</a>
         </p>
 
         <div id="guestSavePrompt" style="display:none; margin:18px 0 0; padding:18px 20px; background:#fff7ed; border:1px solid #fed7aa; border-radius:16px; text-align:center;">
@@ -13590,7 +13590,7 @@ async function poll() {{
             if (exportWrapBottom && exportLinkBottom) {{
                 exportWrapBottom.style.display = "block";
                 exportLinkBottom.href = dashboardUrl;
-                exportLinkBottom.textContent = "Open Desktop";
+                exportLinkBottom.textContent = "Review Results & Export CSV";
             }}
             exportLink.onclick = function () {{
                 window.location.href = dashboardUrl;
