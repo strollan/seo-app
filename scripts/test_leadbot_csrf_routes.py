@@ -665,7 +665,7 @@ class LeadBotCardsOwnershipBrowserRegressionTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parent.parent
         cls._proc = subprocess.Popen(
             [
-                str(repo_root / "venv" / "bin" / "python3"),
+                sys.executable,
                 "-m", "uvicorn", "app.main:app",
                 "--host", "127.0.0.1", "--port", str(cls.PORT),
             ],
