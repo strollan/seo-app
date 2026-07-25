@@ -1230,6 +1230,18 @@ input {
     font-size: 13px;
     line-height: 1.45;
 }
+
+.leadbot-education-link {
+    margin: -8px auto 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #475569;
+}
+
+.leadbot-education-link a {
+    color: #1e3a8a;
+    font-weight: 800;
+}
 .leadbot-field-error {
     color: #dc2626;
     font-size: 12px;
@@ -3603,6 +3615,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         </div>
     </div>
     <p class="leadbot-value-explanation">Google helps you find businesses. LeadMeLeads helps you decide which are worth contacting.<br>We organize potential leads and contact details in one place, ready to review and export.</p>
+    <p class="leadbot-education-link">New to prospecting? Read <a href="/what-makes-a-good-lead">What Makes a Good Lead?</a></p>
     <div class="app-nav-overlay" data-nav-overlay></div>
 <script src="/static/js/mobile-nav.js" defer></script>
 <script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__"; window.LEADBOT_IS_GUEST = __IS_GUEST_JS__;</script>
@@ -9147,4 +9160,3 @@ try:
 except NameError:
     print("[LeadBot dashboard] read_csv_rows was not available for CSV size cap.")
 # === LEADBOT CSV SIZE CAP END ===
-

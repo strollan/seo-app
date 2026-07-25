@@ -22,6 +22,7 @@ Finder, or auth/CSRF.
 """
 
 import json
+import asyncio
 import os
 import re
 import sys
@@ -32,18 +33,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("OPENAI_API_KEY", "test-placeholder-not-a-real-key")
 
-from fastapi.testclient import TestClient
+import httpx
 
 import app.main as appmain
 import app.seo_meta as seo_meta
+import agents.lead_dashboard_agent as dashboard_agent
 
 PATH = "/what-makes-a-good-lead"
+
+
+class AsgiClient:
+    """Small async-transport wrapper that avoids Python 3.14 TestClient hangs."""
+
+    def get(self, path):
+        async def request():
+            transport = httpx.ASGITransport(app=appmain.app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.get(path)
+
+        return asyncio.run(request())
 
 
 class GoodLeadPageBasicsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(appmain.app)
+        cls.client = AsgiClient()
         cls.response = cls.client.get(PATH)
         cls.body = cls.response.text
 
@@ -59,6 +76,11 @@ class GoodLeadPageBasicsTests(unittest.TestCase):
         )
 
     def test_exact_meta_description(self):
+        self.assertEqual(
+            seo_meta.GOOD_LEAD_PAGE.description,
+            "Learn what makes a good lead, how to identify businesses worth "
+            "contacting, and why quality matters more than collecting more names.",
+        )
         self.assertIn(
             f'name="description" content="{seo_meta.GOOD_LEAD_PAGE.description}"',
             self.body,
@@ -90,7 +112,7 @@ class GoodLeadPageBasicsTests(unittest.TestCase):
 class GoodLeadInternalLinksAndCtaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(appmain.app)
+        cls.client = AsgiClient()
         cls.body = cls.client.get(PATH).text
 
     def test_links_to_lead_finder(self):
@@ -98,6 +120,22 @@ class GoodLeadInternalLinksAndCtaTests(unittest.TestCase):
 
     def test_links_to_compare(self):
         self.assertIn('href="/compare"', self.body)
+
+    def test_links_to_homepage(self):
+        self.assertIn('href="/"', self.body)
+
+    def test_homepage_links_naturally_to_this_page(self):
+        homepage = self.client.get("/").text
+        self.assertIn('href="/what-makes-a-good-lead"', homepage)
+        self.assertIn("what makes a good lead", homepage.lower())
+
+    def test_lead_finder_links_naturally_to_this_page(self):
+        lead_finder = dashboard_agent.render_lead_dashboard(
+            current_user=None,
+            csrf_token="test-token",
+        )
+        self.assertIn('href="/what-makes-a-good-lead"', lead_finder)
+        self.assertIn("What Makes a Good Lead?", lead_finder)
 
     def test_has_a_natural_cta_to_lead_finder(self):
         ctas = re.findall(r'<a class="inline-cta" href="/lead-bot">([^<]+)</a>', self.body)
@@ -114,7 +152,7 @@ class GoodLeadFaqSchemaMatchesVisibleCopyTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(appmain.app)
+        cls.client = AsgiClient()
         cls.body = cls.client.get(PATH).text
 
     def _extract_visible_faq(self):
@@ -191,7 +229,7 @@ class GoodLeadSeoWiringTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(appmain.app)
+        cls.client = AsgiClient()
 
     def test_path_is_in_public_indexable_paths(self):
         self.assertIn(PATH, seo_meta.PUBLIC_INDEXABLE_PATHS)
@@ -226,7 +264,7 @@ class GoodLeadMobileLayoutSafetyTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.client = TestClient(appmain.app)
+        cls.client = AsgiClient()
         cls.body = cls.client.get(PATH).text
 
     def test_body_reuses_compare_page_mobile_nav_class(self):

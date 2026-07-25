@@ -72,9 +72,9 @@ class PublicPageMetadataTests(unittest.TestCase):
         "/what-makes-a-good-lead": {
             "title": "What Makes a Good Lead? How to Find Leads Worth Contacting",
             "description": (
-                "A good lead fits your target market, is reachable, and "
-                "gives you a real reason to reach out. See what separates "
-                "a lead worth contacting from a purchased list of names."
+                "Learn what makes a good lead, how to identify businesses "
+                "worth contacting, and why quality matters more than "
+                "collecting more names."
             ),
             "canonical": "https://leadmeleads.com/what-makes-a-good-lead",
         },
