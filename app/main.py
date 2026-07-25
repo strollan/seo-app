@@ -12093,6 +12093,7 @@ from agents.lead_dashboard_agent import (
     render_lead_dashboard,
     safe_export_file,
     _leadbot_export_visible_to_user,
+    _leadbot_exact_export_owned_by_user,
     is_valid_market,
     MARKET_REQUIRED_MESSAGE,
 )
@@ -15703,6 +15704,20 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
     if not user:
         return LeadBotHTMLResponse("Login required", status_code=401)
 
+    if not _csrf_token_valid(request, csrf_token):
+        return LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+
+    requested_name = str(filename or "")
+    if (
+        not requested_name
+        or requested_name != Path(requested_name).name
+        or Path(requested_name).suffix.lower() != ".csv"
+    ):
+        return LeadBotHTMLResponse("Invalid export filename", status_code=400)
+
     target = safe_export_file(filename)
     if not target:
         return AuthRedirectResponse(url="/lead-bot?deleted=0", status_code=303)
@@ -15710,14 +15725,8 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
     # Security check:
     # Admin may delete any export.
     # Standard user may delete only owned/visible export.
-    if not _leadbot_export_visible_to_user(target, current_user=user):
+    if not _leadbot_exact_export_owned_by_user(target, current_user=user):
         return LeadBotHTMLResponse("Forbidden", status_code=403)
-
-    if not _csrf_token_valid(request, csrf_token):
-        return LeadBotHTMLResponse(
-            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
-            status_code=403,
-        )
 
     export_dir = Path("exports").resolve()
     names_to_delete = set()
@@ -15746,6 +15755,11 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
     for name in sorted(names_to_delete):
         path = safe_export_file(name)
         if not path:
+            continue
+
+        # A related base/enriched filename must independently belong to
+        # the caller. Never let a shared stem broaden delete authority.
+        if not _leadbot_exact_export_owned_by_user(path, current_user=user):
             continue
 
         # Re-check every file path stays inside exports.

@@ -157,6 +157,47 @@ def _leadbot_export_owner_values(filename):
     return out
 
 
+def _leadbot_export_exact_owner_values(filename):
+    """Return ownership values recorded for exactly one export filename."""
+    import json
+
+    name = Path(str(filename or "")).name
+    out = set()
+    if not name:
+        return out
+
+    owner_map_path = Path("data/leadbot_export_owners.json")
+    try:
+        if owner_map_path.exists():
+            data = json.loads(owner_map_path.read_text(encoding="utf-8") or "{}")
+            if isinstance(data, dict) and name in data:
+                out |= _leadbot_collect_owner_values(data.get(name))
+    except Exception:
+        pass
+
+    sidecar = Path("exports") / f"{name}.owner.json"
+    try:
+        if sidecar.exists():
+            out |= _leadbot_collect_owner_values(
+                json.loads(sidecar.read_text(encoding="utf-8") or "{}")
+            )
+    except Exception:
+        pass
+
+    return out
+
+
+def _leadbot_exact_export_owned_by_user(path, current_user=None):
+    """Strict per-file ownership check used by destructive operations."""
+    if not current_user:
+        return False
+    if _leadbot_user_role(current_user) == "admin":
+        return True
+    user_keys = _leadbot_user_keys(current_user)
+    owner_values = _leadbot_export_exact_owner_values(Path(path).name)
+    return bool(user_keys and owner_values and user_keys & owner_values)
+
+
 def record_export_owner(filename, owner_email="", owner_username="", is_partial=False):
     """
     Write the export-ownership record for a completed scan, using the same
@@ -253,7 +294,10 @@ def _leadbot_export_visible_to_user(path, current_user=None):
     if not user_keys:
         return False
 
-    owner_values = _leadbot_export_owner_values(Path(path).name)
+    # Visibility is intentionally exact per file. Base/enriched exports may
+    # share a display group, but one file's ownership must never grant access
+    # to a differently owned sibling.
+    owner_values = _leadbot_export_exact_owner_values(Path(path).name)
 
     # Important privacy rule:
     # Standard users do NOT see legacy/unowned exports.
@@ -485,24 +529,27 @@ def export_display_label(path):
     Show a human-friendly export label using CSV data when available.
     The href still uses the real filename.
     """
+    import re
+
     rows = read_csv_rows(path, limit=1)
     row = rows[0] if rows else {}
 
     industry = get_value(row, "industry", "service", "service_keyword", "keyword")
     market = get_value(row, "market", "location", "city", "state", "region")
-    business = get_value(row, "business", "title", "domain")
-
     parts = []
     if industry:
         parts.append(industry.replace("_", " ").title())
     if market:
-        parts.append(market.replace("_", " ").title())
+        market_label = market.replace("_", " ").title()
+        market_label = re.sub(
+            r",\s*([A-Za-z]{2})(?=\s|$)",
+            lambda match: f", {match.group(1).upper()}",
+            market_label,
+        )
+        parts.append(market_label)
 
     if parts:
-        label = " · ".join(parts)
-        if business:
-            label += f" — {business}"
-        return label
+        return " · ".join(parts)
 
     # Clean ugly legacy filenames for display only.
     name = path.name
@@ -512,6 +559,16 @@ def export_display_label(path):
     name = name.replace("_long_island_", "_")
     name = name.replace("_", " ")
     return name
+
+
+def export_created_label(path):
+    """Return a compact local created/modified timestamp for an export."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).strftime("%b %-d, %Y · %-I:%M %p")
+    except (OSError, ValueError):
+        return ""
 
 
 
@@ -1028,6 +1085,7 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
         label = export_display_label(f)
         safe_name = html.escape(f.name)
         safe_label = html.escape(label)
+        created_label = html.escape(export_created_label(f))
         encoded_name = quote(f.name)
         partial_badge = (
             ' <span class="export-partial-badge" title="Some search requests for this scan could not be completed.">Partial</span>'
@@ -1037,7 +1095,10 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
 
         file_links.append(
             f'<div class="export-file-row{active}">'
-            f'<a class="file-link{active}" title="{safe_name}" href="/lead-bot?file={encoded_name}">{safe_label}{partial_badge}</a>'
+            f'<a class="file-link{active}" title="{safe_name}" href="/lead-bot?file={encoded_name}">'
+            f'<span class="export-file-label">{safe_label}{partial_badge}</span>'
+            f'<span class="export-file-date">{created_label}</span>'
+            f'</a>'
             f'<a class="export-csv-link" title="Download CSV" href="/lead-bot/export/{encoded_name}">CSV</a>'
             f'</div>'
         )
@@ -2683,9 +2744,20 @@ main#results .results-top {
 
 .export-file-row .file-link {
     min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+}
+
+.export-file-label,
+.export-file-date {
+    display: block;
+}
+
+.export-file-date {
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 700;
 }
 
 .export-partial-badge {
@@ -5689,6 +5761,11 @@ btn.dataset.busy = "1";
         event.stopImmediatePropagation();
 
         if (btn.__leadbotExportDeleteBusy) return false;
+
+        if (!window.confirm("Delete this export and its saved metadata? This cannot be undone.")) {
+            return false;
+        }
+
         btn.__leadbotExportDeleteBusy = true;
 
         var url = getDeleteUrl(btn);
