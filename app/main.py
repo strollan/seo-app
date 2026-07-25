@@ -13702,91 +13702,85 @@ def leadbot_real_manual_add_domain(
 # === LEADBOT LIVE SCAN VISUAL UPGRADE START ===
 
 
-@app.get("/lead-bot/block-domains")
-def leadbot_block_domains_route(request: AuthRequest, domains: str = ""):
-    import csv
-    import re
-    from pathlib import Path
-    from urllib.parse import urlparse
-
-    try:
-        user = auth_current_user(request)
-    except Exception:
-        user = None
-
+def _leadbot_blocklist_write_guard(request, csrf_token, *, admin=False):
+    user = auth_current_user(request)
     if not user:
-        return AuthRedirectResponse(url="/login?next=/lead-bot", status_code=303)
+        return None, LeadBotHTMLResponse("Login required", status_code=401)
+    if admin and _admin_role_from_user(user) != "admin":
+        return None, LeadBotHTMLResponse("Admin required", status_code=403)
+    if not _csrf_token_valid(request, csrf_token):
+        return None, LeadBotHTMLResponse(
+            "<h1>Forbidden</h1><p>Invalid or missing CSRF token.</p>",
+            status_code=403,
+        )
+    return user, None
 
-    def clean_domain(value):
-        value = str(value or "").strip().lower().strip(" ,;")
-        if not value:
-            return ""
-        if "://" in value:
-            host = urlparse(value).netloc.lower()
-        else:
-            host = value.split("/")[0].lower()
-        host = host.replace("www.", "").strip()
-        return host if "." in host else ""
 
-    parts = re.split(r"[\s,;]+", domains or "")
-    new_domains = sorted({clean_domain(x) for x in parts if clean_domain(x)})
+@app.post("/lead-bot/blocklist/user/add")
+def leadbot_user_block_add(
+    request: AuthRequest,
+    domain: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
+    user, error = _leadbot_blocklist_write_guard(request, csrf_token)
+    if error:
+        return error
+    from agents.lead_blocked_domain_db_agent import add_user_blocked_domain
+    from agents.leadbot_block_gate import blocklist_owner_key, is_valid_block_domain, normalize_domain
+    clean = normalize_domain(domain)
+    if not is_valid_block_domain(clean) or not add_user_blocked_domain(blocklist_owner_key(user), clean):
+        return LeadBotHTMLResponse("Enter a valid domain or URL.", status_code=400)
+    return LeadBotRedirectResponse(url="/lead-bot#exports", status_code=303)
 
-    block_file = Path("data/leadbot_blocklist.txt")
-    block_file.parent.mkdir(parents=True, exist_ok=True)
 
-    existing = set()
-    if block_file.exists():
-        existing = {clean_domain(x) for x in block_file.read_text(encoding="utf-8").splitlines()}
-        existing = {x for x in existing if x}
+@app.post("/lead-bot/blocklist/user/remove")
+def leadbot_user_block_remove(
+    request: AuthRequest,
+    domain: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
+    user, error = _leadbot_blocklist_write_guard(request, csrf_token)
+    if error:
+        return error
+    from agents.lead_blocked_domain_db_agent import remove_user_blocked_domain
+    from agents.leadbot_block_gate import blocklist_owner_key, is_valid_block_domain, normalize_domain
+    clean = normalize_domain(domain)
+    if not is_valid_block_domain(clean):
+        return LeadBotHTMLResponse("Enter a valid domain or URL.", status_code=400)
+    remove_user_blocked_domain(blocklist_owner_key(user), clean)
+    return LeadBotRedirectResponse(url="/lead-bot#exports", status_code=303)
 
-    added = [d for d in new_domains if d not in existing]
 
-    if added:
-        with block_file.open("a", encoding="utf-8") as f:
-            for d in added:
-                f.write(d + "\n")
+@app.post("/lead-bot/blocklist/global/add")
+def leadbot_global_block_add(
+    request: AuthRequest,
+    domain: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
+    _, error = _leadbot_blocklist_write_guard(request, csrf_token, admin=True)
+    if error:
+        return error
+    from agents.leadbot_block_gate import add_main_blocked_domain
+    if not add_main_blocked_domain(domain, source="admin"):
+        return LeadBotHTMLResponse("Enter a valid domain or URL.", status_code=400)
+    return LeadBotRedirectResponse(url="/lead-bot#exports", status_code=303)
 
-    removed_total = 0
 
-    try:
-        from agents.lead_blacklist_agent import is_blocked_lead_domain
-
-        for csv_path in Path("exports").glob("*.csv"):
-            if csv_path.name == "leadbot_master.csv":
-                continue
-
-            with csv_path.open(newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                rows = list(reader)
-                fieldnames = list(reader.fieldnames or [])
-
-            if not fieldnames:
-                continue
-
-            kept = []
-            removed = 0
-
-            for row in rows:
-                value = row.get("domain") or row.get("url") or row.get("website") or ""
-                if is_blocked_lead_domain(value):
-                    removed += 1
-                else:
-                    kept.append(row)
-
-            if removed:
-                with csv_path.open("w", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(kept)
-
-                removed_total += removed
-
-    except Exception as e:
-        print("LEADBOT BLOCK DOMAIN CLEANUP ERROR:", e, flush=True)
-
-    print(f"LEADBOT BLOCK DOMAINS: added={added} removed_rows={removed_total}", flush=True)
-
-    return LeadBotRedirectResponse(url=f"/lead-bot?blocked={len(added)}&removed={removed_total}#exports", status_code=303)
+@app.post("/lead-bot/blocklist/global/remove")
+def leadbot_global_block_remove(
+    request: AuthRequest,
+    domain: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
+    _, error = _leadbot_blocklist_write_guard(request, csrf_token, admin=True)
+    if error:
+        return error
+    from agents.leadbot_block_gate import is_valid_block_domain, normalize_domain, remove_main_blocked_domain
+    clean = normalize_domain(domain)
+    if not is_valid_block_domain(clean):
+        return LeadBotHTMLResponse("Enter a valid domain or URL.", status_code=400)
+    remove_main_blocked_domain(clean)
+    return LeadBotRedirectResponse(url="/lead-bot#exports", status_code=303)
 # === LEADBOT DOMAIN BLOCK ROUTE END ===
 
 

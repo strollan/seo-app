@@ -71,6 +71,15 @@ def normalize_domain(value: Any) -> str:
     return host
 
 
+def is_valid_block_domain(value: Any) -> bool:
+    domain = normalize_domain(value)
+    if not domain or len(domain) > 253 or "." not in domain:
+        return False
+    if any(len(label) > 63 for label in domain.split(".")):
+        return False
+    return bool(re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", domain))
+
+
 def domain_matches_blocked(domain: str, blocked: str) -> bool:
     d = normalize_domain(domain)
     b = normalize_domain(blocked)
@@ -134,21 +143,6 @@ def _load_json_blocks() -> set[str]:
         except Exception:
             continue
 
-    user_block_dir = Path("data/user_blocklists")
-    try:
-        if user_block_dir.exists():
-            for path in user_block_dir.glob("*.json"):
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8", errors="ignore") or "[]")
-                    for value in _json_values(data):
-                        domain = normalize_domain(value)
-                        if domain:
-                            out.add(domain)
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
     return out
 
 
@@ -184,9 +178,68 @@ def load_main_blocked_domains() -> set[str]:
     return blocked
 
 
+def blocklist_owner_key(user_or_params: Any) -> str:
+    """Derive a stable owner key only from authenticated server-side data."""
+    if isinstance(user_or_params, dict):
+        values = (
+            user_or_params.get("email"),
+            user_or_params.get("owner_email"),
+            user_or_params.get("username"),
+            user_or_params.get("owner_username"),
+        )
+    else:
+        values = (
+            getattr(user_or_params, "email", ""),
+            getattr(user_or_params, "username", ""),
+        )
+    for value in values:
+        clean = str(value or "").strip().lower()
+        if clean:
+            return clean
+    return ""
+
+
+def load_user_blocked_domains(owner_key: str) -> set[str]:
+    try:
+        from agents.lead_blocked_domain_db_agent import list_user_blocked_domains
+
+        return {
+            domain
+            for value in list_user_blocked_domains(owner_key)
+            if (domain := normalize_domain(value))
+        }
+    except Exception:
+        return set()
+
+
+def load_effective_blocked_domains(owner_key: str = "") -> set[str]:
+    return load_main_blocked_domains() | load_user_blocked_domains(owner_key)
+
+
+def lead_matches_blocked_domains(lead: Any, blocked: set[str]) -> bool:
+    """Strict domain/subdomain matching with no title or substring fallback."""
+    if isinstance(lead, dict):
+        values = (
+            lead.get("domain"),
+            lead.get("url"),
+            lead.get("website"),
+            lead.get("link"),
+            lead.get("final_url"),
+            lead.get("contact_page_url"),
+        )
+    else:
+        values = (lead,)
+    return any(
+        domain_matches_blocked(value, blocked_domain)
+        for value in values
+        for blocked_domain in blocked
+        if value and blocked_domain
+    )
+
+
 def add_main_blocked_domain(value: Any, source: str = "manual") -> str:
     domain = normalize_domain(value)
-    if not domain:
+    if not is_valid_block_domain(domain):
         return ""
 
     # Write to DB if available.

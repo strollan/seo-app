@@ -1,6 +1,5 @@
 from agents.leadbot_block_gate import load_main_blocked_domains
 
-from agents.lead_blocklist_agent import apply_blocklist_to_job
 import inspect
 import json
 import re
@@ -147,12 +146,6 @@ def _leadbot_load_blocked_domains_for_gate() -> set[str]:
         Path("data/leadbot_blocklist_global.json"),
     ]
 
-    # Include per-user blocklists too. The job may not know the user yet,
-    # but this prevents already-saved user block files from being ignored.
-    user_block_dir = Path("data/user_blocklists")
-    if user_block_dir.exists():
-        json_paths.extend(sorted(user_block_dir.glob("*.json")))
-
     blocked = set()
 
     for path in txt_paths:
@@ -234,11 +227,23 @@ def _leadbot_apply_final_blocked_domain_gate(job) -> None:
     if not isinstance(leads, list):
         return
 
+    from agents.leadbot_block_gate import (
+        blocklist_owner_key,
+        lead_matches_blocked_domains,
+        load_effective_blocked_domains,
+    )
+    blocked_domains = load_effective_blocked_domains(
+        blocklist_owner_key(job.get("params") or {})
+    )
+
     kept = []
     removed = []
 
     for lead in leads:
-        if _leadbot_is_blocked_by_final_gate(lead):
+        if (
+            lead_matches_blocked_domains(lead, blocked_domains)
+            or _leadbot_is_blocked_by_final_gate(lead)
+        ):
             if isinstance(lead, dict):
                 removed.append(lead.get("domain") or lead.get("url") or "blocked")
             else:
@@ -270,7 +275,10 @@ def _leadbot_apply_final_blocked_domain_gate(job) -> None:
 _UNEXPECTED_KWARG_RE = re.compile(r"unexpected keyword argument '([^']+)'")
 
 
-def _resolve_find_leads_call(find_leads, *, industry, market, query, own_domain, limit, on_candidate):
+def _resolve_find_leads_call(
+    find_leads, *, industry, market, query, own_domain, limit, on_candidate,
+    blocked_domains=None,
+):
     """
     Decide how to call `find_leads`, defaulting to inspecting its signature
     up front rather than the risky pattern
@@ -302,10 +310,12 @@ def _resolve_find_leads_call(find_leads, *, industry, market, query, own_domain,
         has_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
         accepts_service_keyword = has_var_kwargs or "service_keyword" in params
         accepts_on_candidate = has_var_kwargs or "on_candidate" in params
+        accepts_blocked_domains = has_var_kwargs or "blocked_domains" in params
     except (TypeError, ValueError):
         # Signature couldn't be inspected at all (e.g. a builtin/C callable).
         accepts_service_keyword = False
         accepts_on_candidate = False
+        accepts_blocked_domains = False
 
     if not accepts_service_keyword:
         # Oldest supported shape: positional-only, no on_candidate support.
@@ -315,6 +325,8 @@ def _resolve_find_leads_call(find_leads, *, industry, market, query, own_domain,
         kwargs = dict(industry=industry, market=market, service_keyword=query, own_domain=own_domain, limit=limit)
         if include_on_candidate:
             kwargs["on_candidate"] = on_candidate
+        if accepts_blocked_domains:
+            kwargs["blocked_domains"] = blocked_domains
         return find_leads(**kwargs)
 
     def call():
@@ -332,7 +344,8 @@ def _resolve_find_leads_call(find_leads, *, industry, market, query, own_domain,
 
 
 def call_find_leads_with_timeout(
-    find_leads, *, industry, market, query, own_domain, limit, publish_callback=None
+    find_leads, *, industry, market, query, own_domain, limit, publish_callback=None,
+    blocked_domains=None,
 ):
     """
     Keep Live Scan from hanging forever on one SERP/search batch.
@@ -366,6 +379,7 @@ def call_find_leads_with_timeout(
         own_domain=own_domain,
         limit=limit,
         on_candidate=_on_candidate,
+        blocked_domains=blocked_domains,
     )
 
     def target():
@@ -437,7 +451,7 @@ def job_path(job_id):
 def write_job(job):
     # === CENTRAL BLOCKLIST GATE START ===
     try:
-        apply_blocklist_to_job(job)
+        _leadbot_apply_final_blocked_domain_gate(job)
     except Exception:
         pass
     # === CENTRAL BLOCKLIST GATE END ===
@@ -577,6 +591,16 @@ def lead_to_public(lead):
         "final_lead_score": str(lead.get("final_lead_score") or lead.get("score") or 0),
         "contact_flags": lead.get("contact_flags") or "",
     }
+
+
+def _leadbot_filter_new_export_rows(rows, blocked_domains):
+    """Final personal/global guard immediately before creating a new CSV."""
+    from agents.leadbot_block_gate import lead_matches_blocked_domains
+
+    return [
+        row for row in (rows or [])
+        if not lead_matches_blocked_domains(row, set(blocked_domains or ()))
+    ]
 
 
 
@@ -874,6 +898,12 @@ def run_job(job_id):
         market = str(params.get("market") or "Long Island").strip()
         keyword = str(params.get("keyword") or industry).strip()
         own_domain = str(params.get("own_domain") or "").strip()
+        from agents.leadbot_block_gate import (
+            blocklist_owner_key,
+            lead_matches_blocked_domains,
+            load_effective_blocked_domains,
+        )
+        blocked_domains = load_effective_blocked_domains(blocklist_owner_key(params))
 
         total_limit = clean_int(params.get("limit"), 50, 1, 60)
 
@@ -1044,6 +1074,11 @@ def run_job(job_id):
             if _leadbot_is_page_one_organic_result(lead):
                 return False
 
+            # Persistence/streaming guard in case a legacy or mocked finder
+            # bypasses the early pre-score block gate.
+            if lead_matches_blocked_domains(lead, blocked_domains):
+                return False
+
             if len(job["leads"]) >= total_limit:
                 return False
 
@@ -1173,6 +1208,7 @@ def run_job(job_id):
                     own_domain=own_domain,
                     limit=per_query_limit,
                     publish_callback=_stream_publish,
+                    blocked_domains=blocked_domains,
                 )
             finally:
                 # Covers the zero-candidates-this-query case too: guarantees
@@ -1312,6 +1348,8 @@ def run_job(job_id):
         job["message"] = "Scan complete. Building dashboard export..."
         job["updated_at"] = now_iso()
         write_job(job)
+
+        all_rows = _leadbot_filter_new_export_rows(all_rows, blocked_domains)
 
         if all_rows:
             try:

@@ -661,83 +661,6 @@ def leadbot_search_summary_row(rows, selected_name=""):
 
 
 def lead_cards(rows, selected_name="", csrf_token=""):
-    # === LEADBOT FILTER BLOCKED LEADS ON DASHBOARD RENDER START ===
-    # Block button must survive refresh:
-    # existing CSV rows stay on disk, but blocked domains should not render again.
-    try:
-        from agents.leadbot_block_gate import lead_is_main_blocked
-        import os
-        import re
-
-        def _leadbot_market_from_selected_name(value):
-            raw = os.path.basename(str(value or ""))
-            raw = re.sub(r"\.csv$", "", raw, flags=re.I)
-            raw = re.sub(r"^leads[_\s-]+", "", raw, flags=re.I)
-            raw = re.sub(r"[_-]+", " ", raw)
-            raw = re.sub(r"\b(desktop|enriched)\b", "", raw, flags=re.I)
-            raw = re.sub(r"\s+20\d{6}\s+\d{6}\s*$", "", raw)
-            raw = " ".join(raw.split()).strip()
-
-            states = {
-                "al","ak","az","ar","ca","co","ct","de","fl","ga","hi","ia","id","il","in",
-                "ks","ky","la","ma","md","me","mi","mn","mo","ms","mt","nc","nd","ne","nh",
-                "nj","nm","nv","ny","oh","ok","or","pa","ri","sc","sd","tn","tx","ut","va",
-                "vt","wa","wi","wv","wy","dc"
-            }
-
-            city_prefixes = {"santa","san","los","las","long","new","saint","st","fort","port","mount"}
-            city_suffixes = {
-                "beach","grove","springs","falls","city","heights","park","point","harbor",
-                "island","islands","bay","lake","lakes","ridge","valley","hills","gardens",
-                "creek","river","shore","shores","village","port","fort"
-            }
-
-            parts = raw.split()
-            state_index = -1
-            state = ""
-
-            for i in range(len(parts) - 1, -1, -1):
-                if parts[i].lower() in states:
-                    state_index = i
-                    state = parts[i].upper()
-                    break
-
-            if state_index < 1:
-                return ""
-
-            before_state = parts[:state_index]
-            last = before_state[-1].lower()
-            second_last = before_state[-2].lower() if len(before_state) >= 2 else ""
-
-            if (second_last in city_prefixes or last in city_suffixes) and len(before_state) >= 3:
-                city_words = before_state[-2:]
-            else:
-                city_words = before_state[-1:]
-
-            city = " ".join(w[:1].upper() + w[1:].lower() for w in city_words)
-            return (city + " " + state).strip()
-
-        render_market = _leadbot_market_from_selected_name(selected_name)
-
-        if rows:
-            filtered_rows = []
-            for row in rows:
-                check_row = row
-
-                if render_market and isinstance(row, dict):
-                    check_row = dict(row)
-                    if not (check_row.get("market") or check_row.get("location") or check_row.get("city") or check_row.get("region")):
-                        check_row["market"] = render_market
-
-                if not lead_is_main_blocked(check_row):
-                    filtered_rows.append(row)
-
-            rows = filtered_rows
-
-    except Exception as exc:
-        print(f"LEADBOT DASHBOARD BLOCK FILTER ERROR: {exc}", flush=True)
-    # === LEADBOT FILTER BLOCKED LEADS ON DASHBOARD RENDER END ===
-
     if not rows:
         return '<div class="empty">No leads found yet. Start a scan or select an export.</div>'
 
@@ -1064,6 +987,70 @@ def _leadbot_remove_advanced_scan_controls_for_non_admin(page, current_user=None
 
     return text
 # === LEADBOT ADVANCED SCAN CONTROLS ADMIN FILTER END ===
+
+
+def render_blocklist_panel(current_user=None, csrf_token=""):
+    if not current_user:
+        return ""
+
+    from agents.leadbot_block_gate import (
+        DEFAULT_HARD_BLOCKS,
+        blocklist_owner_key,
+        load_main_blocked_domains,
+        load_user_blocked_domains,
+    )
+
+    token = html.escape(str(csrf_token or ""), quote=True)
+    personal = sorted(load_user_blocked_domains(blocklist_owner_key(current_user)))
+
+    def item_rows(domains, action):
+        if not domains:
+            return '<p class="help">No blocked domains yet.</p>'
+        return '<div class="leadbot-blocklist-items">' + "".join(
+            '<div class="leadbot-blocklist-item">'
+            f"<span>{html.escape(domain)}</span>"
+            f'<form action="{action}" method="post">'
+            f'<input type="hidden" name="csrf_token" value="{token}">'
+            f'<input type="hidden" name="domain" value="{html.escape(domain, quote=True)}">'
+            '<button type="submit" class="leadbot-blocklist-remove">Unblock</button>'
+            "</form></div>"
+            for domain in domains
+        ) + "</div>"
+
+    personal_html = f"""
+    <div class="leadbot-block-domains-box">
+      <h2>Your Blocked Domains</h2>
+      <form action="/lead-bot/blocklist/user/add" method="post">
+        <input type="hidden" name="csrf_token" value="{token}">
+        <label for="leadbotPersonalBlockDomain">Domain or URL</label>
+        <input id="leadbotPersonalBlockDomain" name="domain" placeholder="example.com" required>
+        <button type="submit" class="leadbot-secondary-btn">Block Domain</button>
+      </form>
+      {item_rows(personal, "/lead-bot/blocklist/user/remove")}
+      <p class="help">These domains are excluded only from your future scans.</p>
+    </div>
+    """
+
+    if _leadbot_user_role(current_user) != "admin":
+        return personal_html
+
+    fixed = {str(item).lower() for item in DEFAULT_HARD_BLOCKS}
+    global_domains = sorted(
+        domain for domain in load_main_blocked_domains() if domain not in fixed
+    )
+    return personal_html + f"""
+    <div class="leadbot-block-domains-box leadbot-master-blocklist">
+      <h2>Master Blocklist</h2>
+      <form action="/lead-bot/blocklist/global/add" method="post">
+        <input type="hidden" name="csrf_token" value="{token}">
+        <label for="leadbotGlobalBlockDomain">Domain or URL</label>
+        <input id="leadbotGlobalBlockDomain" name="domain" placeholder="example.com" required>
+        <button type="submit" class="leadbot-secondary-btn">Add Global Block</button>
+      </form>
+      {item_rows(global_domains, "/lead-bot/blocklist/global/remove")}
+      <p class="help">Master entries are excluded from every user's future scans.</p>
+    </div>
+    """
 
 
 def render_lead_dashboard(file="", current_user=None, csrf_token=""):
@@ -2108,6 +2095,33 @@ html {
     margin-top: 6px !important;
     font-size: 10px !important;
     line-height: 1.25 !important;
+}
+
+.leadbot-blocklist-items {
+    display: grid;
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.leadbot-blocklist-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    overflow-wrap: anywhere;
+}
+
+.leadbot-blocklist-item form {
+    margin: 0;
+}
+
+.leadbot-blocklist-remove {
+    min-height: 36px;
+    margin: 0;
+    padding: 7px 9px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 11px;
 }
 
 /* === LEADBOT SIDEBAR SPACING + BLOCK DOMAIN SIZE END === */
@@ -3791,15 +3805,7 @@ document.addEventListener("DOMContentLoaded", function () {
 </div>
 </div>
 
-            <div class="leadbot-block-domains-box">
-                <h2>Blocked Domains</h2>
-                <form action="/lead-bot/block-domains" method="get">
-                    <label>Domains or URLs</label>
-                    <textarea name="domains" placeholder="weedmaps.com\nhttps://abc7ny.com/page\nwww.nypost.com"></textarea>
-                    <button type="submit" class="leadbot-secondary-btn">Add to Blocked Domains</button>
-                </form>
-                <p class="help">Paste a domain or full URL. One per line works too.</p>
-            </div>
+            __BLOCKLIST_PANEL__
 
 </aside>
 
@@ -4822,10 +4828,8 @@ document.addEventListener("DOMContentLoaded", function () {
                 block.className = "lead-block-one-js";
                 block.title = "Block domain";
                 block.textContent = "Block";
-                block.href = "/lead-bot/block-domains?domains=" + encodeURIComponent(domain);
-                block.onclick = function () {
-                    return confirm("Block " + domain + " from future Lead Finder scans?");
-                };
+                block.href = "/lead-bot/blocklist/user/add";
+                block.dataset.domain = domain;
                 card.appendChild(block);
             }
         });
@@ -4905,8 +4909,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const oldText = btn.textContent;
         const href = btn.getAttribute("href");
+        const domain = btn.dataset.domain || "";
 
-        if (!href) return;
+        if (!href || !domain) return;
+        if (!window.confirm("Don't show " + domain + " in your future Lead Finder scans?")) return;
 
         btn.dataset.busy = "1";
         btn.textContent = "Blocked";
@@ -4914,11 +4920,16 @@ document.addEventListener("DOMContentLoaded", function () {
         btn.style.pointerEvents = "none";
 
         fetch(href, {
-            method: "GET",
+            method: "POST",
             cache: "no-store",
-            credentials: "same-origin"
+            credentials: "same-origin",
+            body: new URLSearchParams({
+                domain: domain,
+                csrf_token: window.LEADBOT_CSRF_TOKEN || ""
+            })
         })
-        .then(function () {
+        .then(function (response) {
+            if (!response.ok) throw new Error("Block request failed");
             const card = closestLeadCard(btn);
 
             if (card) {
@@ -9142,6 +9153,7 @@ body.leadbot-live-page button[data-action="block"] {
 
     page = page.replace("__SEO_META__", seo_meta.render_seo_meta_html(seo_meta.LEAD_FINDER_PAGE))
     page = page.replace("__FILES__", "".join(file_links) if file_links else '<div class="empty">No exports yet.</div>')
+    page = page.replace("__BLOCKLIST_PANEL__", render_blocklist_panel(current_user, csrf_token))
     page = page.replace("__SELECTED__", html.escape(selected_name))
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)

@@ -61,6 +61,22 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_leadbot_blocked_domains_active ON leadbot_blocked_domains(is_active)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS leadbot_user_blocked_domains (
+            owner_key TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (owner_key, domain)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_leadbot_user_blocks_active "
+        "ON leadbot_user_blocked_domains(owner_key, is_active)"
+    )
     conn.commit()
 
 
@@ -196,3 +212,73 @@ def is_blocked_domain(domain: str) -> bool:
         ).fetchone()
 
     return bool(row and int(row["is_active"] or 0) == 1)
+
+
+def clean_owner_key(value: str) -> str:
+    return str(value or "").strip().lower()[:320]
+
+
+def add_user_blocked_domain(owner_key: str, domain: str) -> bool:
+    owner = clean_owner_key(owner_key)
+    clean = clean_domain(domain)
+    if not owner or not clean:
+        return False
+    current = now_iso()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO leadbot_user_blocked_domains
+                (owner_key, domain, is_active, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT(owner_key, domain) DO UPDATE SET
+                is_active = 1,
+                updated_at = excluded.updated_at
+            """,
+            (owner, clean, current, current),
+        )
+        conn.commit()
+    return True
+
+
+def remove_user_blocked_domain(owner_key: str, domain: str) -> bool:
+    owner = clean_owner_key(owner_key)
+    clean = clean_domain(domain)
+    if not owner or not clean:
+        return False
+    with connect() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE leadbot_user_blocked_domains
+            SET is_active = 0, updated_at = ?
+            WHERE owner_key = ? AND domain = ? AND is_active = 1
+            """,
+            (now_iso(), owner, clean),
+        )
+        conn.commit()
+    return cursor.rowcount > 0
+
+
+def list_user_blocked_domains(owner_key: str, active_only: bool = True) -> list[str]:
+    owner = clean_owner_key(owner_key)
+    if not owner:
+        return []
+    with connect() as conn:
+        if active_only:
+            rows = conn.execute(
+                """
+                SELECT domain FROM leadbot_user_blocked_domains
+                WHERE owner_key = ? AND is_active = 1
+                ORDER BY domain
+                """,
+                (owner,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT domain FROM leadbot_user_blocked_domains
+                WHERE owner_key = ?
+                ORDER BY domain
+                """,
+                (owner,),
+            ).fetchall()
+    return [str(row["domain"]) for row in rows]

@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from business_competitor_finder import find_business_competitors
 from agents.contact_extraction_agent import extract_contact_from_url
 from agents.lead_blacklist_agent import is_blocked_lead_domain
+from agents.leadbot_block_gate import lead_matches_blocked_domains
 
 
 
@@ -413,7 +414,15 @@ def _leadbot_is_page_one_organic_result(item):
     return 1 <= position <= 10
 
 
-def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10, on_candidate=None):
+def find_leads(
+    industry,
+    market,
+    service_keyword=None,
+    own_domain=None,
+    limit=10,
+    on_candidate=None,
+    blocked_domains=None,
+):
     """
     on_candidate: optional callback invoked synchronously, once, for each
     candidate the instant it clears the same scoring/dedupe/threshold gate
@@ -438,6 +447,7 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
 
     leads = []
     seen_domains = set()
+    blocked_domains = set(blocked_domains or ())
 
     def _process_item(item):
         """Score one raw SERP/Places item; return the finalized lead dict if
@@ -450,6 +460,11 @@ def find_leads(industry, market, service_keyword=None, own_domain=None, limit=10
         # contact crawling so they cannot consume downstream work, stream,
         # count toward the quota, or reach a new export.
         if _leadbot_is_page_one_organic_result(item):
+            return None
+
+        # Personal/global blocks are cheap domain checks. Reject before
+        # scoring and contact crawling.
+        if blocked_domains and lead_matches_blocked_domains(item, blocked_domains):
             return None
 
         scored = score_lead(item, industry, market)
