@@ -95,11 +95,15 @@ need to roll back.
    and is a git repo; production venv python exists; systemd unit is
    loaded; production tracked tree is clean (stops and reports the modified
    files if not — never overwrites them).
-4. **Production backup** — `mkdir -p /var/www/leadmeleads-backups`; copy
-   `data/app_auth.db` to a timestamped file; verify the copy's size and
-   (when `sha256sum` is available) checksum match the source. If the DB
-   exists but the backup can't be verified, deployment stops before
-   touching anything else.
+4. **Production backup** — create one timestamped snapshot directory under
+   `/var/www/leadmeleads-backups`. Live SQLite databases are copied with
+   Python's online `sqlite3.Connection.backup()` API and validated with
+   `PRAGMA integrity_check`; normal files/directories are copied without
+   following symlinks and verified. A manifest records the production commit,
+   backed-up paths, optional paths that were not present, sizes, hashes, and
+   SQLite integrity results. Any required-source or validation failure stops
+   before production pull/restart. Only after the new manifest is verified
+   does retention prune old verified timestamp-format directories.
 5. **Remote deploy** — `git fetch origin` then `git pull --ff-only origin
    main` (never `reset --hard`, never a forced checkout). Verifies the
    deployed HEAD exactly equals `EXPECTED_COMMIT` before continuing.
@@ -146,8 +150,9 @@ need to roll back.
 - **Tracked** modifications on the production checkout (untracked files
   there are reported but do not block — a fast-forward `git pull` doesn't
   care about untracked files).
-- Production auth DB exists but its backup can't be created or verified
-  (size or checksum mismatch).
+- Production `data/app_auth.db` is missing, or any included production-data
+  source cannot be backed up or verified.
+- A symlink is encountered in a protected user-data tree.
 - Remote fetch/pull failure, or a fast-forward isn't possible.
 - Deployed HEAD doesn't exactly match `EXPECTED_COMMIT`.
 - Remote compile failure (service is **not** restarted in this case).
@@ -169,12 +174,48 @@ blocks by itself, and is never silently included in a commit/push.
 
 ## Backups
 
-- Location: `/var/www/leadmeleads-backups/app_auth-YYYYMMDD-HHMMSS.db`.
-- Verified by comparing file size to the source, and by SHA-256 when
-  `sha256sum` is available on the box.
-- If `data/app_auth.db` doesn't exist on production at all, backup is
-  skipped with a warning (nothing to back up) rather than treated as a
-  failure.
+- Location: `/var/www/leadmeleads-backups/YYYYMMDD-HHMMSS/`.
+- `data/app_auth.db` is mandatory. A missing auth database stops deployment.
+- Reports/history, saved reports, exports and ownership metadata are optional
+  only because a new installation may not have created them yet. If present,
+  a failed copy or validation stops deployment.
+- Active SQLite state includes the auth database, business/contact cache,
+  blocklist database, detail index, and guest-trial database.
+- Active non-SQLite state includes report history/snapshots, export CSVs and
+  sidecars, export ownership metadata, custom location settings, and existing
+  backward-compatible blocklist files.
+- `data/lead_jobs/` is legacy/unused. `data/leadbot_live_jobs/`, query outcome
+  logs, `seen_leads.json`, caches, virtual environments, and `.env` are
+  ephemeral, reconstructible, or secret-bearing and are excluded.
+- `backup-manifest.json` records only operational metadata; it never contains
+  environment values, passwords, tokens, or database contents.
+- Symlinks in `exports/`, `reports/saved/`, or `settings_data/` halt backup.
+- Retention keeps the latest 10 verified timestamp-format backup directories.
+  Legacy backup files and unverified/incomplete directories are not pruned.
+
+## Manual data restore
+
+There is intentionally no automatic restore command. First select a verified
+timestamp directory, inspect `backup-manifest.json`, make a separate copy of
+the current production data, and stop `leadmeleads` before replacing live
+files. Preserve the existing production ownership and permissions, then start
+the service and run status/smoke checks.
+
+1. **Authentication database:** restore
+   `<backup>/data/app_auth.db` to
+   `/var/www/leadmeleads/data/app_auth.db`, then run
+   `PRAGMA integrity_check` against the restored database before starting the
+   service.
+2. **Compare history:** restore `<backup>/reports/history.json` and
+   `<backup>/reports/saved/` together. Do not mix an index from one snapshot
+   with saved HTML reports from another.
+3. **Lead Finder exports:** restore
+   `<backup>/data/leadbot_export_owners.json` and `<backup>/exports/`
+   together so ownership metadata continues to match the CSV files and
+   sidecars.
+
+Restore only the data family required for the incident. Application-code
+rollback remains a separate Git operation described by `--rollback-info`.
 
 ## Failure behavior
 

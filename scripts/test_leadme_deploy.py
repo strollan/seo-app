@@ -56,7 +56,7 @@ class FakeRouter:
                 return result
         return FakeResult(1, "", f"no fake rule for: {args}")
 
-    def run_remote(self, remote_cmd, timeout=None):
+    def run_remote(self, remote_cmd, timeout=None, input_text=None):
         self.remote_calls.append(remote_cmd)
         for matcher, result in self.remote_rules:
             if matcher(remote_cmd):

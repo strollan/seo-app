@@ -17,11 +17,16 @@ Design notes:
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import functools
+import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -123,6 +128,38 @@ JOURNAL_ERROR_PATTERNS = [
 
 STATE_DIR_DEFAULT = Path.home() / ".local" / "state" / "leadme-deploy"
 STATE_FILE_NAME = "state.json"
+
+BACKUP_RETENTION_COUNT = 10
+BACKUP_DIR_PATTERN = re.compile(r"^\d{8}-\d{6}$")
+
+# app_auth.db is the only always-present source. Every other item is optional
+# because a new installation may legitimately have no reports, exports,
+# blocklist entries, cache, trial visitors, or custom locations yet. Once an
+# optional source exists, any failure to snapshot or validate it is fatal.
+BACKUP_ITEMS = (
+    {"path": "data/app_auth.db", "type": "sqlite", "required": True},
+    {"path": "reports/history.json", "type": "file", "required": False},
+    {"path": "reports/saved", "type": "directory", "required": False, "reject_symlinks": True},
+    {"path": "data/leadbot_export_owners.json", "type": "file", "required": False},
+    {"path": "exports", "type": "directory", "required": False, "reject_symlinks": True},
+    {"path": "data/leadbot_businesses.db", "type": "sqlite", "required": False},
+    {"path": "data/leadbot_blocked_domains.sqlite", "type": "sqlite", "required": False},
+    {"path": "data/leadbot_detail_index.sqlite", "type": "sqlite", "required": False},
+    {"path": "data/leadbot_trial.db", "type": "sqlite", "required": False},
+    {"path": "settings_data", "type": "directory", "required": False, "reject_symlinks": True},
+    # Still read by leadbot_block_gate.py / lead_finding_agent.py for
+    # backward-compatible filtering.
+    {"path": "data/leadbot_blocklist.txt", "type": "file", "required": False},
+    {"path": "data/leadbot_fast_blocklist.json", "type": "file", "required": False},
+    {"path": "data/leadbot_blocklist_global.json", "type": "file", "required": False},
+    {"path": "data/leadbot_blocked_domains.txt", "type": "file", "required": False},
+    {"path": "data/leadbot_blocked_domains_extracted.txt", "type": "file", "required": False},
+)
+
+BACKUP_EXCLUDED_NAMES = {
+    "__pycache__",
+    ".pytest_cache",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +272,7 @@ def ssh_base_args():
     ]
 
 
-def run_remote(remote_cmd, timeout=SSH_COMMAND_TIMEOUT):
+def run_remote(remote_cmd, timeout=SSH_COMMAND_TIMEOUT, input_text=None):
     """Run remote_cmd (a single shell string executed on the remote host).
 
     remote_cmd must only ever be built from static, developer-controlled
@@ -243,7 +280,7 @@ def run_remote(remote_cmd, timeout=SSH_COMMAND_TIMEOUT):
     user input.
     """
     args = ssh_base_args() + [remote_cmd]
-    return run_local(args, timeout=timeout)
+    return run_local(args, timeout=timeout, input_text=input_text)
 
 
 def q(value):
@@ -257,6 +294,307 @@ def is_valid_sha(value):
 
 def utc_now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# Transactionally consistent production-data backups
+# ---------------------------------------------------------------------------
+
+class BackupError(RuntimeError):
+    pass
+
+
+def _path_is_within(path, parent):
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _sqlite_integrity(path):
+    uri = path.resolve().as_uri() + "?mode=ro"
+    with contextlib.closing(sqlite3.connect(uri, uri=True)) as conn:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+    return bool(rows) and all(str(row[0]).lower() == "ok" for row in rows)
+
+
+def backup_sqlite(source, destination):
+    """Create and validate an online SQLite snapshot without stopping service."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_uri = source.resolve().as_uri() + "?mode=ro"
+    try:
+        with contextlib.closing(sqlite3.connect(source_uri, uri=True)) as source_conn:
+            with contextlib.closing(sqlite3.connect(destination)) as destination_conn:
+                source_conn.backup(destination_conn)
+    except (OSError, sqlite3.Error) as exc:
+        raise BackupError(f"SQLite backup failed for {source.name}: {exc}") from exc
+
+    if not destination.is_file() or destination.stat().st_size <= 0:
+        raise BackupError(f"SQLite backup is empty: {source.name}")
+    try:
+        integrity_ok = _sqlite_integrity(destination)
+    except (OSError, sqlite3.Error) as exc:
+        raise BackupError(f"SQLite integrity check failed for {source.name}: {exc}") from exc
+    if not integrity_ok:
+        raise BackupError(f"SQLite integrity_check did not return ok: {source.name}")
+
+    return {
+        "size": destination.stat().st_size,
+        "sha256": _sha256_file(destination),
+        "sqlite_integrity": "ok",
+    }
+
+
+def _is_backup_temp_name(name):
+    lowered = name.lower()
+    return (
+        name in BACKUP_EXCLUDED_NAMES
+        or lowered.endswith(".tmp")
+        or lowered.endswith(".temp")
+        or lowered.startswith(".tmp")
+    )
+
+
+def backup_file(source, destination):
+    if source.is_symlink():
+        raise BackupError(f"unexpected symlink: {source}")
+    if not source.is_file():
+        raise BackupError(f"expected regular file: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination, follow_symlinks=False)
+    if not destination.is_file() or destination.stat().st_size != source.stat().st_size:
+        raise BackupError(f"file backup verification failed: {source.name}")
+    return {
+        "size": destination.stat().st_size,
+        "sha256": _sha256_file(destination),
+    }
+
+
+def backup_directory(source, destination, reject_symlinks=True):
+    if source.is_symlink():
+        raise BackupError(f"unexpected symlink: {source}")
+    if not source.is_dir():
+        raise BackupError(f"expected directory: {source}")
+
+    source_device = source.stat().st_dev
+    destination.mkdir(parents=True, exist_ok=False)
+    copied_files = []
+
+    for root, dirnames, filenames in os.walk(source, topdown=True, followlinks=False):
+        root_path = Path(root)
+        relative_root = root_path.relative_to(source)
+
+        for name in list(dirnames):
+            candidate = root_path / name
+            if candidate.is_symlink():
+                if reject_symlinks:
+                    raise BackupError(f"unexpected symlink in protected backup tree: {candidate}")
+                dirnames.remove(name)
+                continue
+            if _is_backup_temp_name(name):
+                dirnames.remove(name)
+                continue
+            if candidate.stat().st_dev != source_device:
+                raise BackupError(f"refusing to cross filesystem boundary: {candidate}")
+
+        target_root = destination / relative_root
+        target_root.mkdir(parents=True, exist_ok=True)
+
+        for name in filenames:
+            candidate = root_path / name
+            if candidate.is_symlink():
+                if reject_symlinks:
+                    raise BackupError(f"unexpected symlink in protected backup tree: {candidate}")
+                continue
+            if _is_backup_temp_name(name):
+                continue
+            if candidate.stat().st_dev != source_device:
+                raise BackupError(f"refusing to cross filesystem boundary: {candidate}")
+            target = target_root / name
+            shutil.copy2(candidate, target, follow_symlinks=False)
+            if target.stat().st_size != candidate.stat().st_size:
+                raise BackupError(f"directory copy verification failed: {candidate}")
+            copied_files.append(target.relative_to(destination).as_posix())
+
+    # Preserve the root directory's useful mode/timestamps after copying.
+    shutil.copystat(source, destination, follow_symlinks=False)
+    for relative in copied_files:
+        if not (destination / relative).is_file():
+            raise BackupError(f"directory backup missing copied file: {relative}")
+
+    return {
+        "size": sum((destination / relative).stat().st_size for relative in copied_files),
+        "file_count": len(copied_files),
+    }
+
+
+def prune_verified_backups(backups_root, keep=BACKUP_RETENTION_COUNT):
+    """Remove only old verified timestamp-format directories."""
+    verified = []
+    if not backups_root.exists():
+        return []
+    for candidate in backups_root.iterdir():
+        if (
+            not candidate.is_dir()
+            or candidate.is_symlink()
+            or not BACKUP_DIR_PATTERN.fullmatch(candidate.name)
+        ):
+            continue
+        manifest_path = candidate / "backup-manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if manifest.get("verified") is True:
+            verified.append(candidate)
+
+    verified.sort(key=lambda path: path.name, reverse=True)
+    removed = []
+    for candidate in verified[int(keep):]:
+        if not _path_is_within(candidate, backups_root):
+            raise BackupError(f"unsafe retention target: {candidate}")
+        shutil.rmtree(candidate)
+        removed.append(candidate.name)
+    return removed
+
+
+def create_backup_snapshot(
+    app_root,
+    backups_root,
+    production_commit,
+    timestamp=None,
+    items=BACKUP_ITEMS,
+    retention_count=BACKUP_RETENTION_COUNT,
+):
+    app_root = Path(app_root).resolve()
+    backups_root = Path(backups_root).resolve()
+    timestamp = timestamp or datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    if not BACKUP_DIR_PATTERN.fullmatch(timestamp):
+        raise BackupError("backup timestamp must use YYYYMMDD-HHMMSS")
+    if _path_is_within(backups_root, app_root):
+        raise BackupError("backup destination must be outside the application tree")
+    if not app_root.is_dir():
+        raise BackupError("application root is missing")
+
+    backups_root.mkdir(parents=True, exist_ok=True)
+    backup_dir = backups_root / timestamp
+    if backup_dir.exists() or backup_dir.is_symlink():
+        raise BackupError(f"backup destination already exists: {backup_dir}")
+    backup_dir.mkdir(mode=0o700)
+
+    manifest = {
+        "timestamp": timestamp,
+        "production_commit": str(production_commit or ""),
+        "verified": False,
+        "items": [],
+        "not_present": [],
+    }
+
+    try:
+        for spec in items:
+            relative = str(spec["path"])
+            source = app_root / relative
+            destination = backup_dir / relative
+            required = bool(spec.get("required"))
+            item_type = spec["type"]
+
+            if source.is_symlink():
+                raise BackupError(f"unexpected symlink source: {relative}")
+            if not source.exists():
+                if required:
+                    raise BackupError(f"required backup source is missing: {relative}")
+                manifest["not_present"].append(
+                    {"path": relative, "type": item_type, "reason": "not present"}
+                )
+                continue
+
+            if item_type == "sqlite":
+                details = backup_sqlite(source, destination)
+            elif item_type == "file":
+                details = backup_file(source, destination)
+            elif item_type == "directory":
+                details = backup_directory(
+                    source,
+                    destination,
+                    reject_symlinks=bool(spec.get("reject_symlinks", True)),
+                )
+            else:
+                raise BackupError(f"unknown backup item type: {item_type}")
+
+            manifest["items"].append(
+                {"path": relative, "type": item_type, **details}
+            )
+
+        manifest["verified"] = True
+        manifest_path = backup_dir / "backup-manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if not manifest_path.is_file() or manifest_path.stat().st_size <= 0:
+            raise BackupError("backup manifest verification failed")
+
+        # Retention is deliberately last: no prior verified backup is touched
+        # until the new snapshot and manifest are complete.
+        removed = prune_verified_backups(backups_root, keep=retention_count)
+        return {
+            "ok": True,
+            "backup_dir": str(backup_dir),
+            "manifest": str(manifest_path),
+            "backed_up": [item["path"] for item in manifest["items"]],
+            "not_present": [item["path"] for item in manifest["not_present"]],
+            "retention_removed": removed,
+        }
+    except Exception:
+        # Leave the incomplete timestamp directory for diagnosis. It has no
+        # verified manifest and is therefore never a retention target.
+        raise
+
+
+def _remote_backup_input(production_commit, timestamp):
+    """Run this checked-in module remotely without relying on the old copy."""
+    source = Path(__file__).read_bytes()
+    encoded = base64.b64encode(source).decode("ascii")
+    loader = f"""
+import base64
+import json
+namespace = {{
+    "__name__": "leadme_deploy_remote",
+    "__file__": {f"{PROD_APP_PATH}/scripts/leadme_deploy.py"!r},
+}}
+source = base64.b64decode({encoded!r})
+exec(compile(source, "leadme_deploy_remote.py", "exec"), namespace)
+try:
+    result = namespace["create_backup_snapshot"](
+        {PROD_APP_PATH!r},
+        {PROD_BACKUPS_DIR!r},
+        {str(production_commit)!r},
+        timestamp={str(timestamp)!r},
+    )
+except Exception as exc:
+    print(json.dumps({{"ok": False, "error": str(exc)}}))
+    raise SystemExit(1)
+print(json.dumps(result, sort_keys=True))
+"""
+    return loader
+
+
+def run_remote_backup(production_commit, timestamp):
+    return run_remote(
+        f"{q(PROD_VENV_PYTHON)} -",
+        timeout=300,
+        input_text=_remote_backup_input(production_commit, timestamp),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +889,11 @@ def remote_db_size(path=PROD_DB_PATH):
 
 
 def remote_backups_listing(backups_dir=PROD_BACKUPS_DIR, limit=5):
-    res = run_remote(f"ls -1t {q(backups_dir)} 2>/dev/null | head -{int(limit)}")
+    res = run_remote(
+        f"find {q(backups_dir)} -mindepth 2 -maxdepth 2 "
+        f"-path '*/backup-manifest.json' -type f -printf '%h\\n' 2>/dev/null "
+        f"| sort -r | head -{int(limit)}"
+    )
     if not res.ok:
         return []
     return [line for line in res.stdout.splitlines() if line.strip()]
@@ -942,9 +1284,16 @@ def cmd_dry_run(args):
 
     r.section("phase 4 — production backup")
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    r.note(f"  would run: mkdir -p {PROD_BACKUPS_DIR}")
-    r.note(f"  would run: cp {PROD_DB_PATH} {PROD_BACKUPS_DIR}/app_auth-{ts}.db")
-    r.note("  would verify backup size and sha256 match the source")
+    backup_dir = f"{PROD_BACKUPS_DIR}/{ts}"
+    r.note(f"  would create verified snapshot directory: {backup_dir}")
+    for spec in BACKUP_ITEMS:
+        requirement = "required" if spec.get("required") else "optional; record not present"
+        validation = "online SQLite backup + integrity_check" if spec["type"] == "sqlite" else "safe copy + verification"
+        r.note(f"  would back up: {spec['path']} ({spec['type']}; {requirement}; {validation})")
+    r.note("  would reject symlinks in exports/, reports/saved/, and settings_data/")
+    r.note(f"  would write: {backup_dir}/backup-manifest.json")
+    r.note(f"  after verification only, would keep the latest {BACKUP_RETENTION_COUNT} verified timestamped backups")
+    r.note("  would leave legacy backup files and unverified directories untouched")
 
     r.section("phase 5 — remote deploy")
     r.note(f"  would run: cd {PROD_APP_PATH} && git fetch origin")
@@ -999,7 +1348,7 @@ def cmd_rollback_info(args):
         current_commit = remote_head_sha()
         r.note(f"  current production commit:  {current_commit or 'unknown'}")
         backups = remote_backups_listing()
-        r.note(f"  latest known DB backups:    {', '.join(backups) if backups else 'none found'}")
+        r.note(f"  latest verified backup dirs: {', '.join(backups) if backups else 'none found'}")
 
     target_commit = prev_commit or "<previous commit — not recorded, inspect journal/backups>"
 
@@ -1008,12 +1357,14 @@ def cmd_rollback_info(args):
     r.note(f"  2. cd {PROD_APP_PATH} && git fetch origin")
     r.note(f"  3. git checkout {target_commit} -- .   # or: git reset --hard {target_commit}")
     if recorded_backup:
-        r.note(f"  4. cp {recorded_backup} {PROD_DB_PATH}")
+        r.note(f"  4. inspect {recorded_backup}/backup-manifest.json")
+        r.note(f"  5. restore app_auth.db from {recorded_backup}/data/app_auth.db if data rollback is required")
     else:
-        r.note(f"  4. cp {PROD_BACKUPS_DIR}/<chosen-backup>.db {PROD_DB_PATH}")
-    r.note(f"  5. systemctl restart {PROD_SERVICE}")
-    r.note(f"  6. systemctl is-active {PROD_SERVICE}")
-    r.note(f"  7. curl -I {LIVE_SITE}/")
+        r.note(f"  4. inspect {PROD_BACKUPS_DIR}/<timestamp>/backup-manifest.json")
+        r.note(f"  5. restore app_auth.db from the chosen directory if data rollback is required")
+    r.note(f"  6. systemctl restart {PROD_SERVICE}")
+    r.note(f"  7. systemctl is-active {PROD_SERVICE}")
+    r.note(f"  8. curl -I {LIVE_SITE}/")
 
     r.note()
     r.note("This mode never executes the rollback. Run the commands above manually if needed.")
@@ -1168,35 +1519,37 @@ def cmd_deploy(args):
 
         # --- Phase 4: production backup --------------------------------------------------
         r.section("backup")
-        db_size = remote_db_size()
-        if db_size is not None:
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            backup_path = f"{PROD_BACKUPS_DIR}/app_auth-{ts}.db"
-            mkdir_res = run_remote(f"mkdir -p {q(PROD_BACKUPS_DIR)}")
-            if not r.step("backup directory ready", mkdir_res.ok, mkdir_res.stderr.strip()):
-                raise DeployHalt("could not create production backup directory", ctx)
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_res = run_remote_backup(pre_deploy_remote_sha or expected_commit, ts)
+        backup_result = {}
+        if backup_res.stdout.strip():
+            try:
+                backup_result = json.loads(backup_res.stdout.strip().splitlines()[-1])
+            except ValueError:
+                backup_result = {}
+        backup_ok = backup_res.ok and backup_result.get("ok") is True
+        backup_detail = (
+            backup_result.get("error")
+            or backup_res.stderr.strip()
+            or "backup command returned invalid output"
+        )
+        if not r.step("verified production data snapshot", backup_ok, backup_detail if not backup_ok else ""):
+            raise DeployHalt(
+                "production data backup or validation failed — stopping before deploy",
+                ctx,
+            )
 
-            cp_res = run_remote(f"cp -p {q(PROD_DB_PATH)} {q(backup_path)}")
-            if not r.step("db backup copied", cp_res.ok, cp_res.stderr.strip()):
-                raise DeployHalt("production DB backup failed", ctx)
-
-            backup_size = remote_db_size(backup_path)
-            size_match = backup_size == db_size
-            if not r.step("backup size matches source", size_match, f"source={db_size} backup={backup_size}"):
-                raise DeployHalt("backup size does not match source DB — stopping before deploy", ctx)
-
-            src_hash = remote_sha256(PROD_DB_PATH)
-            backup_hash = remote_sha256(backup_path)
-            if src_hash and backup_hash:
-                if not r.step("backup sha256 matches source", src_hash == backup_hash):
-                    raise DeployHalt("backup checksum mismatch — stopping before deploy", ctx)
-            else:
-                r.warn("sha256 verification skipped", "sha256sum unavailable on remote")
-
-            ctx["backup_path"] = backup_path
-            r.note(f"  backup: {backup_path}")
-        else:
-            r.warn("no production auth DB found to back up", PROD_DB_PATH)
+        ctx["backup_path"] = backup_result["backup_dir"]
+        r.note(f"  backup: {ctx['backup_path']}")
+        r.note(f"  manifest: {backup_result.get('manifest', 'unknown')}")
+        backed_up = backup_result.get("backed_up") or []
+        not_present = backup_result.get("not_present") or []
+        removed = backup_result.get("retention_removed") or []
+        r.note(f"  backed up: {', '.join(backed_up) if backed_up else 'none'}")
+        if not_present:
+            r.note(f"  optional not present: {', '.join(not_present)}")
+        if removed:
+            r.note(f"  retention removed: {', '.join(removed)}")
 
         # --- Phase 5: remote deploy --------------------------------------------------------
         r.section("deploy")
@@ -1265,7 +1618,7 @@ def cmd_deploy(args):
         r.note(f"Previous commit: {pre_deploy_remote_sha}")
         r.note(f"Current commit:  {deployed_sha}")
         if ctx["backup_path"]:
-            r.note(f"DB backup: {ctx['backup_path']}")
+            r.note(f"Data backup: {ctx['backup_path']}")
         r.note()
         r.note("Rollback info:")
         r.note("leadme-deploy --rollback-info")
