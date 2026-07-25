@@ -31,6 +31,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/how-to-find-local-leads",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
+    "/resources",
 )
 
 # Static assets are served from here and must never be noindexed or
@@ -144,6 +145,15 @@ LEAD_LIST_VS_FINDER_PAGE = SeoPage(
         "targeting, contact data, research time, and prospect relevance."
     ),
     canonical_path="/lead-list-vs-lead-finder",
+)
+
+RESOURCES_PAGE = SeoPage(
+    title="Lead Generation Resources | LeadMeLeads",
+    description=(
+        "Explore practical guides to finding, reviewing, and organizing local "
+        "business prospects for thoughtful outreach."
+    ),
+    canonical_path="/resources",
 )
 
 # Single source of truth for the /what-makes-a-good-lead FAQ: the same

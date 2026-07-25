@@ -2209,6 +2209,20 @@ async def lead_list_vs_finder_page(request: Request):
     )
 
 
+@app.get("/resources")
+async def resources_page(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "resources.html",
+        {
+            "request": request,
+            "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
+            "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.RESOURCES_PAGE),
+        },
+    )
+
+
 @app.get("/analyze")
 async def analyze_get_redirect():
     return RedirectResponse(url="/")

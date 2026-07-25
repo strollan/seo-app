@@ -1,0 +1,46 @@
+{% extends "public_guide_base.html" %}
+{% block page_styles %}
+<style>
+.resources-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.resource-card { min-width:0; padding:22px; border:1px solid #dbe4f0; border-radius:14px; background:#f8fafc; }
+.resource-card h2 { margin-bottom:10px; font-size:21px; }
+.resource-card p { font-size:15px; line-height:1.65; }
+.resource-card a { font-weight:800; }
+@media (max-width:700px) {
+  .resources-grid { grid-template-columns:1fr; }
+  .resource-card { padding:18px; }
+}
+</style>
+{% endblock %}
+{% block h1 %}Practical Lead Generation Resources{% endblock %}
+{% block subtitle %}Straightforward guides for thoughtful local prospect research and outreach.{% endblock %}
+{% block content %}
+<p class="lede"><strong>These guides cover how to find, review, and organize local prospects without relying on giant generic lead lists.</strong> Use them to choose a prospecting approach, research individual businesses, and understand what makes a business worth contacting.</p>
+
+<section class="section" aria-label="Lead generation guides">
+  <div class="resources-grid">
+    <article class="resource-card">
+      <h2>What Makes a Good Lead?</h2>
+      <p>Learn how market fit, contactability, and a specific reason for outreach separate a useful prospect from another name on a list.</p>
+      <a href="/what-makes-a-good-lead">Read what makes a good lead</a>
+    </article>
+    <article class="resource-card">
+      <h2>How to Find Local Leads Worth Contacting</h2>
+      <p>Follow a practical process for choosing a market, finding reachable businesses, reviewing websites, and organizing research before outreach.</p>
+      <a href="/how-to-find-local-leads">Learn how to find local leads</a>
+    </article>
+    <article class="resource-card">
+      <h2>Local Lead Generation Without the Giant Lead List</h2>
+      <p>Compare inbound and outbound methods, referrals, directories, purchased lists, and hands-on business research.</p>
+      <a href="/local-lead-generation">Read the local lead generation guide</a>
+    </article>
+    <article class="resource-card">
+      <h2>Lead Lists vs. Lead Finders</h2>
+      <p>Compare static lead lists and active prospect finding across freshness, targeting, contact data, context, and research time.</p>
+      <a href="/lead-list-vs-lead-finder">Compare lists and lead finders</a>
+    </article>
+  </div>
+</section>
+{% endblock %}
+{% block cta_heading %}Ready to research a local market?{% endblock %}
+{% block cta_copy %}Search by business type and location, then review each prospect before outreach.{% endblock %}

@@ -105,6 +105,14 @@ class PublicPageMetadataTests(unittest.TestCase):
             ),
             "canonical": "https://leadmeleads.com/lead-list-vs-lead-finder",
         },
+        "/resources": {
+            "title": "Lead Generation Resources | LeadMeLeads",
+            "description": (
+                "Explore practical guides to finding, reviewing, and organizing "
+                "local business prospects for thoughtful outreach."
+            ),
+            "canonical": "https://leadmeleads.com/resources",
+        },
     }
 
     @classmethod
@@ -400,9 +408,10 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/how-to-find-local-leads",
                 "https://leadmeleads.com/local-lead-generation",
                 "https://leadmeleads.com/lead-list-vs-lead-finder",
+                "https://leadmeleads.com/resources",
             },
         )
-        self.assertEqual(len(urls), 7)
+        self.assertEqual(len(urls), 8)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text
