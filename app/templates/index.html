@@ -585,6 +585,72 @@ a {
     color: #475569;
 }
 
+.conversion-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.conversion-card {
+    min-width: 0;
+    padding: 20px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.075);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+
+.conversion-card strong {
+    display: block;
+    margin-bottom: 7px;
+    color: #ffffff;
+    font-size: 18px;
+}
+
+.conversion-card p {
+    margin: 0;
+    font-size: 15px;
+}
+
+.step-number {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 12px;
+    border-radius: 50%;
+    background: #dbeafe;
+    color: #1e3a8a;
+    font-weight: 950;
+}
+
+.comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.comparison-card {
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid #dbe4f0;
+    border-radius: 16px;
+    background: #ffffff;
+}
+
+.comparison-card h3 {
+    margin: 0 0 8px;
+    color: #0f172a;
+    font-size: 20px;
+}
+
+.comparison-card p {
+    margin: 0;
+    color: #475569;
+    font-size: 15px;
+}
+
 .muted-note {
     margin-top: 14px;
     font-size: 13px;
@@ -625,7 +691,8 @@ a {
 
 @media (max-width: 940px) {
     .hero-grid,
-    .section-grid {
+    .section-grid,
+    .conversion-grid {
         grid-template-columns: 1fr;
     }
 
@@ -650,6 +717,10 @@ a {
 
     .mini-proof {
         grid-template-columns: 1fr 1fr;
+    }
+
+    .comparison-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -766,9 +837,9 @@ a {
                 <h1>Find local leads worth contacting.</h1>
                 <p class="tagline">Stop hunting. Start finding.</p>
                 <p class="subcopy">
-                    Type a keyword and a location. LeadMeLeads finds local businesses worth a
-                    second look, checks what contact information is actually available, and
-                    tells you why each one might be worth contacting.
+                    Google helps you find businesses. LeadMeLeads helps you decide which are
+                    worth contacting by organizing search context, available contact information,
+                    and concise reasons to review each prospect.
                 </p>
 
                 <div class="hero-actions">
@@ -782,16 +853,16 @@ a {
 
                 <div class="mini-proof">
                     <div class="proof-card">
-                        <strong>Search</strong>
-                        <span>Pick a service and city.</span>
+                        <strong>Businesses</strong>
+                        <span>Found from real local searches.</span>
                     </div>
                     <div class="proof-card">
-                        <strong>Score</strong>
-                        <span>Spot weak web presence signals.</span>
+                        <strong>Context</strong>
+                        <span>Original search position and why the lead may be worth a look.</span>
                     </div>
                     <div class="proof-card">
-                        <strong>Act</strong>
-                        <span>Export leads and outreach angles.</span>
+                        <strong>Contacts</strong>
+                        <span>Phone, email, address, and contact pages when found.</span>
                     </div>
                 </div>
             </div>
@@ -848,18 +919,54 @@ a {
         </section>
     </main>
 
-    <section class="info-section" aria-label="Why not buy a list instead">
-        <h2>Why not just buy a list?</h2>
-        <p>
-            Buying a giant, generic lead list can look like the easy route. The data may be
-            stale, the businesses may not fit your market, and you still have to figure out who
-            is actually worth contacting.
+    <section class="info-section" aria-labelledby="how-it-works-heading">
+        <h2 id="how-it-works-heading">How It Works</h2>
+        <div class="conversion-grid">
+            <article class="conversion-card">
+                <span class="step-number">1</span>
+                <strong>Search</strong>
+                <p>Choose a keyword and a city, state, or ZIP Code.</p>
+            </article>
+            <article class="conversion-card">
+                <span class="step-number">2</span>
+                <strong>Review</strong>
+                <p>See businesses, real search positions, contact information when available, and concise reasons each prospect may be worth reviewing.</p>
+            </article>
+            <article class="conversion-card">
+                <span class="step-number">3</span>
+                <strong>Export</strong>
+                <p>Save useful prospects and export them for outreach or further research.</p>
+            </article>
+        </div>
+    </section>
+
+    <section class="info-section" aria-labelledby="what-you-get-heading">
+        <h2 id="what-you-get-heading">What You Get</h2>
+        <ul class="feature-list">
+            <li>Real businesses found from local searches</li>
+            <li>Original Google search position</li>
+            <li>Phone and email when available</li>
+            <li>Business address and contact-page information when found</li>
+            <li>&ldquo;Why This Lead&rdquo; context</li>
+            <li>Exportable prospect lists</li>
+        </ul>
+        <p class="muted-note">
+            Public business information varies. Not every prospect will have every contact field.
         </p>
-        <p>
-            LeadMeLeads takes a different approach: search by keyword and location, then review
-            local businesses that match the search instead of starting with a recycled
-            spreadsheet.
-        </p>
+    </section>
+
+    <section class="info-section light" aria-labelledby="google-comparison-heading">
+        <h2 id="google-comparison-heading">LeadMeLeads and Google Search</h2>
+        <div class="comparison-grid">
+            <article class="comparison-card">
+                <h3>Google</h3>
+                <p>Helps you search through businesses one by one.</p>
+            </article>
+            <article class="comparison-card">
+                <h3>LeadMeLeads</h3>
+                <p>Organizes businesses, contact information, search context, and prospect-review signals in one place.</p>
+            </article>
+        </div>
     </section>
 
     <section class="section-grid">
@@ -884,7 +991,7 @@ a {
             </p>
 
             <div class="card-actions">
-                <a class="dark" href="/lead-bot">Open Lead Finder</a>
+                <a class="dark" href="/lead-bot">Find Local Leads</a>
             </div>
         </article>
 
@@ -910,24 +1017,25 @@ a {
         </article>
     </section>
 
-    <section class="info-section light" aria-label="Our approach to reporting information">
-        <h2>Useful information, not a scoreboard</h2>
+    <section class="info-section light" aria-label="Lead quality over list size">
+        <h2>More names are not necessarily better leads</h2>
         <p>
-            We are not interested in vanity metrics or scary numbers designed to make you
-            panic-buy an SEO package. LeadMeLeads shows you what is actually there: real contact
-            details when we can find them, real website gaps when they exist, and a plain reason
-            for every lead.
+            LeadMeLeads focuses you on businesses worth reviewing rather than simply producing
+            the biggest possible list. That includes prospects that may be easier to overlook in
+            ordinary search results.
         </p>
         <p>
-            If we cannot find something, we say so instead of making it up.
+            Finding a business worth reviewing is only the research stage. Qualification still
+            happens through your own outreach and discovery. Learn more about
+            <a href="/what-makes-a-good-lead">what makes a good lead</a>.
         </p>
     </section>
 
     <section class="final-cta" aria-label="Start a Lead Finder search">
         <h2>Start with a search, not a spreadsheet.</h2>
         <p>
-            Enter a keyword and a location to find leads worth contacting &mdash; no purchased
-            list, less guesswork.
+            Choose a keyword and location, review the available context, and save the prospects
+            that deserve a closer look.
         </p>
         <a class="btn btn-primary" href="/lead-bot">Find Local Leads</a>
     </section>
