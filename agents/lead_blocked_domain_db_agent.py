@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -47,6 +48,17 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
+@contextmanager
+def managed_connection():
+    """Preserve transaction handling while ensuring the connection closes."""
+    conn = connect()
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -88,7 +100,7 @@ def add_blocked_domain(domain: str, source: str = "manual") -> bool:
 
     current = now_iso()
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             INSERT INTO leadbot_blocked_domains (
@@ -122,7 +134,7 @@ def remove_blocked_domain(domain: str) -> bool:
     if not clean:
         return False
 
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             UPDATE leadbot_blocked_domains
@@ -139,7 +151,7 @@ def remove_blocked_domain(domain: str) -> bool:
 
 
 def list_blocked_domains(active_only: bool = True) -> list[str]:
-    with connect() as conn:
+    with managed_connection() as conn:
         if active_only:
             rows = conn.execute(
                 "SELECT domain FROM leadbot_blocked_domains WHERE is_active = 1 ORDER BY domain"
@@ -205,7 +217,7 @@ def is_blocked_domain(domain: str) -> bool:
     if not clean:
         return False
 
-    with connect() as conn:
+    with managed_connection() as conn:
         row = conn.execute(
             "SELECT is_active FROM leadbot_blocked_domains WHERE domain = ?",
             (clean,),
@@ -224,7 +236,7 @@ def add_user_blocked_domain(owner_key: str, domain: str) -> bool:
     if not owner or not clean:
         return False
     current = now_iso()
-    with connect() as conn:
+    with managed_connection() as conn:
         conn.execute(
             """
             INSERT INTO leadbot_user_blocked_domains
@@ -245,7 +257,7 @@ def remove_user_blocked_domain(owner_key: str, domain: str) -> bool:
     clean = clean_domain(domain)
     if not owner or not clean:
         return False
-    with connect() as conn:
+    with managed_connection() as conn:
         cursor = conn.execute(
             """
             UPDATE leadbot_user_blocked_domains
@@ -262,7 +274,7 @@ def list_user_blocked_domains(owner_key: str, active_only: bool = True) -> list[
     owner = clean_owner_key(owner_key)
     if not owner:
         return []
-    with connect() as conn:
+    with managed_connection() as conn:
         if active_only:
             rows = conn.execute(
                 """
