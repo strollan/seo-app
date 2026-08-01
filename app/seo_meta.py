@@ -407,6 +407,66 @@ def render_article_jsonld(page: SeoPage) -> str:
     })
 
 
+def render_not_found_html() -> str:
+    """Branded 404 page for unmatched routes. Deliberately static and
+    self-contained -- no request data (path, query string, referrer) is
+    echoed back into the page, so there is nothing here for a crafted
+    URL to inject into the response."""
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Page Not Found | {SITE_NAME}</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+body {{
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #0f172a;
+}}
+.notfound-card {{
+    width: min(480px, calc(100vw - 32px));
+    background: white;
+    border-radius: 20px;
+    padding: 36px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box;
+    text-align: center;
+}}
+h1 {{ margin: 0 0 8px; font-size: 26px; }}
+p {{ margin: 0 0 22px; color: #64748b; }}
+.notfound-links {{ display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }}
+.notfound-links a {{
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-weight: 700;
+    text-decoration: none;
+}}
+</style>
+</head>
+<body>
+<div class="notfound-card">
+<h1>Page Not Found</h1>
+<p>The page you're looking for doesn't exist or may have moved.</p>
+<div class="notfound-links">
+<a href="/">Home</a>
+<a href="/lead-bot">Lead Finder</a>
+<a href="/compare">Compare</a>
+<a href="/resources">Resources</a>
+</div>
+</div>
+</body>
+</html>
+"""
+
+
 def should_apply_noindex_header(path: str) -> bool:
     """True for any route that must never be indexed -- everything
     except the public allowlist and static assets. Deny-list-based

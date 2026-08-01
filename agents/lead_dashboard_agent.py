@@ -3701,7 +3701,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
         </div>
     </div>
     <p class="leadbot-value-explanation">Google helps you find businesses. LeadMeLeads helps you decide which are worth contacting.<br>We organize potential leads and contact details in one place, ready to review and export.</p>
-    <p class="leadbot-education-link">New to prospecting? Read <a href="/what-makes-a-good-lead">What Makes a Good Lead?</a></p>
+    <p class="leadbot-education-link">New to prospecting? Read <a href="/what-makes-a-good-lead">What Makes a Good Lead?</a> or browse <a href="/resources">lead generation resources</a>.</p>
     <div class="app-nav-overlay" data-nav-overlay></div>
 <script src="/static/js/mobile-nav.js" defer></script>
 <script>window.LEADBOT_CSRF_TOKEN = "__CSRF_TOKEN__"; window.LEADBOT_IS_GUEST = __IS_GUEST_JS__;</script>

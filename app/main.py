@@ -20,6 +20,8 @@ except Exception:
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, PlainTextResponse, Response
+from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.agent import build_agent_insight_html, build_agent_action_plan, enhance_analysis, enhance_quick_wins
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -74,6 +76,19 @@ async def leadbot_seo_noindex_header_middleware(request: Request, call_next):
         response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 # === LEADBOT SEO NOINDEX HEADER MIDDLEWARE END ===
+
+
+# === LEADBOT 404 PAGE HANDLER START ===
+# Only intercepts unmatched routes (status 404). Every other HTTPException
+# (401, 403, explicit status_code=404 responses returned directly by a
+# route, etc.) falls through to FastAPI's default handler unchanged, so
+# this can't alter any existing auth/ownership/error behavior.
+@app.exception_handler(StarletteHTTPException)
+async def leadbot_not_found_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404:
+        return HTMLResponse(content=seo_meta.render_not_found_html(), status_code=404)
+    return await default_http_exception_handler(request, exc)
+# === LEADBOT 404 PAGE HANDLER END ===
 
 
 reports_static_dir = os.path.join(os.path.dirname(BASE_DIR), "reports")

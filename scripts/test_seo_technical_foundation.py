@@ -577,5 +577,71 @@ class AuthAndPrivatePageNoindexMetaTagTests(unittest.TestCase):
         self.assertIn('<meta name="robots" content="noindex, nofollow">', response.text)
 
 
+class InternalLinkTests(unittest.TestCase):
+    """Contextual internal links required by the launch-foundation task
+    that weren't already covered by the shared public_guide_base.html
+    template (Lead Finder -> resources, Compare -> Lead Finder + resources)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(appmain.app)
+
+    def test_lead_finder_links_to_resources(self):
+        body = self.client.get("/lead-bot").text
+        self.assertIn('href="/resources"', body)
+
+    def test_lead_finder_links_to_what_makes_a_good_lead(self):
+        body = self.client.get("/lead-bot").text
+        self.assertIn('href="/what-makes-a-good-lead"', body)
+
+    def test_compare_links_to_resources_and_lead_finder(self):
+        body = self.client.get("/compare").text
+        self.assertIn('href="/resources"', body)
+        self.assertIn('href="/lead-bot"', body)
+
+
+class NotFoundPageTests(unittest.TestCase):
+    """Unmatched routes return an actual 404 (not 200) with a branded
+    HTML page containing safe navigation links, no stack traces, and no
+    internal filesystem paths."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(appmain.app)
+
+    def test_unknown_route_returns_404(self):
+        response = self.client.get("/this-route-does-not-exist")
+        self.assertEqual(response.status_code, 404)
+
+    def test_unknown_route_returns_html_not_json(self):
+        response = self.client.get("/this-route-does-not-exist")
+        self.assertIn("text/html", response.headers.get("content-type", ""))
+
+    def test_404_page_has_safe_navigation_links(self):
+        body = self.client.get("/this-route-does-not-exist").text
+        for expected_href in ['href="/"', 'href="/lead-bot"', 'href="/compare"', 'href="/resources"']:
+            with self.subTest(href=expected_href):
+                self.assertIn(expected_href, body)
+
+    def test_404_page_is_noindexed(self):
+        response = self.client.get("/this-route-does-not-exist")
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', response.text)
+        self.assertEqual(response.headers.get("x-robots-tag"), "noindex, nofollow")
+
+    def test_404_page_exposes_no_stack_trace_or_internal_paths(self):
+        body = self.client.get("/this-route-does-not-exist").text
+        for forbidden in ["Traceback", "/home/", "/mnt/", "/var/www", "app/main.py", "File \""]:
+            self.assertNotIn(forbidden, body)
+
+    def test_other_http_exceptions_are_unaffected(self):
+        """A non-404 HTTPException (405 Method Not Allowed, raised by
+        Starlette's router for a real route hit with the wrong verb) must
+        keep FastAPI's default JSON error format, not the new branded
+        404 page -- the custom handler only special-cases status 404."""
+        response = self.client.post("/robots.txt")
+        self.assertEqual(response.status_code, 405)
+        self.assertNotIn("notfound-card", response.text)
+
+
 if __name__ == "__main__":
     unittest.main()
