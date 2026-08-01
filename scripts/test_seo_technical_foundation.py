@@ -374,6 +374,7 @@ class RobotsTxtTests(unittest.TestCase):
             "Disallow: /login",
             "Disallow: /settings",
             "Disallow: /history",
+            "Disallow: /admin",
             "Disallow: /lead-bot/",
             "Disallow: /reports/",
         ]:
@@ -445,6 +446,33 @@ class SeoMetaModuleUnitTests(unittest.TestCase):
         for path in ["/login", "/settings", "/history", "/lead-bot/run", "/random-new-route"]:
             with self.subTest(path=path):
                 self.assertTrue(seo_meta.should_apply_noindex_header(path))
+
+
+class AuthAndPrivatePageNoindexMetaTagTests(unittest.TestCase):
+    """Belt-and-suspenders: private HTML pages carry an explicit
+    <meta name="robots" content="noindex, nofollow"> tag in addition to
+    the X-Robots-Tag header the middleware already applies to every
+    non-public route."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(appmain.app)
+
+    def test_login_page_has_noindex_meta(self):
+        body = self.client.get("/login").text
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', body)
+
+    def test_create_account_page_has_noindex_meta(self):
+        body = self.client.get("/create-account").text
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', body)
+
+    def test_forgot_password_page_has_noindex_meta(self):
+        body = self.client.get("/forgot-password").text
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', body)
+
+    def test_reset_password_invalid_link_page_has_noindex_meta(self):
+        response = self.client.get("/reset-password", params={"token": "not-a-real-token"})
+        self.assertIn('<meta name="robots" content="noindex, nofollow">', response.text)
 
 
 if __name__ == "__main__":

@@ -395,6 +395,7 @@ def render_robots_txt() -> str:
         "Disallow: /analyze",
         "Disallow: /export-pdf",
         "Disallow: /reports/",
+        "Disallow: /admin",
         "Disallow: /lead-bot/",
         "Disallow: /api/",
         "",

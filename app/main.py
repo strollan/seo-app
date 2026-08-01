@@ -11043,6 +11043,7 @@ def auth_login_page(error="", message=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login | LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 body {{
     margin: 0;
@@ -11303,6 +11304,7 @@ def signup_page(error="", username="", email=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Create Account | LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 body {{
     margin: 0;
@@ -11750,6 +11752,7 @@ def forgot_password_page(message="", error="", dev_link=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forgot Password | LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 body {{
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -11997,6 +12000,7 @@ def reset_password_page(token="", error=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reset Password | LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 body {{
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -12079,6 +12083,7 @@ def reset_password_invalid_page():
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invalid Reset Link | LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -13097,6 +13102,7 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Lead Finder Live Scan</title>
+<meta name="robots" content="noindex, nofollow">
 <style>
 * {{ box-sizing: border-box; }}
 body {{
