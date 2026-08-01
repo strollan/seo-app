@@ -5880,7 +5880,21 @@ btn.dataset.busy = "1";
 
     function parseCsv(text) {
         const lines = String(text || "")
-            .split(/\r?\n/)
+            /* NOTE: this page is built from a NON-raw Python triple-quoted
+               string literal (see: page = at the top of
+               render_lead_dashboard). Python decodes backslash-r and
+               backslash-n inside that literal into a real carriage return
+               and a real newline, so a single-backslash regex here emitted
+               an actual line terminator INSIDE a JS regex literal. Browsers
+               reject that with "Invalid regular expression: missing /",
+               which killed this entire script block. The doubled
+               backslashes below survive Python's decoding and reach the
+               browser as the intended two-character escapes. Other regex
+               escapes used on this page (backslash-s, backslash-d,
+               backslash-dot) are not valid Python escapes, so Python leaves
+               them untouched -- only backslash-r and backslash-n need
+               doubling. */
+            .split(/\\r?\\n/)
             .filter(function (line) { return line.trim(); });
 
         if (lines.length < 2) return [];
@@ -8142,6 +8156,11 @@ body.leadbot-live-page button[data-action="block"] {
     .leadbot-dashboard-page .leadbot-logo-link {
         justify-content: flex-start !important;
         width: auto !important;
+        /* Without these the link keeps its intrinsic (logo-sized) width and
+           spills past .leadbot-brand-left's flex-shrunk column, which is
+           what let the logo slide under the hamburger at 320px. */
+        max-width: 100% !important;
+        min-width: 0 !important;
     }
 
     .leadbot-dashboard-page .leadbot-brand-left > div {
@@ -8149,9 +8168,24 @@ body.leadbot-live-page button[data-action="block"] {
         min-width: 0 !important;
     }
 
+    /* 320px overlap fix.
+       At 320px the usable brand row is 236px (320 - 2x14 container padding
+       - 2x28 hero padding). The row is [.leadbot-brand-left] + 12px gap +
+       [44px hamburger], so the left column shrinks to 180px. The logo,
+       however, was pinned at height:54px with width:auto, giving it a fixed
+       intrinsic ~221px -- 41px wider than its own column -- so it overflowed
+       to the right and sat underneath the hamburger (measured: logo right
+       edge 263px vs hamburger left edge 234px = 29px of overlap).
+       Swapping the fixed height for max-height + max-width:100% lets the
+       logo scale down proportionally only when the column is genuinely too
+       narrow. At 375px and up the column is >= 235px, so max-height still
+       binds first and the rendered logo is byte-for-byte the same as before
+       (verified at 375px and 768px). Aspect ratio is preserved because both
+       width and height stay auto. */
     .leadbot-dashboard-page .leadbot-logo {
-        height: 54px !important;
-        max-width: 225px !important;
+        height: auto !important;
+        max-height: 54px !important;
+        max-width: min(225px, 100%) !important;
         width: auto !important;
     }
 
