@@ -282,11 +282,113 @@ class HomepageJsonLdTests(unittest.TestCase):
         ]:
             self.assertNotIn(forbidden, jsonld_text)
 
-    def test_other_public_pages_do_not_duplicate_homepage_jsonld(self):
+    def test_other_public_pages_do_not_duplicate_homepage_organization_jsonld(self):
         for path in ["/lead-bot", "/compare"]:
             with self.subTest(path=path):
                 body = self.client.get(path).text
-                self.assertNotIn("application/ld+json", body)
+                self.assertNotIn('"@type":"Organization"', body)
+                self.assertNotIn('"@type":"WebSite"', body)
+
+
+class ProductPageJsonLdTests(unittest.TestCase):
+    """/lead-bot and /compare each get exactly one WebApplication JSON-LD
+    block, built only from the page's own verified title/description/
+    canonical -- no ratings, pricing, or user counts."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(appmain.app)
+
+    EXPECTED = {
+        "/lead-bot": {
+            "name": seo_meta.LEAD_FINDER_PAGE.title,
+            "description": seo_meta.LEAD_FINDER_PAGE.description,
+            "url": "https://leadmeleads.com/lead-bot",
+        },
+        "/compare": {
+            "name": seo_meta.COMPARE_PAGE.title,
+            "description": seo_meta.COMPARE_PAGE.description,
+            "url": "https://leadmeleads.com/compare",
+        },
+    }
+
+    def test_webapplication_jsonld_present_and_valid(self):
+        import json
+
+        for path, expected in self.EXPECTED.items():
+            with self.subTest(path=path):
+                body = self.client.get(path).text
+                scripts = re.findall(
+                    r'<script type="application/ld\+json">(.*?)</script>', body, re.DOTALL
+                )
+                webapp_blocks = []
+                for raw in scripts:
+                    data = json.loads(raw)
+                    if data.get("@type") == "WebApplication":
+                        webapp_blocks.append(data)
+                self.assertEqual(len(webapp_blocks), 1, f"expected exactly one WebApplication block on {path}")
+                data = webapp_blocks[0]
+                self.assertEqual(data["@context"], "https://schema.org")
+                self.assertEqual(data["name"], expected["name"])
+                self.assertEqual(data["description"], expected["description"])
+                self.assertEqual(data["url"], expected["url"])
+
+    def test_webapplication_jsonld_has_no_unverifiable_claims(self):
+        for path in self.EXPECTED:
+            with self.subTest(path=path):
+                body = self.client.get(path).text
+                for forbidden in [
+                    "aggregateRating",
+                    "reviewCount",
+                    "ratingValue",
+                    "offers",
+                    "price",
+                ]:
+                    self.assertNotIn(forbidden, body)
+
+
+class ArticleJsonLdTests(unittest.TestCase):
+    """The four guide pages each get one Article JSON-LD block with no
+    fabricated dates, alongside their existing FAQPage block."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(appmain.app)
+
+    ARTICLE_PAGES = {
+        "/what-makes-a-good-lead": seo_meta.GOOD_LEAD_PAGE,
+        "/how-to-find-local-leads": seo_meta.FIND_LOCAL_LEADS_PAGE,
+        "/local-lead-generation": seo_meta.LOCAL_LEAD_GENERATION_PAGE,
+        "/lead-list-vs-lead-finder": seo_meta.LEAD_LIST_VS_FINDER_PAGE,
+    }
+
+    def test_article_jsonld_present_and_valid(self):
+        import json
+
+        for path, page in self.ARTICLE_PAGES.items():
+            with self.subTest(path=path):
+                body = self.client.get(path).text
+                scripts = re.findall(
+                    r'<script type="application/ld\+json">(.*?)</script>', body, re.DOTALL
+                )
+                article_blocks = [json.loads(raw) for raw in scripts if json.loads(raw).get("@type") == "Article"]
+                self.assertEqual(len(article_blocks), 1, f"expected exactly one Article block on {path}")
+                data = article_blocks[0]
+                self.assertEqual(data["headline"], page.title)
+                self.assertEqual(data["description"], page.description)
+                self.assertEqual(data["mainEntityOfPage"], seo_meta.canonical_url(page.canonical_path))
+                self.assertEqual(data["publisher"]["name"], "LeadMeLeads")
+
+    def test_article_jsonld_has_no_fabricated_dates(self):
+        for path in self.ARTICLE_PAGES:
+            with self.subTest(path=path):
+                body = self.client.get(path).text
+                self.assertNotIn("datePublished", body)
+                self.assertNotIn("dateModified", body)
+
+    def test_resources_hub_has_no_article_jsonld(self):
+        body = self.client.get("/resources").text
+        self.assertNotIn('"@type":"Article"', body)
 
 
 class NoindexPrivateRouteTests(unittest.TestCase):

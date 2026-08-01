@@ -1108,6 +1108,7 @@ def render_lead_dashboard(file="", current_user=None, csrf_token=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 __SEO_META__
+__WEBAPP_JSONLD__
 <style>
 * { box-sizing: border-box; }
 body {
@@ -9222,6 +9223,14 @@ body.leadbot-live-page button[data-action="block"] {
 """
 
     page = page.replace("__SEO_META__", seo_meta.render_seo_meta_html(seo_meta.LEAD_FINDER_PAGE))
+    page = page.replace(
+        "__WEBAPP_JSONLD__",
+        seo_meta.render_webapplication_jsonld(
+            seo_meta.LEAD_FINDER_PAGE.title,
+            seo_meta.LEAD_FINDER_PAGE.description,
+            seo_meta.LEAD_FINDER_PAGE.canonical_path,
+        ),
+    )
     page = page.replace("__FILES__", "".join(file_links) if file_links else '<div class="empty">No exports yet.</div>')
     page = page.replace("__BLOCKLIST_PANEL__", render_blocklist_panel(current_user, csrf_token))
     page = page.replace("__SELECTED__", html.escape(selected_name))

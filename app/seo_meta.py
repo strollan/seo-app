@@ -368,6 +368,45 @@ def render_homepage_jsonld() -> str:
     return _jsonld_script(organization) + "\n" + _jsonld_script(website)
 
 
+def render_webapplication_jsonld(name: str, description: str, canonical_path: str) -> str:
+    """WebApplication JSON-LD for a single tool page (Lead Finder,
+    Compare). Verified facts only -- name, description, and canonical
+    URL taken from the page's own SeoPage entry, no ratings, pricing,
+    or user counts, none of which are verifiable here."""
+    return _jsonld_script({
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": name,
+        "description": description,
+        "url": canonical_url(canonical_path),
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+    })
+
+
+def render_article_jsonld(page: SeoPage) -> str:
+    """Minimal Article JSON-LD for a guide/resource page. Only fields
+    directly backed by visible on-page content (headline, description,
+    canonical URL, publisher) -- deliberately omits datePublished /
+    dateModified since no publish date is shown anywhere on the page,
+    and fabricating one would violate the "accurate JSON-LD only" rule."""
+    return _jsonld_script({
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": page.title,
+        "description": page.description,
+        "mainEntityOfPage": canonical_url(page.canonical_path),
+        "publisher": {
+            "@type": "Organization",
+            "name": SITE_NAME,
+            "logo": {
+                "@type": "ImageObject",
+                "url": f"{SITE_BASE_URL}/static/logo.png",
+            },
+        },
+    })
+
+
 def should_apply_noindex_header(path: str) -> bool:
     """True for any route that must never be indexed -- everything
     except the public allowlist and static assets. Deny-list-based

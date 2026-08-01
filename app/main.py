@@ -2386,6 +2386,11 @@ async def compare_page(request: Request):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.COMPARE_PAGE),
+            "webapp_jsonld_html": seo_meta.render_webapplication_jsonld(
+                seo_meta.COMPARE_PAGE.title,
+                seo_meta.COMPARE_PAGE.description,
+                seo_meta.COMPARE_PAGE.canonical_path,
+            ),
         },
     )
 
@@ -2400,6 +2405,7 @@ async def good_lead_page(request: Request):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.GOOD_LEAD_PAGE),
+            "article_jsonld_html": seo_meta.render_article_jsonld(seo_meta.GOOD_LEAD_PAGE),
             "faq_jsonld_html": seo_meta.render_faq_jsonld(seo_meta.GOOD_LEAD_FAQ),
             "faq": seo_meta.GOOD_LEAD_FAQ,
         },
@@ -2415,6 +2421,7 @@ def render_public_guide(request: Request, template_name, page, faq):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(page),
+            "article_jsonld_html": seo_meta.render_article_jsonld(page),
             "faq_jsonld_html": seo_meta.render_faq_jsonld(faq),
             "faq": faq,
         },
