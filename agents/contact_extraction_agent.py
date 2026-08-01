@@ -4,6 +4,12 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from agents.crawl_agent import crawl_get
+from agents.lead_contact_quality_agent import (
+    EVIDENCE_NONE,
+    EVIDENCE_STRONG,
+    EVIDENCE_WEAK,
+    assess_contact_quality,
+)
 
 
 EMAIL_RE = re.compile(
@@ -217,9 +223,12 @@ def extract_contact_from_url(url, market=""):
         "url": url,
         "contact_page_url": "",
         "emails": [],
+        "trusted_emails": [],
         "phones": [],
         "best_phone": "",
         "confidence": 0,
+        "email_evidence": EVIDENCE_NONE,
+        "outreach_status": "needs_manual_research",
         "flags": [],
     }
 
@@ -250,27 +259,53 @@ def extract_contact_from_url(url, market=""):
         emails += extract_emails(contact_html + " " + contact_text)
         phones += extract_tel_link_phones(contact_html) + extract_phones(contact_text)
 
+    # Raw discovered emails are kept in full -- exports must still show what
+    # was actually found on the page. Only the *interpretation* below is
+    # graded.
     result["emails"] = list(dict.fromkeys([e for e in emails if is_good_email(e)]))
     result["phones"] = filter_realistic_phones(list(dict.fromkeys([p for p in phones if p])), market)
     result["best_phone"] = choose_best_phone(result["phones"], market)
+
+    # Grade the email evidence against the business's own domain. Previously
+    # this function scored a flat +35 for "any email at all", which let a
+    # placeholder (example@gmail.com) or an unrelated domain reach
+    # confidence 80 / email_and_call_ready. See
+    # agents/lead_contact_quality_agent.py.
+    assessment = assess_contact_quality(
+        emails=result["emails"],
+        phone=result["best_phone"] or (result["phones"][0] if result["phones"] else ""),
+        website=url,
+        contact_page_url=result["contact_page_url"],
+    )
+
+    result["trusted_emails"] = assessment["trusted_emails"]
+    result["email_evidence"] = assessment["email_evidence"]
+    result["outreach_status"] = assessment["outreach_status"]
 
     confidence = 0
 
     if result["phones"]:
         confidence += 45
 
-    if result["emails"]:
+    if assessment["email_evidence"] == EVIDENCE_STRONG:
         confidence += 35
+    elif assessment["email_evidence"] == EVIDENCE_WEAK:
+        confidence += 10
 
     if result["contact_page_url"]:
         confidence += 15
 
-    if not result["phones"]:
-        result["flags"].append("no_phone_found")
+    # Unverified email evidence must never reach the ">= 80 ready" band on
+    # its own; a real phone is what keeps a lead in that band.
+    if assessment["email_evidence"] == EVIDENCE_WEAK:
+        confidence = min(confidence, 70 if result["phones"] else 45)
+    elif assessment["email_evidence"] == EVIDENCE_NONE:
+        confidence = min(confidence, 75 if result["phones"] else 40)
 
-    if not result["emails"]:
-        result["flags"].append("no_email_found")
+    for flag in assessment["flags"]:
+        if flag not in result["flags"]:
+            result["flags"].append(flag)
 
-    result["confidence"] = min(100, confidence)
+    result["confidence"] = max(0, min(100, confidence))
 
     return result

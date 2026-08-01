@@ -6,6 +6,11 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from agents.lead_contact_quality_agent import (
+    merge_flags as merge_contact_flags,
+    resolve_outreach_status,
+)
+
 
 def normalize_url(value):
     value = str(value or "").strip()
@@ -292,15 +297,22 @@ def manual_add_domain(domain, industry="", market="", keyword="", serp_page="", 
                 contact_page_url = final_url or candidate
                 break
 
-    outreach_status = "needs_manual_research"
-    if best_phone and emails:
-        outreach_status = "email_and_call_ready"
-    elif best_phone:
-        outreach_status = "call_ready"
-    elif emails:
-        outreach_status = "email_ready"
+    # Manually added domains get the same graded treatment as scanned ones:
+    # a placeholder or unrelated-domain email must not buy
+    # email_and_call_ready / confidence 90. See
+    # agents/lead_contact_quality_agent.py.
+    outreach_status, contact_quality_flags, graded_confidence = resolve_outreach_status(
+        emails=emails,
+        phone=best_phone,
+        website=base_url,
+        domain=clean_domain,
+        contact_page_url=contact_page_url,
+    )
 
-    contact_confidence = 90 if best_phone and emails else 80 if best_phone or emails else 0
+    contact_confidence = min(
+        90 if best_phone and emails else 80 if best_phone or emails else 0,
+        graded_confidence,
+    )
 
     lead = {
         "title": title,
@@ -316,7 +328,9 @@ def manual_add_domain(domain, industry="", market="", keyword="", serp_page="", 
         "score": "manual",
         "final_lead_score": "manual",
         "contact_confidence": str(contact_confidence),
-        "contact_flags": "manual_add_domain",
+        "contact_flags": ", ".join(
+            merge_contact_flags(["manual_add_domain"], contact_quality_flags)
+        ),
         "reason": "Manually added domain. LeadBot checked the homepage and common contact pages, then saved this business profile.",
     }
 

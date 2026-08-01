@@ -6,6 +6,10 @@ from business_competitor_finder import find_business_competitors
 from agents.contact_extraction_agent import extract_contact_from_url
 from agents.lead_blacklist_agent import is_blocked_lead_domain
 from agents.leadbot_block_gate import lead_matches_blocked_domains
+from agents.lead_contact_quality_agent import (
+    merge_flags as merge_contact_flags,
+    resolve_outreach_status,
+)
 
 
 
@@ -376,6 +380,11 @@ def _leadbot_preserve_source_metadata(scored, item):
         "dataforseo_cost",
         "places_position",
         "place_id",
+        # Which query variant produced this lead's serp_position. A scan runs
+        # several query variants and each one's ranking restarts at 1, so a
+        # position number is ambiguous without this. See the comment in
+        # business_competitor_finder._raw_find_business_competitors.
+        "query_used",
     ):
         if item.get(key) not in (None, ""):
             scored[key] = item.get(key)
@@ -573,14 +582,26 @@ def find_leads(
 
         scored["contact_flags"] = contact.get("flags", [])
 
-        if scored["emails"] and scored["best_phone"]:
-            scored["outreach_status"] = "email_and_call_ready"
-        elif scored["best_phone"]:
-            scored["outreach_status"] = "call_ready"
-        elif scored["emails"]:
-            scored["outreach_status"] = "email_ready"
-        else:
-            scored["outreach_status"] = "needs_manual_research"
+        # `email_and_call_ready` requires a phone AND at least one email that
+        # verifies against this business's own domain -- not merely "an email
+        # string was found". Placeholder addresses (example@gmail.com) and
+        # unrelated domains are downgraded to call_ready with an explicit
+        # audit flag. See agents/lead_contact_quality_agent.py.
+        status, quality_flags, quality_confidence = resolve_outreach_status(
+            emails=scored["emails"],
+            phone=scored["best_phone"],
+            website=scored.get("url") or "",
+            domain=scored.get("domain") or "",
+            contact_page_url=scored.get("contact_page_url") or "",
+        )
+
+        scored["outreach_status"] = status
+        scored["contact_flags"] = merge_contact_flags(scored.get("contact_flags"), quality_flags)
+
+        # Never let a stale/optimistic upstream confidence outrank the graded
+        # one; the graded value already accounts for phone + email evidence.
+        if int(scored.get("contact_confidence") or 0) > quality_confidence:
+            scored["contact_confidence"] = quality_confidence
 
         # Final score should prioritize page 1/page 2/page 3/page 4 SEO opportunity,
         # but avoid making every good lead a 100.

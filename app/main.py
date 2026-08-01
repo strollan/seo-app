@@ -40,6 +40,10 @@ import requests
 from bs4 import BeautifulSoup
 from agents.crawl_agent import crawl_get
 from agents.url_safety import validate_public_url, UnsafeURLError
+from agents.lead_contact_quality_agent import (
+    merge_flags as leadbot_merge_contact_flags,
+    resolve_outreach_status as leadbot_resolve_outreach_status,
+)
 
 from app.agent_service import run_agent_summary
 from app.competitor_agent import find_competitors
@@ -14575,16 +14579,23 @@ def leadbot_enrich_this_scan(
                     row["emails"] = ", ".join(emails)
 
                 row["contact_page_url"] = final_url or candidate
-                row["contact_confidence"] = "80"
 
-                if (phone or already_phone) and (emails or already_email):
-                    row["outreach_status"] = "email_and_call_ready"
-                elif phone or already_phone:
-                    row["outreach_status"] = "call_ready"
-                elif emails or already_email:
-                    row["outreach_status"] = "email_ready"
+                # Grade the enriched contact data rather than hard-coding
+                # confidence 80 + "phone and any email == email_and_call_ready".
+                # See agents/lead_contact_quality_agent.py.
+                enrich_status, enrich_flags, enrich_confidence = leadbot_resolve_outreach_status(
+                    emails=row.get("emails") or row.get("email") or "",
+                    phone=row.get("best_phone") or row.get("phone") or "",
+                    website=row.get("website") or row.get("url") or "",
+                    domain=row.get("domain") or "",
+                    contact_page_url=row.get("contact_page_url") or "",
+                )
 
-                row["contact_flags"] = "enriched_this_scan"
+                row["contact_confidence"] = str(min(80, enrich_confidence))
+                row["outreach_status"] = enrich_status
+                row["contact_flags"] = ", ".join(
+                    leadbot_merge_contact_flags(["enriched_this_scan"], enrich_flags)
+                )
                 return row, True
 
             if seo_changed and contact_complete:
@@ -14612,16 +14623,23 @@ def leadbot_enrich_this_scan(
                     row["emails"] = ", ".join(emails)
 
                 row["contact_page_url"] = final_url or candidate
-                row["contact_confidence"] = "80"
 
-                if (phone or already_phone) and (emails or already_email):
-                    row["outreach_status"] = "email_and_call_ready"
-                elif phone or already_phone:
-                    row["outreach_status"] = "call_ready"
-                elif emails or already_email:
-                    row["outreach_status"] = "email_ready"
+                # Grade the enriched contact data rather than hard-coding
+                # confidence 80 + "phone and any email == email_and_call_ready".
+                # See agents/lead_contact_quality_agent.py.
+                enrich_status, enrich_flags, enrich_confidence = leadbot_resolve_outreach_status(
+                    emails=row.get("emails") or row.get("email") or "",
+                    phone=row.get("best_phone") or row.get("phone") or "",
+                    website=row.get("website") or row.get("url") or "",
+                    domain=row.get("domain") or "",
+                    contact_page_url=row.get("contact_page_url") or "",
+                )
 
-                row["contact_flags"] = "enriched_this_scan"
+                row["contact_confidence"] = str(min(80, enrich_confidence))
+                row["outreach_status"] = enrich_status
+                row["contact_flags"] = ", ".join(
+                    leadbot_merge_contact_flags(["enriched_this_scan"], enrich_flags)
+                )
                 return row, True
 
             if seo_changed and contact_complete:
