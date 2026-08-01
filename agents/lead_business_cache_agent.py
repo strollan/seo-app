@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from agents.lead_contact_quality_agent import (
+    merge_flags as merge_contact_flags,
+    resolve_outreach_status,
+)
+
 
 DB_PATH = Path("data/leadbot_businesses.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -223,19 +228,28 @@ def apply_cached_business_to_lead(lead):
         changed = True
 
     if changed:
-        lead["contact_confidence"] = max(
-            int(lead.get("contact_confidence") or 0),
-            int(cached.get("contact_confidence") or 0),
+        # Grade the merged contact data instead of assuming "phone + any
+        # email string == email_and_call_ready". Cached emails can carry the
+        # same placeholder/unrelated-domain problem the live scan had.
+        # See agents/lead_contact_quality_agent.py.
+        status, quality_flags, quality_confidence = resolve_outreach_status(
+            emails=lead.get("emails") or lead.get("email") or "",
+            phone=lead.get("best_phone") or lead.get("phone") or "",
+            website=lead.get("website") or lead.get("url") or "",
+            domain=lead.get("domain") or "",
+            contact_page_url=lead.get("contact_page_url") or lead.get("contact_page") or "",
         )
 
-        if lead.get("best_phone") and lead.get("emails"):
-            lead["outreach_status"] = "email_and_call_ready"
-        elif lead.get("best_phone"):
-            lead["outreach_status"] = "call_ready"
-        elif lead.get("emails"):
-            lead["outreach_status"] = "email_ready"
+        lead["contact_confidence"] = min(
+            max(
+                int(lead.get("contact_confidence") or 0),
+                int(cached.get("contact_confidence") or 0),
+            ),
+            quality_confidence,
+        )
 
-        lead["contact_flags"] = ["business_cache"]
+        lead["outreach_status"] = status
+        lead["contact_flags"] = merge_contact_flags(["business_cache"], quality_flags)
 
     return lead, changed
 

@@ -607,6 +607,15 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
             "snippet": result.get("snippet", ""),
             "serp_page": result.get("serp_page"),
             "serp_position": result.get("serp_position"),
+            # serp_position is only meaningful RELATIVE to the query that
+            # produced it. A LeadBot scan runs up to 8 query variants
+            # (see agents/lead_live_job_agent.py), each of which returns its
+            # own ranking starting at 1, so two different businesses can both
+            # legitimately be "Page 2 - Position 15" from two different
+            # queries. That attribution was being set on the raw SERP row
+            # (line ~539) and then silently dropped here, which made the
+            # position badge unverifiable. Carry it through.
+            "query_used": result.get("query_used", "") or keyword,
             "source": result.get("source", ""),
             "lead_source_label": result.get("lead_source_label", ""),
             "rank_group": result.get("rank_group", ""),

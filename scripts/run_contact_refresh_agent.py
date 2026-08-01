@@ -18,6 +18,10 @@ from agents.lead_business_cache_agent import (
     mark_refresh_running,
     save_business_from_lead,
 )
+from agents.lead_contact_quality_agent import (
+    merge_flags as merge_contact_flags,
+    resolve_outreach_status,
+)
 
 
 def fetch(url, timeout=10):
@@ -196,6 +200,32 @@ def build_candidates(row):
     return candidates
 
 
+def _apply_contact_quality(lead, phone="", emails=None):
+    """Grade freshly refreshed contact data before it is cached.
+
+    Replaces the old `90 if phone and emails else 80` /
+    `"email_and_call_ready" if phone and emails` shortcut, which promoted a
+    lead on the strength of *any* email string -- including placeholders and
+    addresses on domains unrelated to the business. See
+    agents/lead_contact_quality_agent.py.
+    """
+    status, quality_flags, quality_confidence = resolve_outreach_status(
+        emails=lead.get("emails") or "",
+        phone=lead.get("best_phone") or "",
+        website=lead.get("website") or lead.get("url") or "",
+        domain=lead.get("domain") or "",
+        contact_page_url=lead.get("contact_page_url") or "",
+    )
+
+    lead["contact_confidence"] = min(
+        90 if phone and emails else 80,
+        quality_confidence,
+    )
+    lead["outreach_status"] = status
+    lead["contact_flags"] = merge_contact_flags(lead.get("contact_flags"), quality_flags)
+    return lead
+
+
 def refresh_business(row):
     domain = row.get("domain") or ""
     mark_refresh_running(domain)
@@ -218,12 +248,7 @@ def refresh_business(row):
                 lead["best_phone"] = phone or row.get("best_phone") or ""
                 lead["emails"] = ", ".join(emails) if emails else row.get("emails") or ""
                 lead["contact_page_url"] = final_url or candidate
-                lead["contact_confidence"] = 90 if phone and emails else 80
-                lead["outreach_status"] = (
-                    "email_and_call_ready" if phone and emails
-                    else "call_ready" if phone
-                    else "email_ready"
-                )
+                _apply_contact_quality(lead, phone=phone, emails=emails)
                 save_business_from_lead(lead, enriched=True)
                 mark_refresh_done(domain)
                 return True, lead
@@ -242,12 +267,7 @@ def refresh_business(row):
                 lead["best_phone"] = phone or row.get("best_phone") or ""
                 lead["emails"] = ", ".join(emails) if emails else row.get("emails") or ""
                 lead["contact_page_url"] = final_url or candidate
-                lead["contact_confidence"] = 90 if phone and emails else 80
-                lead["outreach_status"] = (
-                    "email_and_call_ready" if phone and emails
-                    else "call_ready" if phone
-                    else "email_ready"
-                )
+                _apply_contact_quality(lead, phone=phone, emails=emails)
                 save_business_from_lead(lead, enriched=True)
                 mark_refresh_done(domain)
                 return True, lead

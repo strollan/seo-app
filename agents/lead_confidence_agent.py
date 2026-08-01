@@ -3,6 +3,13 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+from agents.lead_contact_quality_agent import (
+    EVIDENCE_NONE,
+    EVIDENCE_STRONG,
+    EVIDENCE_WEAK,
+    assess_contact_quality,
+)
+
 BAD_VALUES = {"", "not found", "none", "null", "nan", "n/a", "unknown", "manual", "?"}
 
 
@@ -109,11 +116,25 @@ def calculate_contact_confidence(row) -> int:
 
     phone_ok = has_real_phone(phone)
     emails = clean_emails(emails_raw, lead_domain=domain, website=website)
-    email_ok = bool(emails)
-    email_domain_ok = email_matches_domain(emails, lead_domain=domain, website=website)
     contact_ok = has_real_contact_page(contact_page)
     address_ok = has_real_address(address)
     website_ok = bool(normalize_domain(website) or normalize_domain(domain))
+
+    # Email evidence is no longer "did we find an @ sign". It is graded by
+    # agents/lead_contact_quality_agent so that placeholder addresses
+    # (example@gmail.com), unrelated domains, and malformed strings cannot
+    # buy the same 30-40 points a verified business address earns.
+    # See that module's docstring for the defect this replaces.
+    assessment = assess_contact_quality(
+        emails=emails_raw,
+        phone=phone,
+        website=website,
+        domain=domain,
+        contact_page_url=contact_page,
+    )
+    evidence = assessment["email_evidence"]
+    email_ok = evidence in (EVIDENCE_WEAK, EVIDENCE_STRONG)
+    email_domain_ok = evidence == EVIDENCE_STRONG
 
     if not any([phone_ok, email_ok, contact_ok, address_ok, website_ok]):
         return 0
@@ -123,8 +144,11 @@ def calculate_contact_confidence(row) -> int:
         score += 5
     if phone_ok:
         score += 35
-    if email_ok:
+    if email_domain_ok:
         score += 30
+    elif email_ok:
+        # Real-looking but unverified against the business domain.
+        score += 10
     if email_domain_ok:
         score += 10
     if contact_ok:
@@ -132,18 +156,28 @@ def calculate_contact_confidence(row) -> int:
     if address_ok:
         score += 10
 
-    if phone_ok and email_ok and contact_ok and address_ok:
+    if phone_ok and email_domain_ok and contact_ok and address_ok:
         score = max(score, 93)
-    elif phone_ok and email_ok:
+    elif phone_ok and email_domain_ok:
         score = max(score, 90)
     elif phone_ok and contact_ok and address_ok:
         score = max(score, 85)
-    elif phone_ok or email_ok:
+    elif phone_ok:
+        score = max(score, 80)
+    elif email_domain_ok:
         score = max(score, 80)
     elif contact_ok:
         score = max(score, 70)
     elif website_ok:
         score = max(score, 50)
+
+    # Ceilings so the number can never imply verified email evidence we do
+    # not have. Weak email evidence must stay out of the ">= 80 ready" band
+    # unless a real phone is independently carrying the lead.
+    if evidence == EVIDENCE_WEAK and not phone_ok:
+        score = min(score, 70)
+    elif evidence == EVIDENCE_NONE and not phone_ok and not contact_ok:
+        score = min(score, 50)
 
     return max(0, min(int(score), 93))
 
