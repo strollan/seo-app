@@ -2437,7 +2437,7 @@ def render_public_guide(request: Request, template_name, page, faq):
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(page),
             "article_jsonld_html": seo_meta.render_article_jsonld(page),
-            "faq_jsonld_html": seo_meta.render_faq_jsonld(faq),
+            "faq_jsonld_html": seo_meta.render_faq_jsonld(faq) if faq else "",
             "faq": faq,
         },
     )
@@ -2450,6 +2450,16 @@ async def find_local_leads_page(request: Request):
         "find_local_leads.html",
         seo_meta.FIND_LOCAL_LEADS_PAGE,
         seo_meta.FIND_LOCAL_LEADS_FAQ,
+    )
+
+
+@app.get("/how-to-find-local-business-leads-without-buying-a-lead-list")
+async def find_local_business_leads_without_list_page(request: Request):
+    return render_public_guide(
+        request,
+        "how_to_find_local_business_leads_without_buying_a_lead_list.html",
+        seo_meta.FIND_LOCAL_BUSINESS_LEADS_WITHOUT_LIST_PAGE,
+        [],
     )
 
 

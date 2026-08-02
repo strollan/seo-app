@@ -29,6 +29,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/compare",
     "/what-makes-a-good-lead",
     "/how-to-find-local-leads",
+    "/how-to-find-local-business-leads-without-buying-a-lead-list",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
     "/resources",
@@ -127,6 +128,16 @@ FIND_LOCAL_LEADS_PAGE = SeoPage(
         "details and website signals, and organize prospects before outreach."
     ),
     canonical_path="/how-to-find-local-leads",
+)
+
+FIND_LOCAL_BUSINESS_LEADS_WITHOUT_LIST_PAGE = SeoPage(
+    title="Find Local Business Leads Without Buying a List | LeadMeLeads",
+    description=(
+        "Learn how to find local business leads without buying a list. Search "
+        "by keyword and location, review public details, and verify prospects "
+        "before outreach."
+    ),
+    canonical_path="/how-to-find-local-business-leads-without-buying-a-lead-list",
 )
 
 LOCAL_LEAD_GENERATION_PAGE = SeoPage(

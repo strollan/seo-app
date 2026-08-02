@@ -1,4 +1,4 @@
-"""Focused SEO/AEO coverage for the three local-lead editorial guides."""
+"""Focused SEO/AEO coverage for the local-lead editorial guides."""
 
 import asyncio
 import html
@@ -44,6 +44,8 @@ PAGES = {
         "faq": seo_meta.LEAD_LIST_VS_FINDER_FAQ,
     },
 }
+
+WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
 
 
 class LocalLeadContentClusterTests(unittest.TestCase):
@@ -124,6 +126,52 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             self.assertIn('href="/lead-bot"', body)
             self.assertIn('href="/compare"', body)
             self.assertIn('href="/what-makes-a-good-lead"', body)
+
+    def test_without_list_article_links_to_five_intended_routes(self):
+        body = self.client.get(WITHOUT_LIST_PATH).text
+        expected = {
+            "/lead-bot": "LeadMeLeads Lead Finder",
+            "/compare": "Website Comparison Tool",
+            "/what-makes-a-good-lead": "what makes a good lead",
+            "/lead-list-vs-lead-finder": "lead lists vs. lead finders",
+            "/how-to-find-local-leads": "how to find local leads",
+        }
+        for route, anchor in expected.items():
+            self.assertIn(f'href="{route}">{anchor}</a>', body)
+
+    def test_without_list_article_schema_and_approved_copy(self):
+        response = self.client.get(WITHOUT_LIST_PATH)
+        self.assertEqual(response.status_code, 200)
+        scripts = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            response.text,
+            re.DOTALL,
+        )
+        articles = [json.loads(item) for item in scripts if '"Article"' in item]
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["@type"], "Article")
+        self.assertEqual(
+            articles[0]["mainEntityOfPage"],
+            seo_meta.canonical_url(WITHOUT_LIST_PATH),
+        )
+        self.assertNotIn('"FAQPage"', response.text)
+        approved_copy = (
+            "Why Purchased Lead Lists Become Outdated",
+            "Purchased lead lists can become outdated quickly. Businesses close, move, change ownership, or update their contact information.",
+            "LeadMeLeads finds businesses currently appearing in search results and collects publicly available contact and website information. That gives you a more useful starting point than a static list.",
+            "The results are still prospects to investigate—not guaranteed buyers. Contact details may be incomplete, so each business should be reviewed and verified before outreach.",
+        )
+        for exact_text in approved_copy:
+            self.assertEqual(response.text.count(exact_text), 1)
+
+    def test_without_list_template_has_no_draft_or_placeholder_markup(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/how_to_find_local_business_leads_without_buying_a_lead_list.html"
+        ).read_text(encoding="utf-8")
+        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
+        for forbidden in ("<!DOCTYPE html>", "<style>", "draft-banner", "placeholder-", "DRAFT"):
+            self.assertNotIn(forbidden, source)
 
     def test_mobile_safe_markup_and_overflow_guards(self):
         base = (Path(__file__).parent.parent / "app/templates/public_guide_base.html").read_text()

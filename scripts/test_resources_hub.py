@@ -28,6 +28,7 @@ class AsgiClient:
 GUIDES = (
     "/what-makes-a-good-lead",
     "/how-to-find-local-leads",
+    "/how-to-find-local-business-leads-without-buying-a-lead-list",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
 )
@@ -91,6 +92,13 @@ class ResourcesHubTests(unittest.TestCase):
                     f'rel="canonical" href="{seo_meta.canonical_url(guide)}"',
                     guide_response.text,
                 )
+
+    def test_without_list_card_uses_natural_anchor_text(self):
+        self.assertIn(
+            'href="/how-to-find-local-business-leads-without-buying-a-lead-list">'
+            "Learn how to research leads without buying a list</a>",
+            self.body,
+        )
 
     def test_no_faq_schema_on_hub(self):
         self.assertNotIn('"FAQPage"', self.body)
