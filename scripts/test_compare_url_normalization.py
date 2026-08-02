@@ -249,5 +249,58 @@ class ErrorPreservesEnteredValuesTests(CompareUrlNormalizationTestCase):
         self.assertEqual(query.get("url_2"), ["example.org"])
 
 
+class DnsRebindingProtectionStillExecutesAfterNormalizationTests(unittest.TestCase):
+    """Normalization only changes what string reaches validate_public_url();
+    it must not let a bare-domain input skip the real SSRF check or the
+    DNS-rebinding pin that the actual crawl (agents.crawl_agent.crawl_get,
+    invoked via app.main.fetch_page_data) applies to every fetch. This runs
+    the real, unmocked sanitize_url -> validate_public_url -> pinned_dns
+    chain end to end for a bare-domain input -- only the HTTP request and
+    DNS resolution are faked, matching scripts/test_url_safety.py."""
+
+    def test_normalized_bare_domain_fetch_engages_real_ssrf_check_and_dns_pin(self):
+        from agents import crawl_agent
+
+        crawl_agent._CRAWL_CACHE.clear()
+        self.addCleanup(crawl_agent._CRAWL_CACHE.clear)
+
+        normalized = appmain.sanitize_url("leadmeleads.com")
+        self.assertEqual(normalized, "https://leadmeleads.com")
+
+        fake_response = mock.Mock(is_redirect=False, status_code=200, url=normalized, headers={})
+        fake_response.iter_content = lambda chunk_size=1: [
+            b"<html><head><title>t</title></head></html>"
+        ]
+
+        pin_calls = []
+        real_pinned_dns = crawl_agent.pinned_dns
+
+        def spying_pinned_dns(hostname, ips):
+            pin_calls.append((hostname, tuple(ips)))
+            return real_pinned_dns(hostname, ips)
+
+        with mock.patch(
+            "agents.url_safety.socket.getaddrinfo", return_value=addrinfo_for(PUBLIC_IP)
+        ), mock.patch(
+            "agents.crawl_agent.pinned_dns", side_effect=spying_pinned_dns
+        ), mock.patch(
+            "agents.crawl_agent.requests.get", return_value=fake_response
+        ) as mock_get:
+            appmain.fetch_page_data(normalized)
+
+        # Proves the bare-domain-turned-https URL was not silently skipped
+        # by crawl_get's non-http(s) short-circuit -- a real request fired.
+        mock_get.assert_called_once()
+        called_url = mock_get.call_args[0][0]
+        self.assertTrue(called_url.startswith("https://leadmeleads.com"))
+
+        # Proves the DNS-rebinding pin was engaged for exactly the
+        # validated hostname/IP pair -- not skipped, not a different host.
+        self.assertEqual(len(pin_calls), 1)
+        hostname, ips = pin_calls[0]
+        self.assertEqual(hostname, "leadmeleads.com")
+        self.assertEqual(ips, (PUBLIC_IP,))
+
+
 if __name__ == "__main__":
     unittest.main()
