@@ -12,6 +12,10 @@ Design notes:
   monkeypatch a single choke point instead of mocking subprocess directly.
 - Nothing in this module pushes, pulls, restarts, or backs up anything
   unless cmd_deploy() (the real, default, no-flag mode) is executed.
+- The local repo to operate on is resolved once, in main(), by
+  resolve_repo_path(): --repo PATH if given, otherwise the repo this script
+  file physically lives in. Never the old hardcoded absolute path — that
+  string does not appear anywhere in this module anymore.
 """
 
 from __future__ import annotations
@@ -33,8 +37,31 @@ from urllib.parse import urlparse
 # Configuration
 # ---------------------------------------------------------------------------
 
-REPO_PATH = Path("/mnt/c/Users/scott/ai-project/seo-app")
+def _script_repo_root():
+    """Repo root containing this script (scripts/<this file>/..).
+
+    Derived from this script's own on-disk location rather than a hardcoded
+    path or the process cwd, so leadme-deploy targets whichever checkout or
+    worktree it is actually being run from. `--repo PATH` overrides this
+    explicitly; see resolve_repo_path().
+    """
+    return Path(__file__).resolve().parent.parent
+
+
+# Mutated once, early in main(), by resolve_repo_path()/--repo. Every helper
+# below takes `repo=None` (never `repo=REPO_PATH`) and falls back to this
+# module global by name at call time — a default of the form `repo=REPO_PATH`
+# would freeze in the value present at function-definition time (module
+# import) and silently ignore any later --repo override.
+REPO_PATH = _script_repo_root()
 PRIMARY_BRANCH = "main"
+
+# The only origin remote leadme-deploy is willing to operate against,
+# regardless of which local path (auto-detected or --repo) resolves to it.
+# Matches both the HTTPS and SSH remote URL forms, with or without ".git".
+EXPECTED_REMOTE_PATTERN = re.compile(
+    r"github\.com[:/]strollan/seo-app(\.git)?/?$", re.IGNORECASE
+)
 
 # WSL drvfs mount prefix for the Windows C: drive. git operations whose cwd
 # lives under here are eligible to run through git.exe instead of Linux git
@@ -56,11 +83,15 @@ PROD_SERVICE = "leadmeleads"
 LIVE_SITE = "https://leadmeleads.com"
 
 # Preferred local compile interpreter, falling back if unavailable.
-LOCAL_VENV_CANDIDATES = [
-    Path.home() / ".venvs" / "leadmeleads" / "bin" / "python",
-    REPO_PATH / "venv" / "bin" / "python",
-    Path(sys.executable),
-]
+def local_venv_candidates():
+    """Computed at call time (not import time) so it reflects REPO_PATH as
+    resolved by --repo/auto-detection rather than whatever REPO_PATH was
+    when this module was first imported."""
+    return [
+        Path.home() / ".venvs" / "leadmeleads" / "bin" / "python",
+        REPO_PATH / "venv" / "bin" / "python",
+        Path(sys.executable),
+    ]
 
 COMPILE_TARGETS = [
     "app/main.py",
@@ -303,7 +334,19 @@ class Reporter:
 # Local git helpers
 # ---------------------------------------------------------------------------
 
-def repo_exists(repo=REPO_PATH):
+def _resolved_repo(repo):
+    """Late-bind a `repo=None` default to the current REPO_PATH global.
+
+    Used instead of `repo=REPO_PATH` as a literal default value everywhere
+    below, because a default expression is evaluated once at function
+    definition (module import) time — it would freeze in whatever REPO_PATH
+    was before --repo/auto-detection ran and silently ignore any override.
+    """
+    return repo if repo is not None else REPO_PATH
+
+
+def repo_exists(repo=None):
+    repo = _resolved_repo(repo)
     return Path(repo).is_dir() and (Path(repo) / ".git").exists()
 
 
@@ -312,26 +355,29 @@ def git_available():
     return res.ok
 
 
-def current_branch(repo=REPO_PATH):
+def current_branch(repo=None):
+    repo = _resolved_repo(repo)
     res = run_local(["git", "branch", "--show-current"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def head_sha(repo=REPO_PATH):
+def head_sha(repo=None):
+    repo = _resolved_repo(repo)
     res = run_local(["git", "rev-parse", "HEAD"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def tracked_tree_clean(repo=REPO_PATH):
+def tracked_tree_clean(repo=None):
     """True only if there are no staged or unstaged changes to tracked files.
 
     Uses `git diff --quiet` / `git diff --cached --quiet` per project
     guidance rather than parsing full `git status` output.
     """
+    repo = _resolved_repo(repo)
     unstaged = run_local(["git", "diff", "--quiet"], cwd=repo, timeout=15)
     staged = run_local(["git", "diff", "--cached", "--quiet"], cwd=repo, timeout=15)
     if unstaged.returncode not in (0, 1) or staged.returncode not in (0, 1):
@@ -346,8 +392,9 @@ def is_known_untracked(path):
     return any(norm.startswith(p) for p in KNOWN_UNTRACKED_PREFIXES)
 
 
-def classify_untracked(repo=REPO_PATH):
+def classify_untracked(repo=None):
     """Return (known, unexpected) lists of untracked paths."""
+    repo = _resolved_repo(repo)
     res = run_local(
         ["git", "status", "--porcelain", "--untracked-files=normal"],
         cwd=repo,
@@ -364,23 +411,26 @@ def classify_untracked(repo=REPO_PATH):
     return known, unexpected
 
 
-def fetch_origin(repo=REPO_PATH, branch=PRIMARY_BRANCH, timeout=30):
+def fetch_origin(repo=None, branch=PRIMARY_BRANCH, timeout=30):
+    repo = _resolved_repo(repo)
     res = run_local(["git", "fetch", "origin", branch], cwd=repo, timeout=timeout)
     return res.ok, res.stderr.strip()
 
 
-def origin_branch_sha(repo=REPO_PATH, branch=PRIMARY_BRANCH):
+def origin_branch_sha(repo=None, branch=PRIMARY_BRANCH):
+    repo = _resolved_repo(repo)
     res = run_local(["git", "rev-parse", f"origin/{branch}"], cwd=repo, timeout=10)
     if not res.ok:
         return None
     return res.stdout.strip()
 
 
-def divergence_state(repo=REPO_PATH, branch=PRIMARY_BRANCH):
+def divergence_state(repo=None, branch=PRIMARY_BRANCH):
     """Return (state, ahead, behind) comparing HEAD to origin/<branch>.
 
     state is one of: "in-sync", "ahead", "behind", "diverged", "unknown".
     """
+    repo = _resolved_repo(repo)
     res = run_local(
         ["git", "rev-list", "--left-right", "--count", f"origin/{branch}...HEAD"],
         cwd=repo,
@@ -401,26 +451,97 @@ def divergence_state(repo=REPO_PATH, branch=PRIMARY_BRANCH):
     return "in-sync", ahead, behind
 
 
-def push_origin(repo=REPO_PATH, branch=PRIMARY_BRANCH, timeout=60):
+def push_origin(repo=None, branch=PRIMARY_BRANCH, timeout=60):
+    repo = _resolved_repo(repo)
     res = run_local(["git", "push", "origin", branch], cwd=repo, timeout=timeout)
     return res.ok, (res.stdout + res.stderr).strip()
 
 
 def local_python_for_compile():
-    for candidate in LOCAL_VENV_CANDIDATES:
+    for candidate in local_venv_candidates():
         if Path(candidate).exists():
             return str(candidate)
     return sys.executable
 
 
-def compile_targets(python_bin, repo=REPO_PATH, targets=None, timeout=COMPILE_TIMEOUT):
+def compile_targets(python_bin, repo=None, targets=None, timeout=COMPILE_TIMEOUT):
     """Compile each target individually so one bad file doesn't hide others."""
+    repo = _resolved_repo(repo)
     targets = targets if targets is not None else COMPILE_TARGETS
     results = []
     for target in targets:
         res = run_local([python_bin, "-m", "py_compile", target], cwd=repo, timeout=timeout)
         results.append((target, res.ok, (res.stdout + res.stderr).strip()))
     return results
+
+
+# ---------------------------------------------------------------------------
+# Repo resolution — --repo PATH or auto-detection, validated before any
+# mode (including read-only ones) is allowed to run against the result.
+# ---------------------------------------------------------------------------
+
+class RepoResolutionError(Exception):
+    """The requested/auto-detected repo path failed validation."""
+
+
+def remote_origin_url(repo):
+    res = run_local(["git", "remote", "get-url", "origin"], cwd=repo, timeout=10)
+    if not res.ok:
+        return None
+    return res.stdout.strip() or None
+
+
+def repo_remote_matches_expected(repo):
+    """Return (matches, url). url is None if it couldn't be read at all."""
+    url = remote_origin_url(repo)
+    if not url:
+        return False, None
+    return bool(EXPECTED_REMOTE_PATTERN.search(url)), url
+
+
+def resolve_repo_path(cli_value):
+    """Resolve and validate the repo leadme-deploy will operate on.
+
+    Uses --repo PATH if given, otherwise the repo this script physically
+    lives in (_script_repo_root()) — never the old hardcoded path, which no
+    longer exists anywhere in this module. Returns (Path, source_label) on
+    success; raises RepoResolutionError with a human-readable reason
+    otherwise. Checked here, before any mode dispatches, regardless of
+    whether the mode is read-only:
+
+    - path must exist and be a directory
+    - path must be a git repository (has .git)
+    - origin remote must match EXPECTED_REMOTE_PATTERN (the real
+      LeadMeLeads repo) — this is what stops --repo /some/other/checkout
+      from being treated as LeadMeLeads by accident
+
+    Tracked-tree cleanliness is deliberately NOT checked here — it stays a
+    per-mode step (see cmd_check/cmd_deploy) so read-only modes like
+    --doctor/--status can still report a dirty tree instead of refusing to
+    run at all.
+    """
+    if cli_value:
+        candidate = Path(cli_value).expanduser().resolve()
+        source = f"--repo {cli_value}"
+    else:
+        candidate = _script_repo_root()
+        source = "auto-detected from script location"
+
+    if not candidate.exists():
+        raise RepoResolutionError(f"repo path does not exist: {candidate} ({source})")
+    if not candidate.is_dir():
+        raise RepoResolutionError(f"repo path is not a directory: {candidate} ({source})")
+    if not (candidate / ".git").exists():
+        raise RepoResolutionError(f"not a git repository (no .git found): {candidate} ({source})")
+
+    matches, url = repo_remote_matches_expected(candidate)
+    if not matches:
+        raise RepoResolutionError(
+            f"origin remote does not match the expected LeadMeLeads repository: "
+            f"{url or '(could not read origin remote)'} ({source}, path: {candidate})"
+        )
+
+    return candidate, source
 
 
 # ---------------------------------------------------------------------------
@@ -1255,6 +1376,18 @@ def build_parser():
         prog="leadme-deploy",
         description="Deployment automation for LeadMeLeads.",
     )
+    parser.add_argument(
+        "--repo",
+        metavar="PATH",
+        default=None,
+        help=(
+            "path to the LeadMeLeads repo to operate on (default: "
+            "auto-detected from this script's own location — i.e. the "
+            "checkout/worktree scripts/leadme_deploy.py is actually running "
+            "from). Rejected unless it exists, is a git repo, and its "
+            "origin remote matches the real LeadMeLeads repository."
+        ),
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="local pre-deploy validation only")
     mode.add_argument("--status", action="store_true", help="show local/remote/live status, no mutations")
@@ -1266,8 +1399,19 @@ def build_parser():
 
 
 def main(argv=None):
+    global REPO_PATH
+
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    try:
+        resolved_repo, source = resolve_repo_path(args.repo)
+    except RepoResolutionError as exc:
+        print(f"[FAIL] {exc}")
+        return 1
+
+    REPO_PATH = resolved_repo
+    print(f"Repo: {REPO_PATH} ({source})")
 
     if args.check:
         return cmd_check(args)

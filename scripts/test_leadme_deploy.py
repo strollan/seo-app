@@ -434,11 +434,250 @@ class NoSecretsPrintedTests(unittest.TestCase):
             self.assertIsNone(ld.SECRET_LIKE_KEY_PATTERN.search(key))
 
 
+class ExpectedRemotePatternTests(unittest.TestCase):
+    """EXPECTED_REMOTE_PATTERN is the sole gate that stops --repo (or a
+    misdetected auto-detected path) from being treated as LeadMeLeads just
+    because it happens to be a git repo."""
+
+    def test_matches_https_with_git_suffix(self):
+        self.assertTrue(ld.EXPECTED_REMOTE_PATTERN.search("https://github.com/strollan/seo-app.git"))
+
+    def test_matches_https_without_git_suffix(self):
+        self.assertTrue(ld.EXPECTED_REMOTE_PATTERN.search("https://github.com/strollan/seo-app"))
+
+    def test_matches_ssh_form(self):
+        self.assertTrue(ld.EXPECTED_REMOTE_PATTERN.search("git@github.com:strollan/seo-app.git"))
+
+    def test_rejects_different_repo_same_owner(self):
+        self.assertFalse(ld.EXPECTED_REMOTE_PATTERN.search("https://github.com/strollan/some-other-repo.git"))
+
+    def test_rejects_different_owner_same_repo_name(self):
+        self.assertFalse(ld.EXPECTED_REMOTE_PATTERN.search("https://github.com/someone-else/seo-app.git"))
+
+    def test_rejects_owner_name_that_merely_contains_expected_owner(self):
+        """'notstrollan/seo-app' must not pass just because 'strollan' is a
+        substring of it."""
+        self.assertFalse(ld.EXPECTED_REMOTE_PATTERN.search("https://github.com/notstrollan/seo-app.git"))
+
+
+class RepoResolutionTests(unittest.TestCase):
+    """resolve_repo_path() — the gate every mode (--repo or auto-detected)
+    passes through before any command runs. Structural checks only
+    (existence, git-ness, remote match); tracked-tree cleanliness is
+    deliberately NOT one of them, see the docstring on resolve_repo_path."""
+
+    def _fake_git_repo(self, tmp, name="repo"):
+        path = Path(tmp) / name
+        (path / ".git").mkdir(parents=True)
+        return path
+
+    def test_explicit_repo_nonexistent_path_rejected(self):
+        with self.assertRaises(ld.RepoResolutionError) as ctx:
+            ld.resolve_repo_path("/definitely/does/not/exist/leadme-nope")
+        self.assertIn("does not exist", str(ctx.exception))
+
+    def test_explicit_repo_file_not_directory_rejected(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile() as f:
+            with self.assertRaises(ld.RepoResolutionError) as ctx:
+                ld.resolve_repo_path(f.name)
+        self.assertIn("not a directory", str(ctx.exception))
+
+    def test_explicit_repo_missing_git_dir_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ld.RepoResolutionError) as ctx:
+                ld.resolve_repo_path(tmp)
+        self.assertIn("not a git repository", str(ctx.exception))
+
+    def test_explicit_repo_wrong_remote_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._fake_git_repo(tmp)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "https://github.com/someone-else/other-repo.git\n"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                with self.assertRaises(ld.RepoResolutionError) as ctx:
+                    ld.resolve_repo_path(str(repo))
+        self.assertIn("does not match", str(ctx.exception))
+
+    def test_explicit_repo_no_origin_remote_rejected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._fake_git_repo(tmp)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(128, "", "fatal: No such remote 'origin'"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                with self.assertRaises(ld.RepoResolutionError) as ctx:
+                    ld.resolve_repo_path(str(repo))
+        self.assertIn("could not read origin remote", str(ctx.exception))
+
+    def test_explicit_repo_valid_https_remote_accepted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._fake_git_repo(tmp)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                resolved, source = ld.resolve_repo_path(str(repo))
+        self.assertEqual(resolved, repo.resolve())
+        self.assertIn("--repo", source)
+
+    def test_explicit_repo_valid_ssh_remote_accepted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._fake_git_repo(tmp)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "git@github.com:strollan/seo-app.git\n"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                resolved, source = ld.resolve_repo_path(str(repo))
+        self.assertEqual(resolved, repo.resolve())
+
+    def test_auto_detect_uses_script_repo_root_when_no_cli_value(self):
+        router = FakeRouter()
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        with mock.patch.object(ld, "run_local", router.run_local):
+            resolved, source = ld.resolve_repo_path(None)
+        self.assertEqual(resolved, ld._script_repo_root())
+        self.assertIn("auto-detected", source)
+
+    def test_resolve_repo_path_never_checks_tracked_tree_cleanliness(self):
+        """Dirty-tree rejection stays a per-mode step (cmd_check/cmd_deploy)
+        so read-only modes like --doctor can still run and report a dirty
+        tree instead of refusing to start at all."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._fake_git_repo(tmp)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                ld.resolve_repo_path(str(repo))
+        called = [" ".join(c) for c in router.local_calls]
+        self.assertTrue(all("diff" not in c for c in called))
+
+
+class RepoPathLateBindingTests(unittest.TestCase):
+    """A `repo=REPO_PATH` default would freeze the value present at module
+    import time and silently ignore any later --repo override — these prove
+    every helper instead re-reads the current REPO_PATH global at call
+    time (see _resolved_repo())."""
+
+    def setUp(self):
+        self._original_repo_path = ld.REPO_PATH
+
+    def tearDown(self):
+        ld.REPO_PATH = self._original_repo_path
+
+    def test_current_branch_uses_overridden_repo_path(self):
+        captured = {}
+
+        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
+            captured["cwd"] = cwd
+            return FakeResult(0, "main\n")
+
+        ld.REPO_PATH = Path("/some/other/repo")
+        with mock.patch.object(ld, "run_local", fake_run_local):
+            ld.current_branch()
+        self.assertEqual(captured["cwd"], Path("/some/other/repo"))
+
+    def test_local_venv_candidates_reflect_overridden_repo_path(self):
+        ld.REPO_PATH = Path("/some/other/repo")
+        candidates = ld.local_venv_candidates()
+        self.assertIn(Path("/some/other/repo") / "venv" / "bin" / "python", candidates)
+
+
+class MainRepoFlagTests(unittest.TestCase):
+    """Integration coverage for --repo through main(): resolution happens
+    before any mode dispatches, and REPO_PATH is printed and updated."""
+
+    def setUp(self):
+        self._original_repo_path = ld.REPO_PATH
+
+    def tearDown(self):
+        ld.REPO_PATH = self._original_repo_path
+
+    def test_main_rejects_nonexistent_repo_and_never_dispatches(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = ld.main(["--repo", "/definitely/does/not/exist", "--check"])
+        self.assertEqual(rc, 1)
+        self.assertIn("does not exist", buf.getvalue())
+        self.assertNotIn("CHECK", buf.getvalue())
+
+    def test_main_rejects_repo_with_wrong_remote(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / ".git").mkdir(parents=True)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "https://github.com/someone-else/not-leadmeleads.git\n"),
+            )
+            with mock.patch.object(ld, "run_local", router.run_local):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = ld.main(["--repo", str(repo), "--status"])
+        self.assertEqual(rc, 1)
+        self.assertIn("does not match", buf.getvalue())
+
+    def test_main_prints_resolved_repo_before_dispatch_and_updates_global(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            (repo / ".git").mkdir(parents=True)
+            router = FakeRouter()
+            router.add_local(
+                contains("remote", "get-url", "origin"),
+                FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+            )
+            router.add_local(contains("branch", "--show-current"), FakeResult(0, "main\n"))
+            router.add_local(contains("diff", "--quiet"), FakeResult(0))
+            router.add_local(contains("diff", "--cached", "--quiet"), FakeResult(0))
+            router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
+            router.add_local(contains("fetch", "origin"), FakeResult(0))
+            router.add_local(contains("rev-list", "--left-right"), FakeResult(0, "0\t0"))
+            router.add_local(contains("py_compile"), FakeResult(0))
+            with mock.patch.object(ld, "run_local", router.run_local):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = ld.main(["--repo", str(repo), "--check"])
+            out = buf.getvalue()
+            self.assertIn(f"Repo: {repo.resolve()}", out)
+            self.assertIn("CHECK PASS", out)
+            self.assertEqual(ld.REPO_PATH, repo.resolve())
+        self.assertEqual(rc, 0)
+
+
 class ArgumentParsingTests(unittest.TestCase):
     def test_default_mode_has_no_flags(self):
         parser = ld.build_parser()
         args = parser.parse_args([])
         self.assertFalse(any([args.check, args.status, args.smoke, args.doctor, args.dry_run, args.rollback_info]))
+        self.assertIsNone(args.repo)
+
+    def test_repo_flag_parses(self):
+        parser = ld.build_parser()
+        args = parser.parse_args(["--repo", "/tmp/some-leadmeleads-checkout"])
+        self.assertEqual(args.repo, "/tmp/some-leadmeleads-checkout")
 
     def test_flags_are_mutually_exclusive(self):
         parser = ld.build_parser()

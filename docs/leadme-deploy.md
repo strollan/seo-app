@@ -13,6 +13,82 @@ smoke-test deploy loop for LeadMeLeads.
 Production target: `root@165.245.238.122:/var/www/leadmeleads`, systemd unit
 `leadmeleads`, live site `https://leadmeleads.com`.
 
+## Which local repo it operates on
+
+leadme-deploy resolves the local repo it will operate on once, before any
+mode runs, and prints the result as the first line of output:
+
+```
+Repo: /path/to/resolved/repo (auto-detected from script location)
+```
+
+Resolution order:
+
+1. **`--repo PATH`**, if given.
+2. Otherwise, **auto-detected**: the repo that `scripts/leadme_deploy.py`
+   itself physically lives in (its grandparent directory). This is why
+   running the script *from a different clean worktree* targets that
+   worktree — there is no hardcoded fallback path baked into the tool. If
+   you invoke it via the installed `~/.local/bin/leadme-deploy` symlink,
+   auto-detection resolves to whatever repo that symlink's target lives in
+   (normally the primary checkout); to deploy from another worktree, run
+   that worktree's own `scripts/leadme-deploy` directly (see examples
+   below) or pass `--repo`.
+
+Whichever path is resolved, it is rejected before any mode runs unless it:
+
+- exists and is a directory,
+- is a git repository (has a `.git`),
+- has an `origin` remote that resolves to the real LeadMeLeads repository
+  (`github.com/strollan/seo-app`, HTTPS or SSH, with or without `.git`) —
+  this stops `--repo` from ever being pointed at an unrelated checkout by
+  mistake.
+
+**Tracked-tree cleanliness is not part of this gate.** It stays a per-mode
+check (see "What blocks deployment" below) so read-only modes such as
+`--doctor` can still run against a dirty tree and report that it's dirty,
+instead of refusing to start at all.
+
+### Examples
+
+Run against the worktree the script itself lives in (most common case —
+also what the installed `leadme-deploy` command does):
+
+```
+leadme-deploy --check
+```
+
+Run against a specific, already-clean worktree by invoking its own copy of
+the script directly:
+
+```
+/home/scot/.local/share/leadme-collab/worktrees/<task-id>/scripts/leadme-deploy --check
+```
+
+Run against an explicit path regardless of which script copy you invoke:
+
+```
+leadme-deploy --repo /home/scot/.local/share/leadme-collab/worktrees/<task-id> --check
+leadme-deploy --repo /home/scot/.local/share/leadme-collab/worktrees/<task-id> --dry-run
+leadme-deploy --repo /home/scot/.local/share/leadme-collab/worktrees/<task-id>
+```
+
+(The last line runs a real deploy from that path — same 9-phase flow as
+always, just sourced from the given repo instead of the primary checkout.)
+
+Any of these are rejected before anything else runs:
+
+```
+$ leadme-deploy --repo /tmp/does-not-exist
+[FAIL] repo path does not exist: /tmp/does-not-exist (--repo /tmp/does-not-exist)
+
+$ leadme-deploy --repo /tmp/some-empty-dir
+[FAIL] not a git repository (no .git found): /tmp/some-empty-dir (--repo /tmp/some-empty-dir)
+
+$ leadme-deploy --repo /path/to/some-unrelated-clone
+[FAIL] origin remote does not match the expected LeadMeLeads repository: https://github.com/someone-else/other-repo.git (--repo /path/to/some-unrelated-clone, path: /path/to/some-unrelated-clone)
+```
+
 ## Required production environment variable
 
 The real production `.env` (not committed, not `.env.example`) must contain:
@@ -127,6 +203,10 @@ need to roll back.
 
 ## What blocks deployment
 
+- The resolved repo path (`--repo` or auto-detected — see above) doesn't
+  exist, isn't a directory, isn't a git repository, or its `origin` remote
+  doesn't match the real LeadMeLeads repository. Checked before any mode
+  runs, for every mode, not just a real deploy.
 - Current branch isn't `main` (never auto-switches).
 - Tracked modifications in the local repo (staged or unstaged).
 - Local main diverged from `origin/main` (both ahead and behind).
