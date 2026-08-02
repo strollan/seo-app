@@ -2754,16 +2754,33 @@ async def analyze(
 ):
     import html as _html
 
-    for candidate_url in (url_1, url_2):
+    # Preserve exactly what the user typed (for re-filling the form on
+    # error) before normalizing. sanitize_url() only adds a scheme when
+    # none is present at all -- an input that already declares a scheme,
+    # supported or not (http/https/javascript/file/ftp/data/gopher/...),
+    # is left untouched, so validate_public_url()'s scheme allowlist below
+    # still makes the real security decision unchanged.
+    raw_url_1 = (url_1 or "").strip()
+    raw_url_2 = (url_2 or "").strip()
+    url_1 = sanitize_url(url_1)
+    url_2 = sanitize_url(url_2)
+
+    for field_name, field_label, candidate_url in (
+        ("url_1", "Your Site", url_1),
+        ("url_2", "Competitor", url_2),
+    ):
         candidate_url = (candidate_url or "").strip()
         if not candidate_url:
             continue
         try:
             validate_public_url(candidate_url)
         except UnsafeURLError as exc:
+            back_qs = urlencode({"url_1": raw_url_1, "url_2": raw_url_2})
             return HTMLResponse(
-                f"<h1>Could not scan this URL</h1><p>{_html.escape(str(exc))}</p>"
-                f"<p><a href='/compare'>Back to Compare</a></p>",
+                f"<h1>Could not scan this URL</h1>"
+                f"<p>{_html.escape(field_label)} URL is invalid.</p>"
+                f"<p>{_html.escape(str(exc))}</p>"
+                f"<p><a href='/compare?{back_qs}'>Back to Compare</a></p>",
                 status_code=400,
             )
 
@@ -2797,7 +2814,7 @@ async def analyze(
         competitor_query = " ".join(part for part in search_parts if part).strip()
 
         if not competitor_query:
-            competitor_query = (url_1 or "").strip()
+            competitor_query = raw_url_1
 
         try:
             found_competitors = find_business_competitors(competitor_query)
