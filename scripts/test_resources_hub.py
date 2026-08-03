@@ -29,6 +29,7 @@ GUIDES = (
     "/what-makes-a-good-lead",
     "/how-to-find-local-leads",
     "/how-to-find-local-business-leads-without-buying-a-lead-list",
+    "/how-to-verify-local-business-leads-before-outreach",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
 )
@@ -98,6 +99,17 @@ class ResourcesHubTests(unittest.TestCase):
             'href="/how-to-find-local-business-leads-without-buying-a-lead-list">'
             "Learn how to research leads without buying a list</a>",
             self.body,
+        )
+
+    def test_verify_leads_card_uses_natural_anchor_text(self):
+        self.assertIn(
+            'href="/how-to-verify-local-business-leads-before-outreach">'
+            "Learn how to verify leads before outreach</a>",
+            self.body,
+        )
+        self.assertEqual(
+            self.body.count('href="/how-to-verify-local-business-leads-before-outreach"'),
+            1,
         )
 
     def test_no_faq_schema_on_hub(self):

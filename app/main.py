@@ -2463,6 +2463,16 @@ async def find_local_business_leads_without_list_page(request: Request):
     )
 
 
+@app.get("/how-to-verify-local-business-leads-before-outreach")
+async def verify_local_business_leads_page(request: Request):
+    return render_public_guide(
+        request,
+        "how_to_verify_local_business_leads_before_outreach.html",
+        seo_meta.VERIFY_LOCAL_BUSINESS_LEADS_PAGE,
+        [],
+    )
+
+
 @app.get("/local-lead-generation")
 async def local_lead_generation_page(request: Request):
     return render_public_guide(

@@ -90,6 +90,18 @@ class PublicPageMetadataTests(unittest.TestCase):
                 "how-to-find-local-business-leads-without-buying-a-lead-list"
             ),
         },
+        "/how-to-verify-local-business-leads-before-outreach": {
+            "title": "Verify Local Business Leads Before Outreach | LeadMeLeads",
+            "description": (
+                "Learn how to verify local business leads before outreach by "
+                "checking business status, websites, contact details, "
+                "locations, and visible opportunities."
+            ),
+            "canonical": (
+                "https://leadmeleads.com/"
+                "how-to-verify-local-business-leads-before-outreach"
+            ),
+        },
         "/how-to-find-local-leads": {
             "title": "How to Find Local Leads: A Step-by-Step Process | LeadMeLeads",
             "description": (
@@ -526,12 +538,13 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/what-makes-a-good-lead",
                 "https://leadmeleads.com/how-to-find-local-leads",
                 "https://leadmeleads.com/how-to-find-local-business-leads-without-buying-a-lead-list",
+                "https://leadmeleads.com/how-to-verify-local-business-leads-before-outreach",
                 "https://leadmeleads.com/local-lead-generation",
                 "https://leadmeleads.com/lead-list-vs-lead-finder",
                 "https://leadmeleads.com/resources",
             },
         )
-        self.assertEqual(len(urls), 9)
+        self.assertEqual(len(urls), 10)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text

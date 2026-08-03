@@ -30,6 +30,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/what-makes-a-good-lead",
     "/how-to-find-local-leads",
     "/how-to-find-local-business-leads-without-buying-a-lead-list",
+    "/how-to-verify-local-business-leads-before-outreach",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
     "/resources",
@@ -144,6 +145,16 @@ FIND_LOCAL_BUSINESS_LEADS_WITHOUT_LIST_PAGE = SeoPage(
         "before outreach."
     ),
     canonical_path="/how-to-find-local-business-leads-without-buying-a-lead-list",
+)
+
+VERIFY_LOCAL_BUSINESS_LEADS_PAGE = SeoPage(
+    title="Verify Local Business Leads Before Outreach | LeadMeLeads",
+    description=(
+        "Learn how to verify local business leads before outreach by checking "
+        "business status, websites, contact details, locations, and visible "
+        "opportunities."
+    ),
+    canonical_path="/how-to-verify-local-business-leads-before-outreach",
 )
 
 LOCAL_LEAD_GENERATION_PAGE = SeoPage(

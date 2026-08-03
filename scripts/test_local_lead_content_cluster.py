@@ -46,6 +46,7 @@ PAGES = {
 }
 
 WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
+VERIFY_LEADS_PATH = "/how-to-verify-local-business-leads-before-outreach"
 
 
 class LocalLeadContentClusterTests(unittest.TestCase):
@@ -60,6 +61,8 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/what-makes-a-good-lead").status_code, 200)
+        self.assertEqual(self.client.get(WITHOUT_LIST_PATH).status_code, 200)
+        self.assertEqual(self.client.get(VERIFY_LEADS_PATH).status_code, 200)
 
     def test_unique_titles_descriptions_canonicals_and_exact_h1s(self):
         titles, descriptions, canonicals = [], [], []
@@ -172,6 +175,138 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
         for forbidden in ("<!DOCTYPE html>", "<style>", "draft-banner", "placeholder-", "DRAFT"):
             self.assertNotIn(forbidden, source)
+
+    def test_verify_leads_exact_metadata_and_single_h1(self):
+        response = self.client.get(VERIFY_LEADS_PATH)
+        body = response.text
+        self.assertEqual(response.status_code, 200)
+        title = re.search(r"<title>([^<]+)</title>", body).group(1)
+        description = html.unescape(
+            re.search(r'<meta name="description" content="([^"]+)"', body).group(1)
+        )
+        canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+        self.assertEqual(title, seo_meta.VERIFY_LOCAL_BUSINESS_LEADS_PAGE.title)
+        self.assertEqual(title, "Verify Local Business Leads Before Outreach | LeadMeLeads")
+        self.assertEqual(description, seo_meta.VERIFY_LOCAL_BUSINESS_LEADS_PAGE.description)
+        self.assertEqual(canonical, seo_meta.canonical_url(VERIFY_LEADS_PATH))
+        self.assertEqual(
+            canonical,
+            "https://leadmeleads.com/how-to-verify-local-business-leads-before-outreach",
+        )
+        self.assertEqual(
+            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            ["How to Verify Local Business Leads Before Outreach"],
+        )
+        self.assertIn('name="robots" content="index, follow"', body)
+        self.assertNotIn("noindex", response.headers.get("X-Robots-Tag", "").lower())
+
+    def test_verify_leads_sitemap_contains_page_exactly_once(self):
+        sitemap = self.client.get("/sitemap.xml").text
+        loc = f"<loc>{seo_meta.canonical_url(VERIFY_LEADS_PATH)}</loc>"
+        self.assertEqual(sitemap.count(loc), 1)
+
+    def test_verify_leads_resources_hub_lists_article_once(self):
+        resources = self.client.get("/resources").text
+        self.assertEqual(
+            resources.count(f'href="{VERIFY_LEADS_PATH}"'),
+            1,
+        )
+
+    def test_verify_leads_schema_and_no_faq(self):
+        response = self.client.get(VERIFY_LEADS_PATH)
+        scripts = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            response.text,
+            re.DOTALL,
+        )
+        articles = [json.loads(item) for item in scripts if '"Article"' in item]
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["@type"], "Article")
+        self.assertEqual(
+            articles[0]["mainEntityOfPage"],
+            seo_meta.canonical_url(VERIFY_LEADS_PATH),
+        )
+        self.assertEqual(articles[0]["headline"], seo_meta.VERIFY_LOCAL_BUSINESS_LEADS_PAGE.title)
+        self.assertNotIn('"FAQPage"', response.text)
+
+    def test_verify_leads_discloses_public_data_and_independent_verification(self):
+        body = self.client.get(VERIFY_LEADS_PATH).text
+        self.assertIn(
+            "LeadMeLeads compiles publicly available business and website "
+            "information as a starting point for this kind of research, not "
+            "as a finished, confirmed contact list. Each business still needs "
+            "to be independently verified before you reach out.",
+            body,
+        )
+
+    def test_verify_leads_duplicate_resolution_uses_balanced_multi_source_guidance(self):
+        body = self.client.get(VERIFY_LEADS_PATH).text
+        self.assertIn(
+            "The business's own website is often a useful first-party source, "
+            "but it isn't automatically the newest or most accurate one—when "
+            "listings disagree, compare the website against other current "
+            "business profiles or confirm the detail directly with the "
+            "business.",
+            body,
+        )
+        self.assertNotIn(
+            "Treat the version published on the business's own website as the "
+            "most current source",
+            body,
+        )
+
+    def test_verify_leads_links_to_intended_routes(self):
+        body = self.client.get(VERIFY_LEADS_PATH).text
+        expected = {
+            "/lead-bot": "LeadMeLeads Lead Finder",
+            "/compare": "Website Comparison Tool",
+            WITHOUT_LIST_PATH: "how to find local business leads without buying a list",
+        }
+        for route, anchor in expected.items():
+            self.assertIn(f'href="{route}">{anchor}</a>', body)
+
+    def test_verify_leads_links_resolve_to_indexable_paths(self):
+        allowed = set(seo_meta.PUBLIC_INDEXABLE_PATHS)
+        body = self.client.get(VERIFY_LEADS_PATH).text
+        links = re.findall(r'href="(/[^"#?]*)"', body)
+        for target in links:
+            if target.startswith("/static/"):
+                continue
+            with self.subTest(target=target):
+                self.assertIn(target, allowed | {"/login", "/create-account", "/history", "/settings", "/logout"})
+
+    def test_verify_leads_template_has_no_draft_or_placeholder_markup(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/how_to_verify_local_business_leads_before_outreach.html"
+        ).read_text(encoding="utf-8")
+        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
+        for forbidden in ("<!DOCTYPE html>", "<style>", "draft-banner", "placeholder-", "DRAFT"):
+            self.assertNotIn(forbidden, source)
+
+    def test_verify_leads_word_count_in_target_range(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/how_to_verify_local_business_leads_before_outreach.html"
+        ).read_text(encoding="utf-8")
+        start = source.index("{% block content %}") + len("{% block content %}")
+        end = source.index("{% endblock %}", start)
+        plain = re.sub(r"<[^>]+>", " ", source[start:end])
+        word_count = len(plain.split())
+        self.assertGreaterEqual(word_count, 900)
+        self.assertLessEqual(word_count, 1200)
+
+    def test_articles_link_to_each_other(self):
+        without_list_body = self.client.get(WITHOUT_LIST_PATH).text
+        verify_body = self.client.get(VERIFY_LEADS_PATH).text
+        self.assertIn(
+            f'href="{VERIFY_LEADS_PATH}">how to verify local business leads before outreach</a>',
+            without_list_body,
+        )
+        self.assertIn(
+            f'href="{WITHOUT_LIST_PATH}">how to find local business leads without buying a list</a>',
+            verify_body,
+        )
 
     def test_mobile_safe_markup_and_overflow_guards(self):
         base = (Path(__file__).parent.parent / "app/templates/public_guide_base.html").read_text()
