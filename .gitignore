@@ -203,3 +203,4 @@ test_*.py
 !scripts/test_history_card_identity.py
 !scripts/test_report_mobile_layout.py
 !scripts/test_good_lead_page.py
+!scripts/test_public_guide_header_responsive_layout.py

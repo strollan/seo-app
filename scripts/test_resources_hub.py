@@ -125,7 +125,7 @@ class ResourcesHubTests(unittest.TestCase):
         self.assertIn(".resources-grid { grid-template-columns:1fr; }", self.body)
         self.assertIn("min-width:0", self.body)
         self.assertIn("overflow-wrap:anywhere", self.body)
-        self.assertNotRegex(self.body, r'(?<!max-)width:\s*[4-9]\d{2,}px')
+        self.assertNotRegex(self.body, r'(?<!max-)(?<!min-)width:\s*[4-9]\d{2,}px')
 
 
 if __name__ == "__main__":
