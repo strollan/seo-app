@@ -39,6 +39,12 @@ PUBLIC_INDEXABLE_PATHS = (
 # disallowed -- that would risk crawlers being told not to fetch CSS/JS.
 STATIC_ASSET_PREFIX = "/static/"
 
+# Crawler-control files. These aren't indexable pages -- they're the
+# directives crawlers read to decide what to index -- so they must never
+# carry X-Robots-Tag: noindex themselves, regardless of the public page
+# allowlist above.
+CRAWLER_CONTROL_PATHS = ("/robots.txt", "/sitemap.xml")
+
 
 @dataclass(frozen=True)
 class SeoPage:
@@ -480,10 +486,13 @@ p {{ margin: 0 0 22px; color: #64748b; }}
 
 def should_apply_noindex_header(path: str) -> bool:
     """True for any route that must never be indexed -- everything
-    except the public allowlist and static assets. Deny-list-based
-    exclusions (static assets only) rather than an allow-list of private
-    routes, so a new private route added later is noindexed by default."""
+    except the public allowlist, static assets, and the crawler-control
+    files themselves. Deny-list-based exclusions rather than an
+    allow-list of private routes, so a new private route added later is
+    noindexed by default."""
     if path in PUBLIC_INDEXABLE_PATHS:
+        return False
+    if path in CRAWLER_CONTROL_PATHS:
         return False
     if path.startswith(STATIC_ASSET_PREFIX):
         return False

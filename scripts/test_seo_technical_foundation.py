@@ -499,6 +499,10 @@ class RobotsTxtTests(unittest.TestCase):
         for forbidden in ["/home/", "/var/www", ".env", "DATAFORSEO", "SECRET", "PASSWORD"]:
             self.assertNotIn(forbidden, body)
 
+    def test_robots_txt_has_no_noindex_header(self):
+        response = self.client.get("/robots.txt")
+        self.assertIsNone(response.headers.get("x-robots-tag"))
+
 
 class SitemapXmlTests(unittest.TestCase):
     @classmethod
@@ -541,6 +545,13 @@ class SitemapXmlTests(unittest.TestCase):
         expected = {seo_meta.canonical_url(path) for path in seo_meta.PUBLIC_INDEXABLE_PATHS}
         self.assertEqual(urls, expected)
 
+    def test_sitemap_has_no_noindex_header(self):
+        """Regression guard: /sitemap.xml is a crawler-control file, not
+        a page, and must never be noindexed -- a crawler that respects
+        X-Robots-Tag would otherwise ignore the sitemap entirely."""
+        response = self.client.get("/sitemap.xml")
+        self.assertIsNone(response.headers.get("x-robots-tag"))
+
 
 class SeoMetaModuleUnitTests(unittest.TestCase):
     """Direct unit coverage of app.seo_meta, independent of the running
@@ -556,6 +567,11 @@ class SeoMetaModuleUnitTests(unittest.TestCase):
 
     def test_should_apply_noindex_header_static_assets_false(self):
         self.assertFalse(seo_meta.should_apply_noindex_header("/static/anything.js"))
+
+    def test_should_apply_noindex_header_crawler_control_paths_false(self):
+        for path in seo_meta.CRAWLER_CONTROL_PATHS:
+            with self.subTest(path=path):
+                self.assertFalse(seo_meta.should_apply_noindex_header(path))
 
     def test_should_apply_noindex_header_everything_else_true(self):
         for path in ["/login", "/settings", "/history", "/lead-bot/run", "/random-new-route"]:
