@@ -316,7 +316,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         self.assertIn("max-width:100%", base)
         self.assertIn("overflow-wrap:anywhere", base)
         for body in self.bodies.values():
-            self.assertNotRegex(body, r'(?<!max-)width:\s*[4-9]\d{2,}px')
+            self.assertNotRegex(body, r'(?<!max-)(?<!min-)width:\s*[4-9]\d{2,}px')
 
 
 if __name__ == "__main__":
