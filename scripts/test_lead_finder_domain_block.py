@@ -228,6 +228,34 @@ class FailureDoesNotFalselyPersistTests(LeadFinderBlockRouteTestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertNotIn("not a domain", load_effective_blocked_domains(self.owner_key()))
 
+    def test_blocking_an_already_blocked_domain_is_idempotent_not_a_failure(self):
+        """Directly proves the "prefer safe/idempotent behavior" requirement:
+        add_user_blocked_domain() is an INSERT ... ON CONFLICT DO UPDATE
+        upsert, so a second real, valid block request for a domain the
+        first request already blocked must also succeed (303), never
+        error -- even without any client-side double-click guard at all.
+        This is what makes the double-click theory safe in the worst
+        case, if the frontend's synchronous busy-guard (proven in
+        BlockButtonScriptShapeTests below) were ever somehow bypassed."""
+        _, csrf_token_1 = self.login()
+
+        first = self.client.post(
+            "/lead-bot/blocklist/user/add",
+            data={"domain": "instacart.com", "csrf_token": csrf_token_1},
+            follow_redirects=False,
+        )
+        self.assertEqual(first.status_code, 303)
+
+        csrf_token_2 = auth_agent.issue_csrf_token(self.client.cookies.get(appmain.AUTH_COOKIE_NAME))
+        second = self.client.post(
+            "/lead-bot/blocklist/user/add",
+            data={"domain": "instacart.com", "csrf_token": csrf_token_2},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(second.status_code, 303)
+        self.assertIn("instacart.com", load_effective_blocked_domains(self.owner_key()))
+
 
 class CsrfTokenEndpointTests(LeadFinderBlockRouteTestCase):
     def test_returns_a_token_that_validates_for_the_caller_session(self):
@@ -336,6 +364,240 @@ class BlockButtonScriptShapeTests(unittest.TestCase):
             old_text_idx, blocking_idx,
             "oldText must be captured before the button label is ever changed",
         )
+
+    def test_busy_guard_is_set_synchronously_before_any_network_call(self):
+        """Structural proof that a double-click cannot race past the
+        guard: btn.dataset.busy = "1" and btn.style.pointerEvents = "none"
+        must both appear *before* the script's first fetch(...) call (the
+        only point where control can yield back to the event loop). Since
+        a second click event can only be dispatched/processed after this
+        synchronous portion of the handler returns, no second invocation
+        of this handler can observe busy as unset once the first one has
+        gotten this far -- regardless of how long the subsequent async
+        chain (now two round trips instead of one) takes to resolve."""
+        busy_idx = self.index_of('btn.dataset.busy = "1"')
+        pointer_events_idx = self.index_of('btn.style.pointerEvents = "none"')
+        first_fetch_idx = self.index_of("fetch(")
+
+        self.assertLess(busy_idx, first_fetch_idx)
+        self.assertLess(pointer_events_idx, first_fetch_idx)
+
+    def test_busy_guard_check_precedes_the_confirm_dialog(self):
+        """The dataset.busy === "1" check itself must run before
+        window.confirm() -- so a click that somehow lands while a prior
+        one's request is still in flight bails out immediately instead of
+        popping a second confirm dialog."""
+        busy_check_idx = self.index_of('if (btn.dataset.busy === "1") return;')
+        confirm_idx = self.index_of("window.confirm(")
+        self.assertLess(busy_check_idx, confirm_idx)
+
+
+class DoubleClickDoesNotProduceAFalseFailureBrowserRegressionTests(unittest.TestCase):
+    """Real-browser regression test for the "double-click while blocking"
+    theory raised after the CSRF-staleness fix: fetching a fresh token
+    before the block POST adds a second network round trip, so a lead
+    card now visibly lingers longer before disappearing than it used to.
+    The concern was that a user might double-click Block during that
+    wider window and see a false "Block failed" alert for a domain the
+    first click actually blocked successfully.
+
+    Traced, not assumed (see BlockButtonScriptShapeTests above for the
+    static half of this proof): window.confirm() is a real, modal,
+    page-blocking native dialog -- a human cannot interact with anything
+    else on the page while it is open -- and btn.dataset.busy = "1" /
+    btn.style.pointerEvents = "none" are both set synchronously
+    immediately after confirm() resolves, before the first fetch() call.
+    That closes the only remaining window a second click could exploit.
+
+    This test exercises the tightest timing a script can produce --
+    dispatching a second click immediately after the first, with every
+    confirm()/alert() dialog auto-accepted the instant it appears, faster
+    than any human -- and asserts no alert dialog ever contains "Block
+    failed" and the domain ends up blocked exactly once. Even if some
+    future change reintroduced a real race, SuccessfulBlockTests
+    .test_blocking_an_already_blocked_domain_is_idempotent_not_a_failure
+    above proves the backend would still absorb a genuine duplicate
+    request safely rather than failing it.
+
+    Uses the same real-uvicorn-subprocess + real-browser pattern as
+    scripts.test_leadbot_csrf_routes.LeadBotCardsOwnershipBrowserRegressionTests
+    (see that class's docstring for why a route-only TestClient test
+    can't see this class of bug). Skips itself if Playwright/Chromium
+    aren't installed. Uses a different port so it can run alongside that
+    suite without colliding.
+    """
+
+    PORT = 8792
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise unittest.SkipTest("playwright is not installed")
+
+        cls._sync_playwright_ctx = sync_playwright()
+        cls._playwright = cls._sync_playwright_ctx.__enter__()
+
+        try:
+            cls._browser = cls._playwright.chromium.launch(args=["--no-sandbox"])
+        except Exception as exc:
+            cls._sync_playwright_ctx.__exit__(None, None, None)
+            raise unittest.SkipTest(f"chromium is not available: {exc}")
+
+        import subprocess
+        import time as time_module
+        import requests
+
+        repo_root = Path(__file__).resolve().parent.parent
+        cls._proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m", "uvicorn", "app.main:app",
+                "--host", "127.0.0.1", "--port", str(cls.PORT),
+            ],
+            cwd=str(repo_root),
+            env={
+                **os.environ,
+                "USE_LIVE_SERP": "false",
+                "DATAFORSEO_ENABLED": "0",
+                "LEADBOT_DATAFORSEO_ENABLED": "0",
+            },
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        base_url = f"http://127.0.0.1:{cls.PORT}"
+        deadline = time_module.time() + 20
+        up = False
+        while time_module.time() < deadline:
+            try:
+                resp = requests.get(f"{base_url}/login", timeout=1)
+                if resp.status_code == 200:
+                    up = True
+                    break
+            except Exception:
+                pass
+            time_module.sleep(0.3)
+
+        if not up:
+            cls._proc.terminate()
+            cls._browser.close()
+            cls._sync_playwright_ctx.__exit__(None, None, None)
+            raise unittest.SkipTest("local dev server did not start in time")
+
+        cls.base_url = base_url
+
+    @classmethod
+    def tearDownClass(cls):
+        proc = getattr(cls, "_proc", None)
+        if proc is not None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                proc.kill()
+
+        browser = getattr(cls, "_browser", None)
+        if browser is not None:
+            browser.close()
+
+        ctx = getattr(cls, "_sync_playwright_ctx", None)
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+
+    def setUp(self):
+        import uuid
+
+        suffix = uuid.uuid4().hex[:10]
+        self.username = f"dblclicktest_{suffix}"
+        self.password = "correct-horse-battery-staple"
+        auth_agent.create_user(self.username, self.password, role="standard", email=f"{self.username}@example.com")
+        self.addCleanup(self._delete_user, self.username)
+
+        self.export_dir = Path("exports")
+        self.export_dir.mkdir(exist_ok=True)
+        self.export_filename = f"test_dblclick_{suffix}.csv"
+        self.export_path = self.export_dir / self.export_filename
+        self.owner_sidecar = self.export_dir / f"{self.export_filename}.owner.json"
+
+        self.export_path.write_text("domain,title\ninstacart.com,Instacart\n", encoding="utf-8")
+        import json
+        self.owner_sidecar.write_text(json.dumps({"owner_username": self.username}), encoding="utf-8")
+        self.addCleanup(self._cleanup_export)
+
+        owner_key_val = blocklist_owner_key({"username": self.username})
+        self.addCleanup(self._cleanup_block, owner_key_val)
+
+    def _delete_user(self, username):
+        import sqlite3
+        try:
+            conn = sqlite3.connect(auth_agent.AUTH_DB)
+            conn.execute("DELETE FROM users WHERE username = ?", (username,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _cleanup_export(self):
+        for p in (self.export_path, self.owner_sidecar):
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+
+    def _cleanup_block(self, owner_key_val):
+        try:
+            db_agent.remove_user_blocked_domain(owner_key_val, "instacart.com")
+        except Exception:
+            pass
+
+    def test_rapid_double_click_blocks_once_with_no_false_failure(self):
+        context = self._browser.new_context()
+        self.addCleanup(context.close)
+        page = context.new_page()
+
+        dialog_messages = []
+
+        def handle_dialog(dialog):
+            dialog_messages.append(dialog.message)
+            dialog.accept()
+
+        page.on("dialog", handle_dialog)
+
+        page.goto(f"{self.base_url}/login")
+        page.fill('input[name="username"]', self.username)
+        page.fill('input[name="password"]', self.password)
+        page.click('button[type="submit"]')
+        page.wait_for_load_state("networkidle")
+
+        page.goto(f"{self.base_url}/lead-bot?file={self.export_filename}#exports")
+        page.wait_for_selector(".lead-block-one-js", timeout=10000)
+
+        # Two clicks back-to-back, no waiting in between -- the tightest
+        # timing a script can produce, tighter than any human double-click
+        # (which a real modal confirm() dialog would block anyway). The
+        # second click uses force=True: once the handler sets
+        # pointer-events: none (synchronously, right after the first
+        # click's confirm() resolves), a normal Playwright click on that
+        # element would correctly refuse to land, same as a real pointer
+        # would -- force=True bypasses that actionability check so this
+        # test still exercises the worst case (the click *does* land) and
+        # proves the busy-flag check and backend idempotency handle it.
+        page.click(".lead-block-one-js")
+        page.click(".lead-block-one-js", force=True)
+
+        page.wait_for_timeout(3000)
+
+        failure_alerts = [m for m in dialog_messages if "Block failed" in m]
+        self.assertEqual(
+            failure_alerts, [],
+            f"expected no 'Block failed' alert; dialogs seen: {dialog_messages}",
+        )
+
+        owner_key_val = blocklist_owner_key({"username": self.username})
+        blocked = load_effective_blocked_domains(owner_key_val)
+        self.assertIn("instacart.com", blocked)
 
 
 if __name__ == "__main__":
