@@ -4946,46 +4946,65 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!window.confirm("Don't show " + domain + " in your future Lead Finder scans?")) return;
 
         btn.dataset.busy = "1";
-        btn.textContent = "Blocked";
+        btn.textContent = "Blocking...";
         btn.style.opacity = "0.65";
         btn.style.pointerEvents = "none";
 
-        fetch(href, {
-            method: "POST",
-            cache: "no-store",
-            credentials: "same-origin",
-            body: new URLSearchParams({
-                domain: domain,
-                csrf_token: window.LEADBOT_CSRF_TOKEN || ""
+        // A CSRF token embedded at page-load time can go stale (see
+        // /lead-bot/csrf-token's docstring in app.main) if any other tab
+        // or page re-minted one for this session since. Fetching a fresh
+        // one right before this POST -- falling back to the page-load
+        // token if that fetch itself fails -- avoids that without
+        // changing how tokens are issued, stored, or rotated.
+        fetch("/lead-bot/csrf-token", { credentials: "same-origin", cache: "no-store" })
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .then(function (data) { return (data && data.csrf_token) || window.LEADBOT_CSRF_TOKEN || ""; })
+            .catch(function () { return window.LEADBOT_CSRF_TOKEN || ""; })
+            .then(function (csrfToken) {
+                return fetch(href, {
+                    method: "POST",
+                    cache: "no-store",
+                    credentials: "same-origin",
+                    body: new URLSearchParams({
+                        domain: domain,
+                        csrf_token: csrfToken
+                    })
+                });
             })
-        })
-        .then(function (response) {
-            if (!response.ok) throw new Error("Block request failed");
-            const card = closestLeadCard(btn);
+            .then(function (response) {
+                if (!response.ok) throw new Error("Block request failed");
 
-            if (card) {
-                card.style.transition = "opacity .18s ease, transform .18s ease, max-height .25s ease, margin .25s ease, padding .25s ease";
-                card.style.opacity = "0";
-                card.style.transform = "translateY(4px)";
-                card.style.maxHeight = "0";
-                card.style.marginTop = "0";
-                card.style.marginBottom = "0";
-                card.style.paddingTop = "0";
-                card.style.paddingBottom = "0";
-                card.style.overflow = "hidden";
+                // Only flip to the success state after the backend has
+                // confirmed the block actually happened -- setting this
+                // before the request resolves is what let a failed block
+                // still show "Blocked" in production.
+                btn.textContent = "Blocked";
 
-                setTimeout(function () {
-                    card.remove();
-                }, 260);
-            }
-        })
-        .catch(function () {
-            btn.dataset.busy = "0";
-            btn.textContent = oldText || "Block";
-            btn.style.opacity = "";
-            btn.style.pointerEvents = "";
-            alert("Block failed. Try again.");
-        });
+                const card = closestLeadCard(btn);
+
+                if (card) {
+                    card.style.transition = "opacity .18s ease, transform .18s ease, max-height .25s ease, margin .25s ease, padding .25s ease";
+                    card.style.opacity = "0";
+                    card.style.transform = "translateY(4px)";
+                    card.style.maxHeight = "0";
+                    card.style.marginTop = "0";
+                    card.style.marginBottom = "0";
+                    card.style.paddingTop = "0";
+                    card.style.paddingBottom = "0";
+                    card.style.overflow = "hidden";
+
+                    setTimeout(function () {
+                        card.remove();
+                    }, 260);
+                }
+            })
+            .catch(function () {
+                btn.dataset.busy = "0";
+                btn.textContent = oldText || "Block";
+                btn.style.opacity = "";
+                btn.style.pointerEvents = "";
+                alert("Block failed. Try again.");
+            });
     }, true);
 })();
 </script>
