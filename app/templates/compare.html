@@ -682,7 +682,7 @@ body {
 
                 <div class="input-card">
                     <label for="url_2">Competitor</label>
-                    <input id="url_2" name="url_2" placeholder="msnbc.com or https://msnbc.com" value="{{ request.query_params.get('url_2', '') }}">
+                    <input id="url_2" name="url_2" placeholder="msnbc.com or https://msnbc.com" required value="{{ request.query_params.get('url_2', '') }}">
                 </div>
             </div>
 
@@ -722,7 +722,21 @@ function resetAnalyzeFormState() {
 window.addEventListener("pageshow", resetAnalyzeFormState);
 window.addEventListener("focus", resetAnalyzeFormState);
 
-form.addEventListener("submit", function () {
+form.addEventListener("submit", function (event) {
+    const url1 = document.getElementById("url_1");
+    const url2 = document.getElementById("url_2");
+    url1.value = url1.value.trim();
+    url2.value = url2.value.trim();
+
+    // Whitespace-only input passes the browser's `required` check before we
+    // trim, so re-check here; an empty url_2 would otherwise 422 at /analyze.
+    if (!url1.value || !url2.value) {
+        event.preventDefault();
+        resetAnalyzeFormState();
+        (url1.value ? url2 : url1).reportValidity();
+        return;
+    }
+
     button.disabled = true;
     button.textContent = "Analyzing...";
     loading.style.display = "block";
