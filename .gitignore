@@ -205,3 +205,4 @@ test_*.py
 !scripts/test_good_lead_page.py
 !scripts/test_public_guide_header_responsive_layout.py
 !scripts/test_lead_finder_cancel_hang.py
+!scripts/test_lead_finder_live_scan_query.py
