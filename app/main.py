@@ -13638,6 +13638,34 @@ function showGuestSavePrompt() {{
 const cancelScanBtn = document.getElementById("cancelScanBtn");
 const cancelNote = document.getElementById("cancelNote");
 
+// Makes the whole live-scan page look terminal once status="cancelled":
+// stops the pulse/progress/console-sweep animations (body.leadbot-live-final
+// is the existing CSS hook for that -- it just was never applied), disables
+// the Cancel button, and swaps the console lines off "scanning" language.
+// Called from both the cancel POST's own response handler and from poll(),
+// since the backend can flip a job to "cancelled" out from under a slow or
+// failed cancel request too.
+function finalizeLiveScanCancelled(message) {{
+    document.body.classList.add("leadbot-live-final");
+
+    const statusBox = document.querySelector(".status");
+    if (statusBox) statusBox.classList.add("leadbot-cancelled-state");
+
+    if (cancelScanBtn) {{
+        cancelScanBtn.disabled = true;
+        cancelScanBtn.textContent = "Scan Cancelled";
+    }}
+
+    if (cancelNote) cancelNote.textContent = message || "Scan cancelled.";
+
+    const liveLine1 = document.getElementById("liveConsoleLine1");
+    const liveLine2 = document.getElementById("liveConsoleLine2");
+    const liveLine3 = document.getElementById("liveConsoleLine3");
+    if (liveLine1) liveLine1.textContent = "Scan cancelled.";
+    if (liveLine2) liveLine2.textContent = "Partial results are shown below.";
+    if (liveLine3) liveLine3.textContent = "Scan stopped by user request.";
+}}
+
 const guestContinueBtn = document.getElementById("guestContinueBtn");
 if (guestContinueBtn) {{
     guestContinueBtn.addEventListener("click", function () {{
@@ -13668,13 +13696,12 @@ async function cancelScan() {{
         const data = await res.json();
 
         if (data.status === "cancelled") {{
-            cancelScanBtn.textContent = "Scan Cancelled";
             const msg = document.getElementById("message");
             if (msg) {{
                 msg.style.display = "";
                 msg.textContent = data.message || "Scan cancelled.";
             }}
-            if (cancelNote) cancelNote.textContent = "Scan cancelled.";
+            finalizeLiveScanCancelled(data.message);
         }} else {{
             // Includes "cancelling" (the normal case -- the worker process
             // is being stopped) as well as any other non-final status.
@@ -14005,6 +14032,8 @@ async function poll() {{
 
                 if (IS_GUEST) showGuestSavePrompt();
             }}
+        }} else if (job.status === "cancelled") {{
+            finalizeLiveScanCancelled(job.message);
         }}
 
         if (job.status === "error" && job.error_code === "search_provider_unavailable") {{
