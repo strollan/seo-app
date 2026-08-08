@@ -393,6 +393,16 @@ class LiveScanEndToEndNoReasonTests(unittest.TestCase):
     """
 
     def setUp(self):
+        # create_job() now spawns each scan as its own OS process by
+        # default (agents.lead_live_job_agent.RUN_SCANS_IN_SUBPROCESS,
+        # part of the P1 cancel-hang fix), which re-imports find_leads
+        # fresh from disk and can never see the mock.patch("agents.
+        # lead_finding_agent.find_leads", ...) used below. Opt back into
+        # the pre-fix in-process thread so that patch keeps working.
+        subprocess_patch = mock.patch.object(job_agent, "RUN_SCANS_IN_SUBPROCESS", False)
+        subprocess_patch.start()
+        self.addCleanup(subprocess_patch.stop)
+
         self._created_job_ids = []
         self._created_export_names = []
 
