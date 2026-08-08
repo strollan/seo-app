@@ -105,7 +105,15 @@ function elementFor(id) { return elements.get(id); }
 const statusBox = makeElement("__statusBox__");
 elements.set("__statusBox__", statusBox);
 
+// finalizeLiveScanCancelled() (production code) adds a class to
+// document.body -- without a body element here, that call throws, poll()'s
+// catch swallows it, and the cancelled-state assertions below never really
+// exercise finalizeLiveScanCancelled() at all.
+const bodyEl = makeElement("__body__");
+elements.set("__body__", bodyEl);
+
 const fakeDocument = {
+    body: bodyEl,
     getElementById(id) {
         return elements.has(id) ? elements.get(id) : null;
     },
@@ -230,7 +238,11 @@ function elementFor(id) { return elements.get(id); }
 const statusBox = makeElement("__statusBox__");
 elements.set("__statusBox__", statusBox);
 
+const bodyEl = makeElement("__body__");
+elements.set("__body__", bodyEl);
+
 const fakeDocument = {
+    body: bodyEl,
     getElementById(id) { return elements.has(id) ? elements.get(id) : null; },
     querySelector(sel) { return sel === ".status" ? statusBox : null; },
     createElement(tag) { return makeElement("__created_" + Math.random()); },

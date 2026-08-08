@@ -13163,6 +13163,29 @@ def leadbot_live_page(job_id: str, request: AuthRequest):
         else '<a href="/login">Login</a>\n                <a href="/create-account">Create Account</a>'
     )
 
+    # Server-rendered starting point for the SCAN console line, using the
+    # job's actual submitted keyword/market -- poll()'s formatScanQuery()
+    # keeps this in sync on every subsequent poll, but rendering it here
+    # too avoids a flash of generic placeholder text before the first poll
+    # resolves. Escaped since keyword/market are free-text user input.
+    import html as _html
+
+    _live_page_params = (access_job or {}).get("params") or {}
+    _live_page_keyword = str(_live_page_params.get("keyword") or "").strip()
+    _live_page_market = str(_live_page_params.get("market") or "").strip()
+
+    if _live_page_keyword and _live_page_market:
+        initial_scan_line = (
+            f'Searching for &quot;{_html.escape(_live_page_keyword)}&quot; '
+            f'in {_html.escape(_live_page_market)}.'
+        )
+    elif _live_page_keyword:
+        initial_scan_line = f'Searching for &quot;{_html.escape(_live_page_keyword)}&quot;.'
+    elif _live_page_market:
+        initial_scan_line = f'Searching in {_html.escape(_live_page_market)}.'
+    else:
+        initial_scan_line = "Initializing Lead Finder crawler..."
+
     return AuthHTMLResponse(f"""
 <!doctype html>
 <html>
@@ -13595,7 +13618,7 @@ body.leadbot-live-final .live-progress-bar {{
                 <span class="live-dot"></span>
             </div>
             <div class="live-console-body">
-                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">Initializing Lead Finder crawler...</span></div>
+                <div class="live-line"><strong>scan</strong><span id="liveConsoleLine1">{initial_scan_line}</span></div>
                 <div class="live-line"><strong>serp</strong><span id="liveConsoleLine2">Finding page 1–4 opportunities...</span></div>
                 <div class="live-line"><strong>data</strong><span id="liveConsoleLine3">Contacts will appear as contact details are checked.</span></div>
                 <div class="live-progress-rail"><div class="live-progress-bar"></div></div>
@@ -13638,6 +13661,34 @@ function showGuestSavePrompt() {{
 const cancelScanBtn = document.getElementById("cancelScanBtn");
 const cancelNote = document.getElementById("cancelNote");
 
+// Makes the whole live-scan page look terminal once status="cancelled":
+// stops the pulse/progress/console-sweep animations (body.leadbot-live-final
+// is the existing CSS hook for that -- it just was never applied), disables
+// the Cancel button, and swaps the console lines off "scanning" language.
+// Called from both the cancel POST's own response handler and from poll(),
+// since the backend can flip a job to "cancelled" out from under a slow or
+// failed cancel request too.
+function finalizeLiveScanCancelled(message) {{
+    document.body.classList.add("leadbot-live-final");
+
+    const statusBox = document.querySelector(".status");
+    if (statusBox) statusBox.classList.add("leadbot-cancelled-state");
+
+    if (cancelScanBtn) {{
+        cancelScanBtn.disabled = true;
+        cancelScanBtn.textContent = "Scan Cancelled";
+    }}
+
+    if (cancelNote) cancelNote.textContent = message || "Scan cancelled.";
+
+    const liveLine1 = document.getElementById("liveConsoleLine1");
+    const liveLine2 = document.getElementById("liveConsoleLine2");
+    const liveLine3 = document.getElementById("liveConsoleLine3");
+    if (liveLine1) liveLine1.textContent = "Scan cancelled.";
+    if (liveLine2) liveLine2.textContent = "Partial results are shown below.";
+    if (liveLine3) liveLine3.textContent = "Scan stopped by user request.";
+}}
+
 const guestContinueBtn = document.getElementById("guestContinueBtn");
 if (guestContinueBtn) {{
     guestContinueBtn.addEventListener("click", function () {{
@@ -13668,21 +13719,27 @@ async function cancelScan() {{
         const data = await res.json();
 
         if (data.status === "cancelled") {{
-            cancelScanBtn.textContent = "Scan Cancelled";
             const msg = document.getElementById("message");
             if (msg) {{
                 msg.style.display = "";
                 msg.textContent = data.message || "Scan cancelled.";
             }}
-            if (cancelNote) cancelNote.textContent = "Scan cancelled.";
+            finalizeLiveScanCancelled(data.message);
         }} else {{
             // Includes "cancelling" (the normal case -- the worker process
             // is being stopped) as well as any other non-final status.
             // Stays disabled either way: this button never re-arms itself,
             // and poll() below flips it to "Scan Cancelled" once the
             // status poll observes the final CANCELLED state.
+            //
+            // Deliberately never shows data.message here: for a job that
+            // was already terminal (e.g. status "error") before Cancel was
+            // clicked, data.message is that job's own leftover status text
+            // (which can be a form-validation message like the invalid-
+            // market-location copy) -- not anything about cancellation --
+            // and must never be shown next to "Cancelling...".
             cancelScanBtn.textContent = "Cancelling...";
-            if (cancelNote) cancelNote.textContent = data.message || "Cancelling scan...";
+            if (cancelNote) cancelNote.textContent = "Cancelling scan...";
         }}
     }} catch (err) {{
         cancelScanBtn.disabled = false;
@@ -13900,6 +13957,22 @@ function renderLead(lead, jobParams) {{
     }}
 }}
 
+// Builds the SCAN console line from the job's actual submitted keyword/
+// market instead of job.message, so the line always describes what is
+// being searched rather than a transient (or, on an invalid-market error,
+// unrelated form-validation) backend status string. Assigned via
+// textContent only -- never innerHTML -- so no HTML-escaping is needed
+// here.
+function formatScanQuery(params) {{
+    const keyword = params && params.keyword ? String(params.keyword).trim() : "";
+    const market = params && params.market ? String(params.market).trim() : "";
+
+    if (keyword && market) return 'Searching for "' + keyword + '" in ' + market + '.';
+    if (keyword) return 'Searching for "' + keyword + '".';
+    if (market) return 'Searching in ' + market + '.';
+    return "Lead Finder is scanning...";
+}}
+
 async function poll() {{
     try {{
         const res = await fetch(`/lead-bot/live-status/${{jobId}}`, {{ cache: "no-store" }});
@@ -13956,7 +14029,7 @@ async function poll() {{
         const liveLine2 = document.getElementById("liveConsoleLine2");
         const liveLine3 = document.getElementById("liveConsoleLine3");
 
-        if (liveLine1) liveLine1.textContent = job.message || "Lead Finder is scanning...";
+        if (liveLine1) liveLine1.textContent = formatScanQuery(params);
         if (liveLine2) liveLine2.textContent = "Found " + String(counts.found || 0) + " of " + String(params.limit || "—") + " target leads.";
         if (liveLine3) liveLine3.textContent = String(counts.cached || 0) + " cache hits · " + String(counts.enriched || 0) + " with contact info · " + String(counts.needs_research || 0) + " need research.";
 
@@ -14005,6 +14078,8 @@ async function poll() {{
 
                 if (IS_GUEST) showGuestSavePrompt();
             }}
+        }} else if (job.status === "cancelled") {{
+            finalizeLiveScanCancelled(job.message);
         }}
 
         if (job.status === "error" && job.error_code === "search_provider_unavailable") {{
