@@ -602,6 +602,92 @@ def _pid_alive(pid):
     return True
 
 
+def _process_start_identity(pid):
+    """A string identifying this specific process incarnation at `pid`,
+    stable for its whole lifetime and different for any later process the
+    kernel reuses that same numeric pid for.
+
+    os.kill(pid, 0) (see _pid_alive()) only proves *some* process exists
+    at that pid right now -- once a job's original worker has exited,
+    Linux is free to hand that exact pid to a completely unrelated
+    process (a cron job, an SSH session, another request's own scan
+    worker), and a bare pid check cannot tell the difference. Combining
+    the pid with its start time (field 22 of /proc/<pid>/stat, in clock
+    ticks since boot -- see `man 5 proc`) can: two different processes
+    that ever coexist cannot share both.
+
+    Linux-only (matches this module's existing os.killpg()/process-group
+    assumptions). Returns None if the pid doesn't exist or /proc isn't
+    available, in which case identity cannot be verified.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+
+    if pid <= 0:
+        return None
+
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except (FileNotFoundError, ProcessLookupError, OSError):
+        return None
+
+    # The comm field is written as "(name)" and may itself contain spaces
+    # or parens, so split on the LAST ")" to reliably find where the
+    # remaining space-separated fields begin (state is the first of
+    # those). starttime is field 22 overall == index 19 counting from
+    # state (field 3) as index 0.
+    try:
+        after_comm = raw.rsplit(")", 1)[1]
+        fields = after_comm.split()
+        starttime = fields[19]
+        int(starttime)  # sanity-check it's actually numeric
+    except (IndexError, ValueError):
+        return None
+
+    return f"{pid}:{starttime}"
+
+
+def _capture_worker_start_identity(pid, attempts=5, delay=0.02):
+    """Best-effort _process_start_identity() for a pid this process just
+    spawned via subprocess.Popen(). The kernel creates /proc/<pid>
+    synchronously as part of fork(), before Popen() returns control to
+    the caller, so this should succeed on the first try; the small retry
+    loop is defensive insurance against an exec-failure race where the
+    child exits before the read (a zombie's /proc/<pid>/stat still exists
+    and is readable, but a fully reaped one would not be)."""
+    for _ in range(attempts):
+        identity = _process_start_identity(pid)
+        if identity is not None:
+            return identity
+        time.sleep(delay)
+    return None
+
+
+def _worker_identity_matches(job):
+    """True only if job["worker_pid"] still names the exact process that
+    was originally spawned for this job -- not a numeric pid the kernel
+    has since reused for something unrelated.
+
+    A job file written before this field existed (or one where identity
+    capture failed at spawn -- see _capture_worker_start_identity()) has
+    no recorded identity to check against, so it is treated as NOT
+    verified rather than trusted on a bare pid match; the caller decides
+    what to do with an unverified job (see _reconcile_stale_job()).
+    """
+    pid = job.get("worker_pid")
+    if not pid:
+        return False
+
+    recorded = job.get("worker_start_identity")
+    if not recorded:
+        return False
+
+    current = _process_start_identity(pid)
+    return current is not None and current == recorded
+
+
 def _signal_worker(pid, sig):
     """Best-effort, non-blocking signal delivery to a scan's child process.
 
@@ -707,6 +793,21 @@ def cancel_job(job_id):
     return job
 
 
+def _mark_job_dead_worker(job, terminal_status, message):
+    """Finalize `job` into a terminal state because its recorded worker is
+    confirmed gone (exited, crashed, or its pid was reused for something
+    else) -- shared by reap_job() and _reconcile_stale_job() so both agree
+    on exactly what a "the worker is gone" transition looks like."""
+    job["status"] = terminal_status
+    if terminal_status == "cancelled":
+        job["cancel_requested"] = True
+        job["cancelled_at"] = now_iso()
+    job["message"] = message
+    job["updated_at"] = now_iso()
+    write_job(job)
+    return job
+
+
 def reap_job(job_id):
     """Finalize a "cancelling" job once its worker process has actually
     exited, and escalate to SIGKILL if it hasn't after CANCEL_GRACE_SECONDS.
@@ -715,6 +816,11 @@ def reap_job(job_id):
     couple seconds by the UI while a scan is in flight), so no extra thread
     or timer is needed in the web process to drive a scan to a final
     CANCELLED state. A no-op for any job not currently "cancelling".
+
+    Uses _worker_identity_matches() rather than a bare _pid_alive() check
+    so a cancelling job whose worker pid has since been reused by an
+    unrelated process is correctly finalized as CANCELLED instead of being
+    mistaken for a still-alive worker and repeatedly SIGKILLed forever.
     """
     job = read_job(job_id)
     if not job:
@@ -723,20 +829,12 @@ def reap_job(job_id):
     if str(job.get("status") or "").lower() != "cancelling":
         return job
 
-    pid = job.get("worker_pid")
-
-    if not _pid_alive(pid):
-        job["status"] = "cancelled"
-        job["cancel_requested"] = True
-        job["message"] = "Scan cancelled."
-        job["cancelled_at"] = now_iso()
-        job["updated_at"] = now_iso()
-        write_job(job)
-        return job
+    if not _worker_identity_matches(job):
+        return _mark_job_dead_worker(job, "cancelled", "Scan cancelled.")
 
     elapsed = _seconds_since(job.get("cancel_requested_at"))
     if elapsed is not None and elapsed > CANCEL_GRACE_SECONDS:
-        _signal_worker(pid, signal.SIGKILL)
+        _signal_worker(job.get("worker_pid"), signal.SIGKILL)
 
     return job
 
@@ -760,6 +858,59 @@ def mark_job_cancelled(job_id, message="Scan cancelled."):
 # === LEADBOT LIVE CANCEL SUPPORT END ===
 
 
+# How long a queued job may sit with no worker_pid recorded yet before
+# _reconcile_stale_job() treats it as orphaned rather than mid-spawn.
+# create_job() writes the job file (worker_pid still None) BEFORE it
+# spawns the worker and records the real pid a moment later -- this
+# grace window has to comfortably outlast that real-world gap (normally
+# sub-millisecond) so a scan that is legitimately still being created
+# right now is never mistaken for one whose creating request crashed
+# before it ever got a worker.
+ORPHANED_NO_WORKER_GRACE_SECONDS = 60
+
+
+def _reconcile_stale_job(job):
+    """Bring a persisted queued/running/cancelling job back in line with
+    reality -- crucially, without ever sending it a signal -- before it's
+    allowed to count against MAX_CONCURRENT_LIVE_SCANS. Returns the
+    (possibly updated) job.
+
+    This is what makes _count_active_live_scans() self-healing across a
+    worker crash, an app/box restart, or a job whose owner never polls
+    its live-status endpoint again to trigger reap_job(): every capacity
+    check reconciles its candidates fresh against actual process
+    identity, rather than trusting whatever a persisted JSON file claims.
+    A job whose original worker is confirmed gone (dead, or its pid
+    reused by an unrelated process) is finalized to a terminal state and
+    no longer counts; a job whose original worker is still genuinely
+    alive is left untouched and keeps consuming its slot, same as before.
+    """
+    status = str(job.get("status") or "").lower()
+    if status not in {"queued", "running", "cancelling"}:
+        return job
+
+    if status == "cancelling":
+        # reap_job() already performs exactly this reconciliation (plus
+        # the SIGKILL escalation that is deliberately NOT this function's
+        # job) -- reuse it rather than duplicating the dead-worker check.
+        return reap_job(job.get("job_id")) or job
+
+    if job.get("worker_pid"):
+        if _worker_identity_matches(job):
+            return job  # still genuinely running under its original worker
+    else:
+        age = _seconds_since(job.get("created_at"))
+        if age is not None and age < ORPHANED_NO_WORKER_GRACE_SECONDS:
+            return job  # create_job() is still mid-spawn for this job
+
+    return _mark_job_dead_worker(
+        job,
+        "error",
+        "This scan's process stopped unexpectedly (for example, an app "
+        "restart) and could not finish. Please start a new scan.",
+    )
+
+
 def _count_active_live_scans():
     active = 0
 
@@ -777,7 +928,9 @@ def _count_active_live_scans():
         if str(job.get("status") or "").lower() not in {"queued", "running", "cancelling"}:
             continue
 
-        if _pid_alive(job.get("worker_pid")):
+        job = _reconcile_stale_job(job)
+
+        if str(job.get("status") or "").lower() in {"queued", "running", "cancelling"}:
             active += 1
 
     return active
@@ -799,6 +952,7 @@ def create_job(params):
         "cancel_requested": False,
         "cancelled_at": "",
         "worker_pid": None,
+        "worker_start_identity": None,
         "counts": {
             "found": 0,
             "cached": 0,
@@ -843,6 +997,11 @@ def create_job(params):
     )
 
     job["worker_pid"] = proc.pid
+    # Recorded once, at spawn time, while we still know for certain that
+    # this pid names OUR child and nothing else -- see
+    # _process_start_identity() for why a bare pid isn't enough on its
+    # own to safely re-identify this same worker later.
+    job["worker_start_identity"] = _capture_worker_start_identity(proc.pid)
     write_job(job)
 
     # Nothing else in this process ever calls proc.wait()/.poll() on this

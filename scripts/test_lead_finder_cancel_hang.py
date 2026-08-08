@@ -165,6 +165,30 @@ ja.write_job(job)
 """
 
 
+def _crashes_after_starting_source(job_dir):
+    """Sets status "running" (a real worker_pid gets recorded for it, same
+    as any other job) then hard-exits with os._exit() -- no terminal
+    status is ever written, the same way an OOM-kill or `kill -9` from
+    outside this process would leave the job file exactly where it was
+    the instant the worker died."""
+    return f"""
+import sys, os, argparse
+sys.path.insert(0, {str(REPO_ROOT)!r})
+import agents.lead_live_job_agent as ja
+from pathlib import Path
+ja.JOB_DIR = Path({str(job_dir)!r})
+
+p = argparse.ArgumentParser(); p.add_argument("--job-id", required=True)
+args = p.parse_args()
+
+job = ja.read_job(args.job_id)
+job["status"] = "running"
+ja.write_job(job)
+
+os._exit(1)
+"""
+
+
 # ---------------------------------------------------------------------------
 # In-process tests: talk directly to agents.lead_live_job_agent with
 # JOB_DIR/RUN_JOB_SCRIPT redirected, and to the app through TestClient.
@@ -436,6 +460,234 @@ class BoundedConcurrencyTests(LeadFinderCancelTestCase):
         third_id = self.make_job()
         third = self.wait_for_status(third_id, {"running"}, timeout=5)
         self.assertEqual(third["status"], "running")
+
+
+class WorkerIdentityHelperTests(unittest.TestCase):
+    """Pure unit coverage for the primitives _reconcile_stale_job() is
+    built on -- no JOB_DIR/RUN_JOB_SCRIPT plumbing needed here."""
+
+    def test_start_identity_is_stable_for_the_same_live_process(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+        try:
+            first = ja._process_start_identity(proc.pid)
+            second = ja._process_start_identity(proc.pid)
+            self.assertIsNotNone(first)
+            self.assertEqual(first, second)
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_start_identity_is_none_for_a_pid_that_no_longer_exists(self):
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        proc.wait()
+        self.assertIsNone(ja._process_start_identity(proc.pid))
+
+    def test_worker_identity_does_not_match_without_a_recorded_identity(self):
+        """A job dict with a live pid but no worker_start_identity (e.g. a
+        job file written before this field existed) must not be trusted
+        on the bare pid alone."""
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+        try:
+            self.assertFalse(ja._worker_identity_matches({"worker_pid": proc.pid}))
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_worker_identity_matches_when_recorded_identity_is_current(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+        try:
+            identity = ja._process_start_identity(proc.pid)
+            job = {"worker_pid": proc.pid, "worker_start_identity": identity}
+            self.assertTrue(ja._worker_identity_matches(job))
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_worker_identity_rejects_a_stale_recorded_identity_reused_pid(self):
+        """The exact PID-reuse shape: the numeric pid is alive, but the
+        identity recorded for it belongs to a different (now-gone)
+        process incarnation."""
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+        try:
+            job = {"worker_pid": proc.pid, "worker_start_identity": f"{proc.pid}:0"}
+            self.assertFalse(ja._worker_identity_matches(job))
+        finally:
+            proc.kill()
+            proc.wait()
+
+
+class StaleJobReconciliationTests(LeadFinderCancelTestCase):
+    """SAFETY: _count_active_live_scans() must reflect reality, not
+    whatever a persisted job file happens to still claim -- across a
+    crashed worker, an abandoned cancel, an app restart, and PID reuse."""
+
+    def _plant_job_file(self, status, worker_pid, worker_start_identity="__unset__"):
+        """Write a job file directly (bypassing create_job()) to stand in
+        for a job whose worker predates this test process entirely --
+        e.g. one left over from before an app restart."""
+        job_id = uuid.uuid4().hex[:16]
+        job = {
+            "job_id": job_id,
+            "status": status,
+            "message": "Starting live scan...",
+            "created_at": ja.now_iso(),
+            "updated_at": ja.now_iso(),
+            "params": {},
+            "leads": [],
+            "seen_domains": [],
+            "errors": [],
+            "cancel_requested": False,
+            "cancelled_at": "",
+            "worker_pid": worker_pid,
+            "counts": {"found": 0, "cached": 0, "enriched": 0, "needs_research": 0},
+            "export_file": "",
+        }
+        if worker_start_identity != "__unset__":
+            job["worker_start_identity"] = worker_start_identity
+        ja.write_job(job)
+        return job_id
+
+    def _spawn_and_kill(self):
+        """Return a real pid that definitely does not name a live process
+        (spawned and waited-on by this test, not by lead_live_job_agent),
+        for planting in a hand-written stale job file."""
+        proc = subprocess.Popen([sys.executable, "-c", "pass"])
+        proc.wait()
+        return proc.pid
+
+    def test_real_live_worker_consumes_one_slot(self):
+        self.use_fixture_worker(_cooperative_worker_source(self.job_dir, seconds=6))
+        job_id = self.make_job()
+        self.wait_for_status(job_id, {"running"}, timeout=5)
+
+        self.assertEqual(ja._count_active_live_scans(), 1)
+
+    def test_completed_worker_frees_its_slot(self):
+        self.use_fixture_worker(_cooperative_worker_source(self.job_dir, seconds=1))
+        job_id = self.make_job()
+        final = self.wait_for_status(job_id, {"done"}, timeout=6)
+        pid = final["worker_pid"]
+
+        deadline = time.time() + 3
+        while ja._pid_alive(pid) and time.time() < deadline:
+            time.sleep(0.1)
+
+        self.assertEqual(ja._count_active_live_scans(), 0)
+
+    def test_abandoned_running_job_is_reconciled(self):
+        """The worker crashed (os._exit(), standing in for e.g. an
+        OOM-kill) right after marking itself "running" -- nothing ever
+        wrote a terminal status, so the job file alone still claims the
+        scan is in progress."""
+        self.use_fixture_worker(_crashes_after_starting_source(self.job_dir))
+        job_id = self.make_job()
+        self.wait_for_status(job_id, {"running"}, timeout=5)
+        pid = ja.read_job(job_id)["worker_pid"]
+
+        deadline = time.time() + 3
+        while ja._pid_alive(pid) and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(ja._pid_alive(pid), "fixture worker should have exited by now")
+        self.assertEqual(ja.read_job(job_id)["status"], "running", "job file must still show the pre-crash status")
+
+        self.assertEqual(ja._count_active_live_scans(), 0)
+
+        reconciled = ja.read_job(job_id)
+        self.assertEqual(reconciled["status"], "error")
+        self.assertIn("start a new scan", reconciled["message"].lower())
+
+    def test_abandoned_cancelling_job_is_reconciled(self):
+        """Cancel is requested, but nobody ever polls this job's
+        live-status endpoint again afterward (the mechanism that would
+        normally drive reap_job()) -- yet the worker does eventually die.
+        The next capacity check must still notice and free the slot."""
+        self.use_fixture_worker(_stuck_ignores_sigterm_source(self.job_dir, seconds=30))
+        job_id = self.make_job()
+        self.wait_for_status(job_id, {"running"}, timeout=5)
+        pid = ja.read_job(job_id)["worker_pid"]
+
+        ja.cancel_job(job_id)
+        self.assertEqual(ja.read_job(job_id)["status"], "cancelling")
+
+        # Stand in for the worker eventually dying with nobody having
+        # driven the cancel-grace/SIGKILL escalation for it (reap_job()
+        # is only ever invoked by a live-status poll of THIS job_id).
+        os.killpg(pid, signal.SIGKILL)
+        deadline = time.time() + 3
+        while ja._pid_alive(pid) and time.time() < deadline:
+            time.sleep(0.05)
+        self.assertFalse(ja._pid_alive(pid))
+        self.assertEqual(ja.read_job(job_id)["status"], "cancelling", "nothing has reaped it yet")
+
+        self.assertEqual(ja._count_active_live_scans(), 0)
+        self.assertEqual(ja.read_job(job_id)["status"], "cancelled")
+
+    def test_restart_style_persisted_stale_job_is_reconciled(self):
+        """A job file with no worker_start_identity at all -- exactly what
+        one written before this fix shipped (i.e. still on disk across an
+        app restart/deploy) looks like -- whose recorded pid is dead."""
+        dead_pid = self._spawn_and_kill()
+        job_id = self._plant_job_file("running", dead_pid, worker_start_identity="__unset__")
+
+        self.assertEqual(ja._count_active_live_scans(), 0)
+        self.assertEqual(ja.read_job(job_id)["status"], "error")
+
+    def test_pid_reuse_does_not_count_an_unrelated_process(self):
+        """The exact false-positive this fix targets: worker_pid is alive
+        (os.kill(pid, 0) succeeds), but it is NOT the original worker --
+        the kernel has since handed that same numeric pid to a completely
+        unrelated, currently-running process."""
+        unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
+
+        def _cleanup_unrelated():
+            unrelated.kill()
+            unrelated.wait()
+
+        self.addCleanup(_cleanup_unrelated)
+
+        self.assertTrue(ja._pid_alive(unrelated.pid), "the unrelated process must genuinely be alive")
+
+        job_id = self._plant_job_file(
+            "running",
+            unrelated.pid,
+            worker_start_identity=f"{unrelated.pid}:0",
+        )
+
+        self.assertEqual(
+            ja._count_active_live_scans(),
+            0,
+            "an unrelated live process must never be mistaken for this job's worker",
+        )
+        self.assertEqual(ja.read_job(job_id)["status"], "error")
+        # And the unrelated process itself is untouched -- reconciliation
+        # must never signal a process it isn't certain is its own worker.
+        self.assertTrue(ja._pid_alive(unrelated.pid))
+
+    def test_legitimate_second_scan_rejected_while_first_worker_lives(self):
+        self.use_fixture_worker(_stuck_ignores_sigterm_source(self.job_dir, seconds=30))
+        first_id = self.make_job()
+        self.wait_for_status(first_id, {"running"}, timeout=5)
+
+        second_id = self.make_job()
+        second = ja.read_job(second_id)
+        self.assertEqual(second["status"], "error")
+        self.assertIn("try again", second["message"].lower())
+
+        # Confirms rejection didn't come from reconciliation mistakenly
+        # tearing down the genuinely-alive first job.
+        self.assertEqual(ja.read_job(first_id)["status"], "running")
+
+    def test_new_scan_succeeds_after_stale_capacity_is_reconciled(self):
+        dead_pid = self._spawn_and_kill()
+        stale_id = self._plant_job_file("running", dead_pid, worker_start_identity="__unset__")
+
+        self.use_fixture_worker(_cooperative_worker_source(self.job_dir, seconds=3))
+        new_id = self.make_job()
+        new_job = ja.read_job(new_id)
+
+        self.assertNotEqual(new_job["status"], "error")
+        self.assertIsNotNone(new_job.get("worker_pid"))
+        self.assertEqual(ja.read_job(stale_id)["status"], "error")
 
 
 class CrawlTotalTimeoutTests(unittest.TestCase):
