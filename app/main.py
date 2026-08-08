@@ -13911,11 +13911,22 @@ async function poll() {{
         // Status polling is what ultimately confirms CANCELLED (the
         // cancel POST response above only ever says "cancelling" -- the
         // worker process is still being stopped at that point). Finalize
-        // the button here too, in case the POST's own response handler
-        // never got to run (slow/dropped connection, etc).
-        if (job.status === "cancelled" && cancelScanBtn) {{
-            cancelScanBtn.disabled = true;
-            cancelScanBtn.textContent = "Scan Cancelled";
+        // the button AND the "Cancelling scan..." note here too, since
+        // this poll is very often what observes the terminal state --
+        // the POST's own response handler almost always fires first,
+        // while the worker is still being torn down, and never runs
+        // again afterward to update either element itself.
+        if (job.status === "cancelled") {{
+            if (cancelScanBtn) {{
+                cancelScanBtn.disabled = true;
+                cancelScanBtn.textContent = "Scan Cancelled";
+            }}
+            if (cancelNote) {{
+                cancelNote.style.display = "block";
+                cancelNote.textContent = "Scan cancelled.";
+            }}
+            const statusBox = document.querySelector(".status");
+            if (statusBox) statusBox.classList.add("leadbot-cancelled-state");
         }}
 
         const messageEl = document.getElementById("message");
