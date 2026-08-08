@@ -12882,6 +12882,7 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
     from agents.lead_live_job_agent import (
         job_belongs_to_authenticated_user,
         read_job,
+        reap_job,
     )
 
     job = read_job(job_id)
@@ -12899,6 +12900,14 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
         guest_id = request.cookies.get(GUEST_ID_COOKIE, "")
         if not job_belongs_to_guest(job, guest_id):
             return {"status": "auth_required", "message": "Login required."}
+
+    # A "cancelling" job's worker process is only actually reaped here, on
+    # the poll the frontend already drives every ~1.8s -- this is what
+    # finalizes CANCELLED once the process has exited, and escalates to
+    # SIGKILL if it's still alive past its grace period. Cheap: a no-op for
+    # every status other than "cancelling".
+    if job and str(job.get("status") or "").lower() == "cancelling":
+        job = reap_job(job_id) or job
 
     return job
 
@@ -13594,7 +13603,7 @@ body.leadbot-live-final .live-progress-bar {{
         </div>
 <div id="liveScanActions" style="margin-top:14px;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
             <button id="cancelScanBtn" class="cancel-scan-btn" type="button">Cancel Scan</button>
-            <div id="cancelNote" class="cancel-note">Cancel requested. The scan will stop at the next safe checkpoint.</div>
+            <div id="cancelNote" class="cancel-note">Cancelling scan...</div>
         </div>
         
         <p id="exportWrap" style="display:none; margin:18px 0 0; text-align:center;">
@@ -13645,7 +13654,7 @@ async function cancelScan() {{
 
     if (cancelNote) {{
         cancelNote.style.display = "block";
-        cancelNote.textContent = "Cancel requested. The scan will stop at the next safe checkpoint.";
+        cancelNote.textContent = "Cancelling scan...";
     }}
 
     try {{
@@ -13667,8 +13676,13 @@ async function cancelScan() {{
             }}
             if (cancelNote) cancelNote.textContent = "Scan cancelled.";
         }} else {{
-            cancelScanBtn.textContent = "Cancel Requested";
-            if (cancelNote) cancelNote.textContent = data.message || "Cancel requested.";
+            // Includes "cancelling" (the normal case -- the worker process
+            // is being stopped) as well as any other non-final status.
+            // Stays disabled either way: this button never re-arms itself,
+            // and poll() below flips it to "Scan Cancelled" once the
+            // status poll observes the final CANCELLED state.
+            cancelScanBtn.textContent = "Cancelling...";
+            if (cancelNote) cancelNote.textContent = data.message || "Cancelling scan...";
         }}
     }} catch (err) {{
         cancelScanBtn.disabled = false;
@@ -13893,6 +13907,16 @@ async function poll() {{
 
         const isFinalLiveStatus = (job.status === "done" || job.status === "cancelled" || job.status === "error");
         const hasLeadCards = (job.leads || []).length > 0;
+
+        // Status polling is what ultimately confirms CANCELLED (the
+        // cancel POST response above only ever says "cancelling" -- the
+        // worker process is still being stopped at that point). Finalize
+        // the button here too, in case the POST's own response handler
+        // never got to run (slow/dropped connection, etc).
+        if (job.status === "cancelled" && cancelScanBtn) {{
+            cancelScanBtn.disabled = true;
+            cancelScanBtn.textContent = "Scan Cancelled";
+        }}
 
         const messageEl = document.getElementById("message");
         if (messageEl) {{

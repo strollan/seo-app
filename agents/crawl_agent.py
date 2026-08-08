@@ -51,6 +51,20 @@ except Exception:
 
 MAX_RESPONSE_BYTES = max(64 * 1024, min(MAX_RESPONSE_BYTES, 25 * 1024 * 1024))
 
+# requests/urllib3's `timeout=(connect, read)` read-timeout is a per-socket-
+# operation timeout, not a total-request deadline: it resets on every chunk
+# that actually arrives. A server that trickles a byte or two just often
+# enough to beat the read timeout on each call can hold a connection (and
+# the crawling thread/process behind it) open far longer than the (3, 6)
+# timeout passed to crawl_get() suggests. This is a real cap on total wall-
+# clock time spent reading one response body, checked between chunks in
+# _read_capped_text() below, so a slow-trickle response can never block
+# indefinitely regardless of how it paces its bytes.
+try:
+    CRAWL_TOTAL_TIMEOUT_SECONDS = float(os.environ.get("CRAWL_TOTAL_TIMEOUT_SECONDS") or 20)
+except Exception:
+    CRAWL_TOTAL_TIMEOUT_SECONDS = 20.0
+
 
 def _close_quietly(response):
     try:
@@ -115,6 +129,7 @@ def _read_capped_text(response, limit=None):
 
     chunks = []
     total = 0
+    deadline = time.monotonic() + CRAWL_TOTAL_TIMEOUT_SECONDS
 
     try:
         for chunk in response.iter_content(chunk_size=16 * 1024):
@@ -124,6 +139,11 @@ def _read_capped_text(response, limit=None):
             total += len(chunk)
             if total >= limit:
                 crawl_log(f"CRAWL SIZE LIMIT REACHED: truncated at {total} bytes")
+                break
+            if time.monotonic() >= deadline:
+                crawl_log(
+                    f"CRAWL TOTAL TIMEOUT: exceeded {CRAWL_TOTAL_TIMEOUT_SECONDS}s reading body"
+                )
                 break
     except Exception:
         # Fall back to whatever was already buffered rather than failing the

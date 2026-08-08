@@ -2,7 +2,11 @@ from agents.leadbot_block_gate import load_main_blocked_domains
 
 import inspect
 import json
+import os
 import re
+import signal
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -13,6 +17,56 @@ from pathlib import Path
 
 JOB_DIR = Path("data/leadbot_live_jobs")
 JOB_DIR.mkdir(parents=True, exist_ok=True)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The web process never runs scan work itself -- create_job() spawns this
+# script as an isolated child OS process (see scripts/run_live_lead_job.py).
+# A module-level constant, rather than inlining the path at the call site,
+# so same-process tests can point it at a small fake worker script and
+# exercise the real spawn/cancel/reap plumbing without running a real
+# network crawl in the child. LEADBOT_LIVE_RUN_JOB_SCRIPT gives an
+# out-of-process test (one that boots this app as a real `uvicorn`
+# subprocess, so an in-process mock.patch can't reach it) the same
+# override, the same way CRAWL_MAX_RESPONSE_BYTES already does for
+# agents/crawl_agent.py. Unset in production, where this is always the
+# real script.
+RUN_JOB_SCRIPT = Path(
+    os.environ.get("LEADBOT_LIVE_RUN_JOB_SCRIPT")
+    or (REPO_ROOT / "scripts" / "run_live_lead_job.py")
+)
+
+# Hard ceiling on how long a single scan child process may run, enforced by
+# a watchdog *inside* the child. Backstop for a scan that never finishes and
+# is never cancelled by a user.
+SCAN_TIMEOUT_SECONDS = 600
+
+# How long a "cancelling" job is given to exit on its own (cooperative check
+# or SIGTERM) before status polling escalates to SIGKILL. Kept short: the
+# user-facing goal is "near-immediate", and killing a scan process has none
+# of the "let in-flight work finish" concerns a graceful HTTP shutdown has.
+CANCEL_GRACE_SECONDS = 5
+
+# Bounds how many Lead Finder scans may run at once across the whole app.
+# Scan work now lives in its own OS process rather than the web process, so
+# this isn't protecting the event loop directly -- it protects the box
+# (CPU, memory, file descriptors, outbound connections) from unbounded
+# concurrent scans.
+MAX_CONCURRENT_LIVE_SCANS = 4
+
+# Production (and the real /lead-bot/live-start route) always spawns each
+# scan as its own OS process -- that isolation is the actual fix for the P1
+# incident this module's cancel/reap machinery exists for. Several existing
+# regression tests (test_lead_live_job_export_ownership.py,
+# test_failed_scan_retry_search.py, test_invalid_location_value_message.py,
+# test_lead_explanation_removed.py, test_lead_why_note_restored.py) call
+# create_job() directly and rely on mock.patch("agents.lead_finding_agent.
+# find_leads", ...) taking effect -- which only works for code running in
+# THIS interpreter. A spawned subprocess re-imports everything fresh from
+# disk and can never see an in-process mock.patch, so those tests set this
+# False to get the pre-fix in-process-thread execution instead. Nothing in
+# app/main.py ever touches this constant.
+RUN_SCANS_IN_SUBPROCESS = True
 
 LIVE_SCAN_BATCH_TIMEOUT_SECONDS = 90
 
@@ -456,7 +510,18 @@ def write_job(job):
         pass
     # === CENTRAL BLOCKLIST GATE END ===
     path = job_path(job["job_id"])
-    tmp = path.with_suffix(".tmp")
+    # Unique per-call tmp name: cancel_job() can now legitimately be called
+    # concurrently for the same job_id by several overlapping HTTP requests
+    # (repeated rapid Cancel clicks), and the worker's own process can write
+    # the same job file around the same moment the web process's status
+    # poll reaps it. A fixed ".tmp" name means two concurrent writers can
+    # collide -- one's tmp.replace(path) consumes the file the other is
+    # about to rename, raising FileNotFoundError. Each writer using its own
+    # tmp file makes every write independently atomic; whichever finishes
+    # last simply becomes the on-disk state, which is fine here since every
+    # writer is publishing the same kind of monotonic status snapshot, not
+    # merging conflicting data.
+    tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex[:8]}.tmp")
     tmp.write_text(json.dumps(job, indent=2), encoding="utf-8")
     tmp.replace(path)
 
@@ -502,10 +567,90 @@ def is_cancel_requested(job_id):
     job = read_job(job_id)
     if not job:
         return False
-    return bool(job.get("cancel_requested")) or str(job.get("status") or "").lower() == "cancelled"
+    if bool(job.get("cancel_requested")):
+        return True
+    return str(job.get("status") or "").lower() in {"cancelling", "cancelled"}
+
+
+def _pid_alive(pid):
+    """True if `pid` names a live process this box can see.
+
+    os.kill(pid, 0) sends no signal -- it only asks the kernel whether the
+    process exists and is visible to us. A PermissionError means it exists
+    (just owned by someone else), so that also counts as alive.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+
+    if pid <= 0:
+        return False
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+    return True
+
+
+def _signal_worker(pid, sig):
+    """Best-effort, non-blocking signal delivery to a scan's child process.
+
+    Signals its whole process group (it was started with start_new_session
+    so its pgid == its pid) in case it ever spawns helper processes of its
+    own -- e.g. a future browser/subprocess-based crawl step. Falls back to
+    signalling just the pid if the group signal isn't permitted. Every
+    failure mode here (already exited, never existed, no permission) is
+    swallowed: cancel must never raise back into the HTTP handler.
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return
+
+    if pid <= 0:
+        return
+
+    try:
+        os.killpg(pid, sig)
+        return
+    except ProcessLookupError:
+        return
+    except Exception:
+        pass
+
+    try:
+        os.kill(pid, sig)
+    except Exception:
+        pass
+
+
+def _seconds_since(timestamp):
+    if not timestamp:
+        return None
+    try:
+        then = datetime.strptime(str(timestamp), "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
+    return (datetime.now() - then).total_seconds()
 
 
 def cancel_job(job_id):
+    """Mark a job cancelling and signal its worker process. Returns fast.
+
+    Idempotent: a job already in a terminal state (done/error/cancelled) is
+    returned unchanged, and a job already "cancelling" is returned unchanged
+    too (aside from a harmless repeat SIGTERM) -- so double-clicks and
+    retried requests from a flaky connection never re-run cleanup or spam
+    duplicate "Cancel requested" events. Never blocks on the worker process
+    actually exiting; that is reap_job()'s job, driven by status polling.
+    """
     job = read_job(job_id)
 
     if not job:
@@ -521,9 +666,30 @@ def cancel_job(job_id):
     if current_status in {"done", "error", "cancelled"}:
         return job
 
+    if current_status == "cancelling":
+        # Already in flight. Re-signal in case the first SIGTERM never
+        # reached the process (e.g. sent between fork and exec), but do
+        # not touch job state or append another event -- a double-click
+        # here must be a pure no-op from the caller's point of view.
+        _signal_worker(job.get("worker_pid"), signal.SIGTERM)
+        return job
+
     job["cancel_requested"] = True
-    job["status"] = "cancelled"
-    job["message"] = "Scan cancelled."
+
+    if RUN_SCANS_IN_SUBPROCESS:
+        job["status"] = "cancelling"
+        job["message"] = "Cancelling scan..."
+        job["cancel_requested_at"] = now_iso()
+    else:
+        # No worker process exists to signal or wait on (test-only escape
+        # hatch -- see RUN_SCANS_IN_SUBPROCESS): the in-process thread's own
+        # cooperative is_cancel_requested() check is the only thing that
+        # will ever stop it, so there is no "cancelling" state to reap --
+        # go straight to the terminal state, same as before this fix.
+        job["status"] = "cancelled"
+        job["message"] = "Scan cancelled."
+        job["cancelled_at"] = now_iso()
+
     job["updated_at"] = now_iso()
     job.setdefault("events", []).append({
         "time": now_iso(),
@@ -531,10 +697,51 @@ def cancel_job(job_id):
     })
 
     write_job(job)
+
+    if RUN_SCANS_IN_SUBPROCESS:
+        _signal_worker(job.get("worker_pid"), signal.SIGTERM)
+
+    return job
+
+
+def reap_job(job_id):
+    """Finalize a "cancelling" job once its worker process has actually
+    exited, and escalate to SIGKILL if it hasn't after CANCEL_GRACE_SECONDS.
+
+    Called opportunistically from the live-status poll (already hit ~every
+    couple seconds by the UI while a scan is in flight), so no extra thread
+    or timer is needed in the web process to drive a scan to a final
+    CANCELLED state. A no-op for any job not currently "cancelling".
+    """
+    job = read_job(job_id)
+    if not job:
+        return job
+
+    if str(job.get("status") or "").lower() != "cancelling":
+        return job
+
+    pid = job.get("worker_pid")
+
+    if not _pid_alive(pid):
+        job["status"] = "cancelled"
+        job["cancel_requested"] = True
+        job["message"] = "Scan cancelled."
+        job["cancelled_at"] = now_iso()
+        job["updated_at"] = now_iso()
+        write_job(job)
+        return job
+
+    elapsed = _seconds_since(job.get("cancel_requested_at"))
+    if elapsed is not None and elapsed > CANCEL_GRACE_SECONDS:
+        _signal_worker(pid, signal.SIGKILL)
+
     return job
 
 
 def mark_job_cancelled(job_id, message="Scan cancelled."):
+    """Called by the worker itself once it cooperatively notices a cancel
+    request between units of work. Goes straight to the terminal CANCELLED
+    state -- unlike cancel_job(), there is no process left to wait on."""
     job = read_job(job_id)
 
     if not job:
@@ -543,10 +750,34 @@ def mark_job_cancelled(job_id, message="Scan cancelled."):
     job["cancel_requested"] = True
     job["status"] = "cancelled"
     job["message"] = message
+    job["cancelled_at"] = now_iso()
     job["updated_at"] = now_iso()
     write_job(job)
     return job
 # === LEADBOT LIVE CANCEL SUPPORT END ===
+
+
+def _count_active_live_scans():
+    active = 0
+
+    try:
+        job_files = list(JOB_DIR.glob("*.json"))
+    except OSError:
+        return 0
+
+    for path in job_files:
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        if str(job.get("status") or "").lower() not in {"queued", "running", "cancelling"}:
+            continue
+
+        if _pid_alive(job.get("worker_pid")):
+            active += 1
+
+    return active
 
 
 def create_job(params):
@@ -564,6 +795,7 @@ def create_job(params):
         "errors": [],
         "cancel_requested": False,
         "cancelled_at": "",
+        "worker_pid": None,
         "counts": {
             "found": 0,
             "cached": 0,
@@ -573,12 +805,107 @@ def create_job(params):
         "export_file": "",
     }
 
+    if RUN_SCANS_IN_SUBPROCESS and _count_active_live_scans() >= MAX_CONCURRENT_LIVE_SCANS:
+        job["status"] = "error"
+        job["message"] = (
+            "Too many scans are running right now. Please try again in a minute."
+        )
+        write_job(job)
+        return job_id
+
     write_job(job)
 
-    thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
-    thread.start()
+    if not RUN_SCANS_IN_SUBPROCESS:
+        # Test-only escape hatch -- see RUN_SCANS_IN_SUBPROCESS. Every real
+        # call path (the actual /lead-bot/live-start route) always takes
+        # the subprocess branch below.
+        thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
+        thread.start()
+        return job_id
+
+    # Scan work runs in its own OS process, never on a thread inside the
+    # shared FastAPI/Uvicorn worker: a thread here would share this
+    # process's GIL and event loop with every other request this server is
+    # handling, so heavy or stuck crawl work could starve unrelated routes
+    # (this is the mechanism behind the site-wide hang this architecture
+    # fixes). start_new_session=True gives the child its own process group
+    # so cancellation can signal the whole group, not just one pid.
+    proc = subprocess.Popen(
+        [sys.executable, str(RUN_JOB_SCRIPT), "--job-id", job_id],
+        cwd=str(REPO_ROOT),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    job["worker_pid"] = proc.pid
+    write_job(job)
+
+    # Nothing else in this process ever calls proc.wait()/.poll() on this
+    # child (its pid is looked up later purely from the job file, as a bare
+    # int, not through this Popen object) -- without this, a finished child
+    # becomes a zombie that os.kill(pid, 0) still reports as alive forever,
+    # since the kernel keeps a zombie's PID entry until something reaps it.
+    # A dedicated thread blocked on wait() for exactly this one child is
+    # the reap: it touches no other subprocess this app spawns elsewhere
+    # (unlike a global os.waitpid(-1, ...), which could steal another call
+    # site's own child -- e.g. app/main.py's subprocess.check_output() for
+    # opening an exports folder -- out from under its own wait()).
+    threading.Thread(target=proc.wait, daemon=True).start()
 
     return job_id
+
+
+def run_job_in_subprocess(job_id):
+    """Entry point for scripts/run_live_lead_job.py -- runs in the isolated
+    child process, never in the web process.
+
+    Installs a SIGTERM handler (cancel_job() signals this process) and a
+    hard scan-level watchdog timer, then runs the normal run_job() loop.
+    Either the SIGTERM handler, the watchdog, or run_job()'s own cooperative
+    cancellation checks may end the scan; whichever happens first wins, and
+    all three leave the job in a terminal state before the process exits.
+    """
+    def _on_sigterm(signum, frame):
+        try:
+            mark_job_cancelled(job_id, message="Scan cancelled.")
+        except Exception:
+            pass
+        os._exit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, _on_sigterm)
+    except (ValueError, OSError):
+        # Only the main thread of the main interpreter may install a signal
+        # handler. run_job_in_subprocess() is always called that way in
+        # production (it's the whole point of the entry point script), but
+        # tests may call it from a worker thread -- degrade gracefully
+        # rather than raising, since the watchdog/cooperative checks below
+        # still provide cancellation.
+        pass
+
+    def _on_timeout():
+        try:
+            job = read_job(job_id)
+            status = str((job or {}).get("status") or "").lower()
+            if status not in {"done", "error", "cancelled"}:
+                mark_job_cancelled(
+                    job_id,
+                    message=f"Scan exceeded the {SCAN_TIMEOUT_SECONDS}s maximum runtime and was stopped.",
+                )
+        except Exception:
+            pass
+        os._exit(1)
+
+    watchdog = threading.Timer(SCAN_TIMEOUT_SECONDS, _on_timeout)
+    watchdog.daemon = True
+    watchdog.start()
+
+    try:
+        run_job(job_id)
+    finally:
+        watchdog.cancel()
 
 
 def clean_int(value, default, low, high):
@@ -1334,6 +1661,9 @@ def run_job(job_id):
             for lead in leads:
                 if len(job["leads"]) >= total_limit:
                     break
+                if is_cancel_requested(job_id):
+                    mark_job_cancelled(job_id)
+                    return
                 _publish_candidate(lead, heartbeat_stop_event, heartbeat_thread)
 
         # Decide the scan's overall outcome only after every query has been

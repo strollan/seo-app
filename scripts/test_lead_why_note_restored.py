@@ -515,6 +515,19 @@ class LiveScanWhyNoteBrowserRegressionTests(unittest.TestCase):
             ctx.__exit__(None, None, None)
 
     def setUp(self):
+        # job_agent.create_job() below now spawns each scan as its own OS
+        # process by default (agents.lead_live_job_agent.
+        # RUN_SCANS_IN_SUBPROCESS, part of the P1 cancel-hang fix), which
+        # re-imports find_leads fresh from disk and can never see the
+        # mock.patch("agents.lead_finding_agent.find_leads", ...) this test
+        # relies on. Opt back into the pre-fix in-process thread so that
+        # patch keeps working; the browser subprocess started in
+        # setUpClass only ever reads the already-completed job file this
+        # produces, it never runs find_leads itself.
+        subprocess_patch = mock.patch.object(job_agent, "RUN_SCANS_IN_SUBPROCESS", False)
+        subprocess_patch.start()
+        self.addCleanup(subprocess_patch.stop)
+
         import agents.auth_agent as auth_agent
         self.auth_agent = auth_agent
 
