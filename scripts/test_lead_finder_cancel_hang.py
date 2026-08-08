@@ -403,6 +403,40 @@ class BoundedConcurrencyTests(LeadFinderCancelTestCase):
         for job in rejected:
             self.assertIsNone(job.get("worker_pid"))
 
+    def test_production_default_allows_exactly_one_scan_at_a_time(self):
+        """Production is a 1 vCPU / 1 GB droplet: only one scan subprocess
+        may run at once, a second attempt fails immediately with a clear
+        message (not a hang or an error dump), cancelling the first frees
+        the slot, and a new scan can then start."""
+        self.assertEqual(ja.MAX_CONCURRENT_LIVE_SCANS, 1, "production default must stay at 1")
+
+        self.use_fixture_worker(_stuck_ignores_sigterm_source(self.job_dir, seconds=30))
+
+        # 1. first scan starts.
+        first_id = self.make_job()
+        first = self.wait_for_status(first_id, {"running"}, timeout=5)
+        self.assertEqual(first["status"], "running")
+        first_pid = first["worker_pid"]
+
+        # 2. second concurrent scan is safely refused, with a clear
+        # user-facing message -- no hang, no worker process spawned.
+        second_id = self.make_job()
+        second = ja.read_job(second_id)
+        self.assertEqual(second["status"], "error")
+        self.assertIsNone(second.get("worker_pid"))
+        self.assertIn("try again", (second.get("message") or "").lower())
+
+        # 3. cancelling the first scan frees the slot.
+        ja.cancel_job(first_id)
+        cancelled = self.wait_for_status(first_id, {"cancelled"}, timeout=8)
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertFalse(ja._pid_alive(first_pid))
+
+        # 4. a new scan can start afterward.
+        third_id = self.make_job()
+        third = self.wait_for_status(third_id, {"running"}, timeout=5)
+        self.assertEqual(third["status"], "running")
+
 
 class CrawlTotalTimeoutTests(unittest.TestCase):
     """Requirement 6 / trace question 8: a slow-trickling response cannot
@@ -642,6 +676,66 @@ class LiveServerResponsivenessTests(unittest.TestCase):
             f"[responsiveness] slowest /login during scan={slowest:.3f}s, "
             f"during cancel={slowest_during_cancel:.3f}s"
         )
+
+    def test_second_scan_refused_while_unrelated_route_stays_responsive(self):
+        """Requirement 5 of the 1-vCPU concurrency follow-up: with
+        MAX_CONCURRENT_LIVE_SCANS=1 (the production default), a second
+        live-start while the first is still running is refused with a
+        clear message -- and `/login` never slows down while that happens,
+        proving the refusal itself is cheap (a job-dir scan + a fast
+        write), not something that could itself degrade the server."""
+        session, csrf_token = self._login_session()
+
+        first_resp = session.post(
+            f"{self.base_url}/lead-bot/live-start",
+            data={"market": "Test City, NY", "keyword": "test", "limit": 5, "csrf_token": csrf_token},
+            allow_redirects=False,
+        )
+        self.assertEqual(first_resp.status_code, 303)
+        first_job_id = first_resp.headers["location"].rsplit("/", 1)[-1]
+        first_job_file = REPO_ROOT / "data" / "leadbot_live_jobs" / f"{first_job_id}.json"
+        self.addCleanup(lambda: first_job_file.unlink(missing_ok=True))
+
+        deadline = time.time() + 5
+        while time.time() < deadline and not first_job_file.exists():
+            time.sleep(0.1)
+        self.assertTrue(first_job_file.exists(), "first live-start did not create a job file")
+
+        second_resp = session.post(
+            f"{self.base_url}/lead-bot/live-start",
+            data={"market": "Test City, NY", "keyword": "test", "limit": 5, "csrf_token": csrf_token},
+            allow_redirects=False,
+        )
+        self.assertEqual(second_resp.status_code, 303)
+        second_job_id = second_resp.headers["location"].rsplit("/", 1)[-1]
+        second_job_file = REPO_ROOT / "data" / "leadbot_live_jobs" / f"{second_job_id}.json"
+        self.addCleanup(lambda: second_job_file.unlink(missing_ok=True))
+
+        deadline = time.time() + 5
+        second_status = None
+        second_message = ""
+        while time.time() < deadline:
+            status_json = requests.get(
+                f"{self.base_url}/lead-bot/live-status/{second_job_id}", cookies=session.cookies
+            ).json()
+            second_status = status_json.get("status")
+            second_message = status_json.get("message") or ""
+            if second_status:
+                break
+            time.sleep(0.1)
+
+        self.assertEqual(second_status, "error", "a second concurrent scan must be refused, not queued/hung")
+        self.assertIn("try again", second_message.lower())
+
+        self._poll_unrelated_route_responsiveness(
+            "/login", duration_seconds=2.0, max_single_request_seconds=2.0
+        )
+
+        cancel_resp = session.post(
+            f"{self.base_url}/lead-bot/live-cancel/{first_job_id}",
+            data={"csrf_token": csrf_token},
+        )
+        self.assertEqual(cancel_resp.status_code, 200)
 
 
 if __name__ == "__main__":

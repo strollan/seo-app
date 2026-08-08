@@ -51,8 +51,11 @@ CANCEL_GRACE_SECONDS = 5
 # Scan work now lives in its own OS process rather than the web process, so
 # this isn't protecting the event loop directly -- it protects the box
 # (CPU, memory, file descriptors, outbound connections) from unbounded
-# concurrent scans.
-MAX_CONCURRENT_LIVE_SCANS = 4
+# concurrent scans. Production is a 1 vCPU / 1 GB droplet: even with
+# process isolation keeping the web process responsive, several
+# simultaneous CPU/network-heavy scan processes could still exhaust the
+# box itself, so only one scan is allowed to run at a time.
+MAX_CONCURRENT_LIVE_SCANS = 1
 
 # Production (and the real /lead-bot/live-start route) always spawns each
 # scan as its own OS process -- that isolation is the actual fix for the P1
