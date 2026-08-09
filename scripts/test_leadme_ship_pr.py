@@ -227,8 +227,8 @@ class PullRequestTests(unittest.TestCase):
     def test_reuses_existing_open_pr_without_creating_a_duplicate(self):
         router = FakeRouter()
         router.add_local(
-            contains("pr", "list"),
-            FakeResult(0, '[{"number": 7, "url": "https://github.com/strollan/seo-app/pull/7", "state": "OPEN"}]'),
+            contains("api", "repos/strollan/seo-app/pulls"),
+            FakeResult(0, '[{"number": 7, "html_url": "https://github.com/strollan/seo-app/pull/7", "state": "open", "merged_at": null}]'),
         )
         with mock.patch.object(ld, "run_local", router.run_local):
             pr, res = lsp.find_pr_for_branch("gh", "feature/x", "strollan/seo-app")
@@ -238,8 +238,8 @@ class PullRequestTests(unittest.TestCase):
     def test_handles_already_merged_pr(self):
         router = FakeRouter()
         router.add_local(
-            contains("pr", "list"),
-            FakeResult(0, '[{"number": 7, "url": "https://github.com/strollan/seo-app/pull/7", "state": "MERGED"}]'),
+            contains("api", "repos/strollan/seo-app/pulls"),
+            FakeResult(0, '[{"number": 7, "html_url": "https://github.com/strollan/seo-app/pull/7", "state": "closed", "merged_at": "2026-08-09T00:00:00Z"}]'),
         )
         with mock.patch.object(ld, "run_local", router.run_local):
             pr, res = lsp.find_pr_for_branch("gh", "feature/x", "strollan/seo-app")
@@ -247,7 +247,7 @@ class PullRequestTests(unittest.TestCase):
 
     def test_no_pr_found_returns_none(self):
         router = FakeRouter()
-        router.add_local(contains("pr", "list"), FakeResult(0, "[]"))
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls"), FakeResult(0, "[]"))
         with mock.patch.object(ld, "run_local", router.run_local):
             pr, res = lsp.find_pr_for_branch("gh", "feature/x", "strollan/seo-app")
         self.assertIsNone(pr)
@@ -255,8 +255,8 @@ class PullRequestTests(unittest.TestCase):
     def test_merge_pr_treats_already_merged_error_as_success(self):
         router = FakeRouter()
         router.add_local(
-            contains("pr", "merge"),
-            FakeResult(1, "", "GraphQL: Pull request is not open (already merged)"),
+            contains("api", "repos/strollan/seo-app/pulls/7/merge"),
+            FakeResult(1, "", '{"message":"Pull Request is not mergeable"}'),
         )
         with mock.patch.object(ld, "run_local", router.run_local):
             ok, detail = lsp.merge_pr("gh", 7, "strollan/seo-app")
@@ -264,7 +264,10 @@ class PullRequestTests(unittest.TestCase):
 
     def test_merge_pr_real_failure_is_not_swallowed(self):
         router = FakeRouter()
-        router.add_local(contains("pr", "merge"), FakeResult(1, "", "required check has not passed"))
+        router.add_local(
+            contains("api", "repos/strollan/seo-app/pulls/7/merge"),
+            FakeResult(1, "", "required check has not passed"),
+        )
         with mock.patch.object(ld, "run_local", router.run_local):
             ok, detail = lsp.merge_pr("gh", 7, "strollan/seo-app")
         self.assertFalse(ok)
@@ -296,6 +299,198 @@ class PullRequestTests(unittest.TestCase):
         # "up-to-date" text as success — covered by the full pipeline test.
         self.assertFalse(ok)
         self.assertIn("up-to-date", detail)
+
+
+# ---------------------------------------------------------------------------
+# Regression: gh operations must be repository-explicit and independent of
+# local git/worktree discovery.
+#
+# Real-world failure this locks in: with only Windows gh.exe available (no
+# native `gh` on the WSL PATH) and REPO_PATH a Linux-created linked
+# worktree under /tmp, `gh auth setup-git` / `gh pr list` / `gh pr create` /
+# `gh pr merge` all failed with "fatal: not a git repository: .../.git/
+# worktrees/wt-contact-form" -- those subcommands initialize a local git
+# client internally even when --repo/--head/--base are given explicitly,
+# and Windows git.exe cannot parse the POSIX `gitdir:` pointer files a
+# Linux `git worktree add` writes. The fix: route every repository-scoped
+# PR operation through `gh api` (pure REST, no local git at all) and drop
+# `gh auth setup-git` from the critical path.
+# ---------------------------------------------------------------------------
+
+class GhRepositoryExplicitRegressionTests(unittest.TestCase):
+    WORKTREE_GIT_ERROR = (
+        "failed to run git: fatal: not a git repository: "
+        "/mnt/c/Users/scott/ai-project/seo-app/.git/worktrees/wt-contact-form"
+    )
+
+    def _broken_worktree_router(self, branch="feature/contact-report-form"):
+        """Simulates gh.exe invoked from a WSL /tmp linked worktree: any
+        `gh pr <verb>` or `gh auth setup-git` call reproduces the real
+        failure; only `gh api ...` calls succeed. If the implementation
+        ever regresses to `gh pr list/create/merge` or re-adds `gh auth
+        setup-git` to the critical path, that step fails exactly as it did
+        in the real broken run and the pipeline reports SHIP FAILED."""
+        router = FakeRouter()
+        router.add_local(contains("branch", "--show-current"), FakeResult(0, f"{branch}\n"))
+        router.add_local(contains("diff", "--check"), FakeResult(0))
+        router.add_local(contains("diff", "--cached", "--quiet"), FakeResult(0))
+        router.add_local(contains("diff", "--quiet"), FakeResult(0))
+        router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
+        router.add_local(contains("fetch", "origin"), FakeResult(0))
+        router.add_local(contains("rev-list", "--count"), FakeResult(0, "2\n"))
+        router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "a" * 40 + "\n"))
+        router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        # Already-pushed branch: matches the real ship attempt this repairs
+        # -- `git push` reports "Everything up-to-date", not a fresh push.
+        router.add_local(contains("push", "-u", "origin"), FakeResult(1, "", "Everything up-to-date\n"))
+        router.add_local(contains("push", "origin", "--delete"), FakeResult(0, "deleted"))
+
+        # The old, broken invocation shapes: all fail exactly as observed.
+        router.add_local(contains("auth", "setup-git"), FakeResult(1, "", self.WORKTREE_GIT_ERROR))
+        router.add_local(contains("pr", "list"), FakeResult(1, "", self.WORKTREE_GIT_ERROR))
+        router.add_local(contains("pr", "create"), FakeResult(1, "", self.WORKTREE_GIT_ERROR))
+        router.add_local(contains("pr", "merge"), FakeResult(1, "", self.WORKTREE_GIT_ERROR))
+
+        # The fixed shape: `gh api` never touches git, so it always
+        # succeeds from this cwd. Merge rule registered first since its
+        # path is a superstring of the list/create path.
+        router.add_local(
+            contains("api", "repos/strollan/seo-app/pulls/7/merge"),
+            FakeResult(0, '{"merged": true}'),
+        )
+        router.add_local(
+            contains("api", "repos/strollan/seo-app/pulls"),
+            FakeResult(
+                0,
+                '[{"number": 7, "html_url": "https://github.com/strollan/seo-app/pull/7", '
+                '"state": "open", "merged_at": null}]',
+            ),
+        )
+        return router
+
+    def test_ship_succeeds_from_windows_gh_exe_in_wsl_tmp_worktree_with_already_pushed_branch(self):
+        """The exact real-world scenario: gh binary is Windows gh.exe,
+        REPO_PATH is a WSL /tmp linked worktree, and the feature branch was
+        already pushed in a prior run. Ship must reach PR-merged completion
+        using only `gh api` calls -- reusing the already-pushed branch and
+        the existing open PR (idempotent rerun), never a duplicate push or
+        duplicate PR."""
+        router = self._broken_worktree_router()
+        win_gh = "/mnt/c/Program Files/GitHub CLI/gh.exe"
+        tmp_worktree = Path("/tmp/claude-1000/-home-scot/fake-session/scratchpad/wt-contact-form")
+
+        def which_no_native_gh(cmd):
+            return None if cmd == "gh" else f"/usr/bin/{cmd}"
+
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=which_no_native_gh), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True), \
+             mock.patch.object(lsp, "REPO_PATH", tmp_worktree):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        out = buf.getvalue()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("LEADMELEADS SHIP COMPLETE", out)
+        self.assertIn("existing PR reused", out)
+
+        gh_calls = [c for c in router.local_calls if c and c[0] == win_gh]
+        self.assertTrue(gh_calls, "expected at least one gh.exe invocation")
+        self.assertFalse(
+            any(len(c) > 1 and c[1] == "pr" for c in gh_calls),
+            "must not invoke `gh pr <verb>` from the Windows gh.exe binary",
+        )
+        self.assertTrue(
+            any(len(c) > 1 and c[1] == "api" for c in gh_calls),
+            "expected `gh api ...` calls instead of `gh pr ...`",
+        )
+        self.assertFalse(
+            any(len(c) > 1 and c[1] == "auth" and "setup-git" in c for c in gh_calls),
+            "`gh auth setup-git` must not be invoked",
+        )
+
+    def test_gh_auth_setup_git_is_never_invoked_on_the_happy_path(self):
+        """Regression guard for requirement #5: `gh auth setup-git` must be
+        fully removed from the critical path, not merely tolerated on
+        failure."""
+        router = self._broken_worktree_router()
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        self.assertEqual(rc, 0)
+        self.assertFalse(any("setup-git" in " ".join(c) for c in router.local_calls))
+
+    def test_find_pr_for_branch_passes_explicit_repo_head_and_base(self):
+        captured = {}
+
+        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
+            captured["args"] = args
+            return FakeResult(0, "[]")
+
+        with mock.patch.object(ld, "run_local", fake_run_local):
+            lsp.find_pr_for_branch("gh", "feature/x", "strollan/seo-app")
+
+        args = captured["args"]
+        self.assertEqual(args[0], "gh")
+        self.assertIn("api", args)
+        self.assertIn("repos/strollan/seo-app/pulls", args)
+        self.assertIn("head=strollan:feature/x", args)
+        self.assertIn("base=main", args)
+        self.assertNotIn("list", args)  # never the git-repo-dependent `pr list` form
+
+    def test_create_pr_passes_explicit_repo_head_and_base(self):
+        captured = {}
+
+        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
+            captured["args"] = args
+            return FakeResult(0, '{"number": 8}')
+
+        with mock.patch.object(ld, "run_local", fake_run_local):
+            lsp.create_pr("gh", "feature/x", "strollan/seo-app", "Some title")
+
+        args = captured["args"]
+        self.assertIn("repos/strollan/seo-app/pulls", args)
+        self.assertIn("head=feature/x", args)
+        self.assertIn("base=main", args)
+        self.assertNotIn("create", args)  # never the git-repo-dependent `pr create` form
+
+    def test_merge_pr_uses_explicit_repo_and_pr_number_no_local_git(self):
+        captured = {}
+
+        def fake_run_local(args, cwd=None, timeout=None, input_text=None):
+            captured["args"] = args
+            return FakeResult(0, '{"merged": true}')
+
+        with mock.patch.object(ld, "run_local", fake_run_local):
+            ok, _ = lsp.merge_pr("gh", 42, "strollan/seo-app")
+
+        self.assertTrue(ok)
+        args = captured["args"]
+        self.assertEqual(args[0], "gh")
+        self.assertEqual(args[1], "api")  # never `gh pr merge ...`
+        self.assertIn("repos/strollan/seo-app/pulls/42/merge", args)
+        self.assertIn("merge_method=merge", args)
+
+    def test_no_gh_pr_subcommand_anywhere_in_module(self):
+        """Static guard: this module must never shell out to `gh pr
+        list/create/merge` -- those subcommands are what triggered the
+        local-git-discovery failure under WSL + Windows gh.exe. All
+        repository-scoped PR operations must go through gh_api()."""
+        src = Path(lsp.__file__).read_text(encoding="utf-8")
+        self.assertNotIn('"pr", "list"', src)
+        self.assertNotIn('"pr", "create"', src)
+        self.assertNotIn('"pr", "merge"', src)
+        self.assertNotIn('"auth", "setup-git"', src)
 
 
 # ---------------------------------------------------------------------------
@@ -583,22 +778,25 @@ class FullPipelineDryRunTests(unittest.TestCase):
         router.add_local(contains("rev-list", "--count"), FakeResult(0, "2\n"))
         router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "a" * 40 + "\n"))
         router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
-        router.add_local(contains("auth", "setup-git"), FakeResult(0))
         router.add_local(
             contains("remote", "get-url", "origin"),
             FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
         )
         router.add_local(contains("push", "-u", "origin"), FakeResult(0, "branch pushed"))
         router.add_local(contains("push", "origin", "--delete"), FakeResult(0, "deleted"))
+        # Order matters: the merge endpoint's path is a superstring of the
+        # list/create endpoint's path (".../pulls/7/merge" contains
+        # ".../pulls"), and FakeRouter returns the first matching rule -- so
+        # the more specific "/merge" matcher must be registered first.
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls/7/merge"), FakeResult(0, '{"merged": true}'))
         router.add_local(
-            contains("pr", "list"),
+            contains("api", "repos/strollan/seo-app/pulls"),
             FakeResult(
                 0,
-                '[{"number": 7, "url": "https://github.com/strollan/seo-app/pull/7", '
-                '"state": "OPEN", "mergedAt": null, "mergeCommit": null}]',
+                '[{"number": 7, "html_url": "https://github.com/strollan/seo-app/pull/7", '
+                '"state": "open", "merged_at": null}]',
             ),
         )
-        router.add_local(contains("pr", "merge"), FakeResult(0, "Merged"))
         return router
 
     def test_no_deploy_dry_run_completes_without_attributeerror_or_real_side_effects(self):
