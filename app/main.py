@@ -12258,6 +12258,399 @@ def reset_password_post(
 # === PASSWORD RESET ROUTES END ===
 
 
+# === CONTACT REPORT ROUTES START ===
+# Simple report/contact form. Reuses the same SMTP sender configured for
+# password-reset email (SMTP_* env vars), the same in-process sliding-window
+# rate limiting convention used by signup/password-reset, and the same
+# "website" honeypot field name and hidden-field markup used by /signup.
+CONTACT_REASON_CHOICES = [
+    "Report a Problem",
+    "Bad / Incorrect Lead",
+    "Spam or Abuse",
+    "Account Question",
+    "Other",
+]
+
+CONTACT_MAX_EMAIL_LENGTH = 254
+CONTACT_MAX_MESSAGE_LENGTH = 4000
+CONTACT_MAX_PAGE_URL_LENGTH = 500
+
+CONTACT_RATE_LIMIT_MAX_ATTEMPTS = 5
+CONTACT_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
+CONTACT_RATE_LIMIT_MESSAGE = "Too many reports submitted. Please wait a few minutes and try again."
+
+_contact_rate_limit_lock = threading.Lock()
+_contact_rate_limit_attempts = {}
+
+
+def _contact_rate_limit_key(client_host):
+    return str(client_host or "").strip()[:80] or "unknown"
+
+
+def contact_is_rate_limited(client_host):
+    key = _contact_rate_limit_key(client_host)
+    cutoff = time.time() - CONTACT_RATE_LIMIT_WINDOW_SECONDS
+
+    with _contact_rate_limit_lock:
+        attempts = [t for t in _contact_rate_limit_attempts.get(key, []) if t >= cutoff]
+        _contact_rate_limit_attempts[key] = attempts
+        return len(attempts) >= CONTACT_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def contact_record_attempt(client_host):
+    key = _contact_rate_limit_key(client_host)
+    now = time.time()
+    cutoff = now - CONTACT_RATE_LIMIT_WINDOW_SECONDS
+
+    with _contact_rate_limit_lock:
+        attempts = [t for t in _contact_rate_limit_attempts.get(key, []) if t >= cutoff]
+        attempts.append(now)
+        _contact_rate_limit_attempts[key] = attempts
+
+
+def _contact_client_host(request):
+    try:
+        return request.client.host if request.client else ""
+    except Exception:
+        return ""
+
+
+def _contact_prefill_page_url(request):
+    """Prefill Page URL from the Referer header, same-origin paths only.
+
+    Never echoes an arbitrary external URL a visitor happened to arrive
+    from -- only the path (+ query) of a request that came from this app.
+    """
+    referer = str(request.headers.get("referer") or "").strip()
+    if not referer:
+        return ""
+    try:
+        parsed = urlparse(referer)
+    except Exception:
+        return ""
+    if not parsed.path:
+        return ""
+    try:
+        request_host = request.url.hostname
+    except Exception:
+        request_host = None
+    if request_host and parsed.hostname and parsed.hostname != request_host:
+        return ""
+    page_url = parsed.path
+    if parsed.query:
+        page_url += f"?{parsed.query}"
+    return page_url[:CONTACT_MAX_PAGE_URL_LENGTH]
+
+
+def _send_contact_report_email(to_email, subject, body):
+    import smtplib
+    from email.mime.text import MIMEText
+
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
+    smtp_user = os.getenv("SMTP_USER", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    from_email = os.getenv("SMTP_FROM", smtp_user).strip()
+
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = subject
+    msg["From"] = from_email
+    msg["To"] = to_email
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        if smtp_user and smtp_password:
+            server.login(smtp_user, smtp_password)
+        server.sendmail(from_email, to_email, msg.as_string())
+
+
+def _contact_report_destination():
+    destination = os.getenv("CONTACT_REPORT_EMAIL", "").strip()
+    if destination:
+        return destination
+    return os.getenv("SMTP_FROM", "").strip()
+
+
+def contact_page(
+    request,
+    success=False,
+    error="",
+    email_value="",
+    reason_value="",
+    message_value="",
+    page_url_value="",
+):
+    import html as _html
+
+    error_html = f'<div class="auth-error">{_html.escape(error)}</div>' if error else ""
+
+    if success:
+        return AuthHTMLResponse(_contact_page_html(
+            body_html="""
+        <div class="auth-success">
+            <p style="margin:0 0 4px;">Thanks &mdash; we got it.</p>
+            <p style="margin:0;">We'll review your report as soon as possible.</p>
+        </div>
+        <div class="auth-links"><a href="/contact">Send another report</a> &nbsp;|&nbsp; <a href="/">Back to Home</a></div>
+""",
+        ))
+
+    email_safe = _html.escape(email_value or "")
+    message_safe = _html.escape(message_value or "")
+    page_url_safe = _html.escape(page_url_value or "")
+
+    reason_options_html = '<option value="" disabled{selected}>Select a reason&hellip;</option>'.format(
+        selected="" if reason_value else " selected"
+    )
+    for choice in CONTACT_REASON_CHOICES:
+        picked = " selected" if choice == reason_value else ""
+        reason_options_html += f'<option value="{_html.escape(choice)}"{picked}>{_html.escape(choice)}</option>'
+
+    form_html = f"""
+        {error_html}
+        <form method="post" action="/contact">
+            <label>Email</label>
+            <input name="email" type="email" autocomplete="email" maxlength="{CONTACT_MAX_EMAIL_LENGTH}" value="{email_safe}" required>
+
+            <label>Reason</label>
+            <select name="reason" required>{reason_options_html}</select>
+
+            <label>Message</label>
+            <textarea name="message" maxlength="{CONTACT_MAX_MESSAGE_LENGTH}" required>{message_safe}</textarea>
+
+            <label>Page URL <span style="font-weight:600; color:#94a3b8;">(optional)</span></label>
+            <input name="page_url" type="text" maxlength="{CONTACT_MAX_PAGE_URL_LENGTH}" value="{page_url_safe}">
+
+            <div aria-hidden="true" style="position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; overflow:hidden;">
+                <label for="contact-website">Leave this field blank</label>
+                <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
+            </div>
+
+            <button type="submit">Send Report</button>
+
+            <div class="auth-links"><a href="/">Back to Home</a></div>
+        </form>
+"""
+    return AuthHTMLResponse(_contact_page_html(body_html=form_html))
+
+
+def _contact_page_html(body_html):
+    return f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact LeadMeLeads</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+body {{
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #07152f, #0f172a, #1e3a8a, #4c1d95);
+}}
+.auth-card {{
+    width: min(460px, calc(100vw - 32px)); background: white; color: #0f172a;
+    border-radius: 20px; padding: 28px; box-shadow: 0 24px 70px rgba(0,0,0,.32);
+    box-sizing: border-box; margin: 24px 0;
+}}
+h1 {{ margin: 0 0 8px; font-size: 28px; }}
+p {{ margin: 0 0 18px; color: #64748b; }}
+label {{ display: block; margin-top: 14px; font-weight: 900; color: #334155; }}
+input, select, textarea {{
+    width: 100%; margin-top: 7px; padding: 13px 14px; border-radius: 12px;
+    border: 1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;
+    font-family: inherit;
+}}
+textarea {{ resize: vertical; min-height: 120px; }}
+button {{
+    width: 100%; margin-top: 20px; padding: 14px 16px; border: 0;
+    border-radius: 12px; background: linear-gradient(135deg, #0f172a, #1e3a8a);
+    color: white; font-weight: 950; cursor: pointer;
+    box-sizing: border-box;
+}}
+.auth-error {{
+    background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-success {{
+    background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
+    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+}}
+.auth-links {{ margin-top: 16px; text-align: center; }}
+.auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
+@media (max-width: 700px) {{
+    body {{ padding: 14px; align-items: flex-start; }}
+    .auth-card {{ width: 100%; max-width: 430px; margin: 24px auto; padding: 26px 20px; border-radius: 20px; }}
+    h1 {{ font-size: 26px; line-height: 1.15; }}
+    label {{ font-size: 15px; margin-top: 16px; }}
+    input, select, textarea {{ min-height: 54px; font-size: 16px; padding: 14px 14px; }}
+    button {{ min-height: 56px; font-size: 17px; font-weight: 800; }}
+    .auth-links {{ font-size: 15px; line-height: 2.1; }}
+    .auth-links a {{ display: inline-block; padding: 6px 4px; }}
+}}
+</style>
+</head>
+<body>
+    <div class="auth-card">
+        <div style="text-align:center; margin:0 0 16px;">
+            <a href="/" style="display:inline-block; text-decoration:none;">
+                <img
+                    src="/static/leadmeleads-logo-auth-white.png?v=auth-white-1"
+                    alt="LeadMeLeads"
+                    style="display:block; width:min(280px, 100%); max-width:280px; height:auto; margin:0 auto;"
+                >
+            </a>
+        </div>
+        <div class="auth-links" style="margin-top:0; margin-bottom:16px;">
+            <a href="/">Home</a> &nbsp;|&nbsp;
+            <a href="/lead-bot">Lead Finder</a> &nbsp;|&nbsp;
+            <a href="/compare">Compare URL</a>
+        </div>
+        <h1>Contact LeadMeLeads</h1>
+        <p>Found a problem, bad lead, spam result, or something that just looks wrong?
+        Send it here and we&rsquo;ll take a look.</p>
+        {body_html}
+    </div>
+</body>
+</html>
+"""
+
+
+@app.get("/contact", response_class=AuthHTMLResponse)
+def contact_get(request: AuthRequest):
+    return contact_page(request, page_url_value=_contact_prefill_page_url(request))
+
+
+@app.post("/contact")
+def contact_post(
+    request: AuthRequest,
+    email: str = AuthForm(...),
+    reason: str = AuthForm(...),
+    message: str = AuthForm(...),
+    page_url: str = AuthForm(""),
+    website: str = AuthForm(""),
+):
+    client_host = _contact_client_host(request)
+
+    clean_email = str(email or "").strip().lower()
+    clean_reason = str(reason or "").strip()
+    clean_message = str(message or "").strip()
+    clean_page_url = str(page_url or "").strip()[:CONTACT_MAX_PAGE_URL_LENGTH]
+
+    if contact_is_rate_limited(client_host):
+        return contact_page(
+            request,
+            error=CONTACT_RATE_LIMIT_MESSAGE,
+            email_value=clean_email,
+            reason_value=clean_reason,
+            message_value=clean_message,
+            page_url_value=clean_page_url,
+        )
+
+    contact_record_attempt(client_host)
+
+    # Honeypot: hidden from real users via CSS. A bot that fills it in gets
+    # the same success page a legitimate submitter would see, but no report
+    # is sent and no detail about the check is revealed.
+    if str(website or "").strip():
+        return contact_page(request, success=True)
+
+    if (
+        not clean_email
+        or len(clean_email) > CONTACT_MAX_EMAIL_LENGTH
+        or not SIGNUP_EMAIL_RE.match(clean_email)
+    ):
+        return contact_page(
+            request,
+            error="Enter a valid email address.",
+            email_value=clean_email[:CONTACT_MAX_EMAIL_LENGTH],
+            reason_value=clean_reason,
+            message_value=clean_message[:CONTACT_MAX_MESSAGE_LENGTH],
+            page_url_value=clean_page_url,
+        )
+
+    if clean_reason not in CONTACT_REASON_CHOICES:
+        return contact_page(
+            request,
+            error="Please choose a valid reason.",
+            email_value=clean_email,
+            reason_value=clean_reason,
+            message_value=clean_message[:CONTACT_MAX_MESSAGE_LENGTH],
+            page_url_value=clean_page_url,
+        )
+
+    if not clean_message:
+        return contact_page(
+            request,
+            error="Message is required.",
+            email_value=clean_email,
+            reason_value=clean_reason,
+            message_value=clean_message,
+            page_url_value=clean_page_url,
+        )
+
+    if len(clean_message) > CONTACT_MAX_MESSAGE_LENGTH:
+        return contact_page(
+            request,
+            error=f"Message is too long (max {CONTACT_MAX_MESSAGE_LENGTH} characters).",
+            email_value=clean_email,
+            reason_value=clean_reason,
+            message_value=clean_message[:CONTACT_MAX_MESSAGE_LENGTH],
+            page_url_value=clean_page_url,
+        )
+
+    from datetime import timezone
+
+    user = auth_current_user(request)
+    account_line = "Account: anonymous (not logged in)"
+    if user:
+        account_email = ""
+        try:
+            from agents.auth_agent import get_user_by_id_for_admin
+
+            account = get_user_by_id_for_admin(user.get("id"))
+            if account:
+                account_email = str(account.get("email") or "")
+        except Exception:
+            account_email = ""
+        account_line = (
+            f"Account: authenticated (user_id={user.get('id')}, "
+            f"email={account_email or 'not set'})"
+        )
+
+    requested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    body = "\n".join([
+        f"Reporter email: {clean_email}",
+        f"Reason: {clean_reason}",
+        f"Page URL: {clean_page_url or 'Not provided'}",
+        f"Submitted: {requested_at}",
+        account_line,
+        "",
+        "Message:",
+        clean_message,
+    ])
+
+    destination = _contact_report_destination()
+
+    try:
+        if not destination:
+            raise RuntimeError("No contact report destination configured")
+        _send_contact_report_email(destination, f"LeadMeLeads contact report — {clean_reason}", body)
+    except Exception as exc:
+        print(f"[ERROR] Failed to send contact report email: {exc}", flush=True)
+        return contact_page(
+            request,
+            error="Your report could not be sent right now. Please try again in a moment.",
+            email_value=clean_email,
+            reason_value=clean_reason,
+            message_value=clean_message,
+            page_url_value=clean_page_url,
+        )
+
+    return contact_page(request, success=True)
+# === CONTACT REPORT ROUTES END ===
 
 
 # === LEADBOT DATAFORSEO STATUS API START ===

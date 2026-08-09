@@ -755,6 +755,22 @@ def origin_branch_sha(repo=None, branch=PRIMARY_BRANCH):
     return res.stdout.strip()
 
 
+def origin_remote_url(repo=None):
+    """Return the URL configured for the local repo's `origin` git remote.
+
+    Local-only (`git remote get-url origin` in `repo`). Despite the name
+    similarity, this is unrelated to the `remote_*()` SSH-to-production
+    helpers below -- "remote" here is git's term for a configured remote
+    (origin), not the production host. Used by leadme_ship_pr.py to derive
+    the GitHub owner/repo for `gh` calls.
+    """
+    repo = _repo_path(repo)
+    res = run_local(["git", "remote", "get-url", "origin"], cwd=repo, timeout=10)
+    if not res.ok:
+        return None
+    return res.stdout.strip()
+
+
 def divergence_state(repo=None, branch=PRIMARY_BRANCH):
     """Return (state, ahead, behind) comparing HEAD to origin/<branch>.
 
