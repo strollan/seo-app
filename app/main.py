@@ -12388,8 +12388,7 @@ def contact_page(
         return AuthHTMLResponse(_contact_page_html(
             body_html="""
         <div class="auth-success">
-            <p style="margin:0 0 4px;">Thanks &mdash; we got it.</p>
-            <p style="margin:0;">We'll review your report as soon as possible.</p>
+            <p style="margin:0;">Thank you &mdash; your report has been received. We&rsquo;ll look into the issue as soon as possible.</p>
         </div>
         <div class="auth-links"><a href="/contact">Send another report</a> &nbsp;|&nbsp; <a href="/">Back to Home</a></div>
 """,
