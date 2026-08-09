@@ -133,6 +133,93 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("has no commits ahead of origin/main", buf.getvalue())
 
+    def _router_ahead_zero(self, branch="feature/x", pulls_response='[]'):
+        router = self._router_on_branch(branch)
+        router.add_local(contains("fetch", "origin"), FakeResult(0))
+        router.add_local(contains("rev-list", "--count"), FakeResult(0, "0\n"))
+        router.add_local(contains("diff", "--check"), FakeResult(0))
+        router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls"), FakeResult(0, pulls_response))
+        router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "c" * 40 + "\n"))
+        return router
+
+    def test_ahead_zero_with_merged_pr_is_recognized_as_already_shipped(self):
+        """The real-world scenario this repairs: a branch whose commits are
+        all already merged into origin/main (ahead=0) must be recognized
+        as already shipped, not treated as 'you forgot to commit'."""
+        router = self._router_ahead_zero(
+            pulls_response='[{"number": 11, "html_url": "https://github.com/strollan/seo-app/pull/11", '
+                            '"state": "closed", "merged_at": "2026-08-09T18:32:44Z"}]',
+        )
+        # Already-deleted remote branch, as a real post-merge rerun would see.
+        router.add_local(
+            contains("push", "origin", "--delete"),
+            FakeResult(1, "", "error: unable to delete 'feature/x': remote ref does not exist"),
+        )
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        out = buf.getvalue()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("already shipped", out)
+        self.assertIn("already merged", out)
+        self.assertIn("LEADMELEADS SHIP COMPLETE", out)
+        self.assertNotIn("has no commits ahead", out)
+        self.assertNotIn("commit your work", out)
+
+        # Push and PR-create must never have been attempted.
+        joined = [" ".join(c) for c in router.local_calls]
+        self.assertFalse(any("push" in c and "-u" in c and "origin" in c for c in joined),
+                          "must not push when already merged")
+        self.assertFalse(any("pulls" in c and "-X" not in c and "POST" in c for c in joined),
+                          "must not create a duplicate PR when already merged")
+        # No second lookup call either -- the probe's result is reused.
+        pulls_get_calls = [c for c in joined if "api" in c and "repos/strollan/seo-app/pulls" in c and "merge" not in c]
+        self.assertEqual(len(pulls_get_calls), 1, f"expected exactly one PR lookup, got: {pulls_get_calls}")
+
+    def test_ahead_zero_without_any_pr_still_fails_safely(self):
+        """A branch that is genuinely stale/empty (ahead=0, no PR ever
+        existed for it) must still fail with the original message -- this
+        is the case the original check protects against and must not be
+        weakened."""
+        router = self._router_ahead_zero(pulls_response="[]")
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns())
+        out = buf.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("has no commits ahead of origin/main", out)
+        self.assertNotIn("LEADMELEADS SHIP COMPLETE", out)
+
+    def test_ahead_zero_with_open_unmerged_pr_still_fails_safely(self):
+        """ahead=0 with only an OPEN (never-merged) PR for the branch must
+        not be mistaken for 'already shipped' -- only a MERGED PR counts."""
+        router = self._router_ahead_zero(
+            pulls_response='[{"number": 12, "html_url": "https://github.com/strollan/seo-app/pull/12", '
+                            '"state": "open", "merged_at": null}]',
+        )
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns())
+        out = buf.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("has no commits ahead of origin/main", out)
+
     def test_stops_when_gh_not_found(self):
         router = self._router_on_branch("feature/x")
         router.add_local(contains("fetch", "origin"), FakeResult(0))
