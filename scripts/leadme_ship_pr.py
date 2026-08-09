@@ -413,8 +413,34 @@ def cmd_ship(args):
         return _stop(r, ctx, "could not fetch origin/main", "check network/credentials, then retry")
 
     ahead = commits_ahead_of_origin_main(branch)
-    if not r.step("branch contains commits not on origin/main", ahead is not None and ahead > 0,
-                  f"ahead={ahead}" if ahead is not None else "could not determine"):
+    already_merged_pr = None
+    if ahead == 0:
+        # ahead=0 is ambiguous from local history alone: it means every
+        # commit on `branch` is already reachable from origin/main, which
+        # is exactly what a branch looks like *after* being merged via
+        # this tool's own PR flow (always --merge, never squash, so the
+        # branch's commits stay real ancestors of main) -- but it's
+        # indistinguishable from a branch that simply never had any
+        # unique work. Only GitHub knows which: look for a genuinely
+        # MERGED PR whose head is this exact branch before deciding.
+        # Best-effort/local to this block only -- does not affect
+        # anything else in preflight, and falls through to the original
+        # "commit your work" failure if it can't be resolved either way.
+        probe_gh_bin = find_gh_binary()
+        probe_owner_repo = owner_repo_from_url(ld.origin_remote_url(REPO_PATH))
+        if probe_gh_bin and probe_owner_repo:
+            candidate_pr, _res = find_pr_for_branch(probe_gh_bin, branch, probe_owner_repo)
+            if candidate_pr is not None and candidate_pr.get("state") == "MERGED":
+                already_merged_pr = candidate_pr
+
+    if already_merged_pr is not None:
+        r.step("branch contains commits not on origin/main", True,
+               f"ahead=0 -- already merged via {already_merged_pr['url']} "
+               f"(#{already_merged_pr['number']})")
+        r.note(f"  '{branch}' has no unique commits ahead of origin/{PRIMARY_BRANCH}: "
+               "already shipped. Skipping push/PR/merge, continuing to deploy.")
+    elif not r.step("branch contains commits not on origin/main", ahead is not None and ahead > 0,
+                     f"ahead={ahead}" if ahead is not None else "could not determine"):
         return _stop(r, ctx, f"'{branch}' has no commits ahead of origin/{PRIMARY_BRANCH}",
                      "commit your work, then re-run")
 
@@ -458,31 +484,53 @@ def cmd_ship(args):
 
     # --- Push ---------------------------------------------------------------
     r.section("push")
-    push_ok, push_detail = push_feature_branch(branch)
-    if push_ok or "up-to-date" in push_detail.lower() or "up to date" in push_detail.lower():
+    if already_merged_pr is not None:
+        r.step(f"push {branch}", True, "skipped -- already merged, nothing to push")
         ctx["pushed"] = True
-        r.step(f"pushed {branch}", True)
     else:
-        r.step(f"push origin {branch}", False, push_detail)
-        return _stop(r, ctx, "git push failed", "resolve the push failure, then re-run")
+        push_ok, push_detail = push_feature_branch(branch)
+        if push_ok or "up-to-date" in push_detail.lower() or "up to date" in push_detail.lower():
+            ctx["pushed"] = True
+            r.step(f"pushed {branch}", True)
+        else:
+            r.step(f"push origin {branch}", False, push_detail)
+            return _stop(r, ctx, "git push failed", "resolve the push failure, then re-run")
 
     # --- Pull request ---------------------------------------------------------
     r.section("pull request")
-    pr, pr_res = find_pr_for_branch(gh_bin, branch, owner_repo)
-    if pr is None and pr_res is not None and not pr_res.ok:
-        r.step("look up existing PR", False, (pr_res.stdout + pr_res.stderr).strip())
-        return _stop(r, ctx, "could not query GitHub for an existing PR", "check gh auth / network")
-
-    if pr is None:
-        title = latest_commit_subject() or branch
-        create_ok, create_detail = create_pr(gh_bin, branch, owner_repo, title)
-        if not r.step("PR created", create_ok, create_detail):
-            return _stop(r, ctx, "gh pr create failed", "inspect the error above")
-        pr, pr_res = find_pr_for_branch(gh_bin, branch, owner_repo)
-        if pr is None:
-            return _stop(r, ctx, "PR created but could not be looked up afterward", "gh pr list --head " + branch)
+    if already_merged_pr is not None:
+        pr = already_merged_pr
+        r.step("existing PR reused", True, f"{pr.get('url', '')} (already merged)")
     else:
-        r.step("existing PR reused", True, pr.get("url", ""))
+        pr, pr_res = find_pr_for_branch(gh_bin, branch, owner_repo)
+        if pr is None and pr_res is not None and not pr_res.ok:
+            r.step("look up existing PR", False, (pr_res.stdout + pr_res.stderr).strip())
+            return _stop(r, ctx, "could not query GitHub for an existing PR", "check gh auth / network")
+
+        # Reaching this `else` branch means already_merged_pr is None, which
+        # (see the ahead=0 block above) only happens when ahead > 0 -- i.e.
+        # the current branch HEAD is, by definition, NOT yet an ancestor of
+        # origin/main. find_pr_for_branch()'s MERGED fallback exists for the
+        # ahead=0 rerun-after-shipping case; here it would find a PR from a
+        # *previous* merge of this same branch name that does not cover the
+        # new commit(s) now on HEAD. Reusing it would push+delete-branch
+        # without ever creating/merging a PR for the new work. Stale merged
+        # PRs are never reused here -- only an OPEN PR counts as existing.
+        if pr is not None and pr.get("state") == "MERGED":
+            r.note(f"  found PR {pr.get('url', '')} but it is MERGED and predates the "
+                   "current (unmerged) commit on HEAD -- treating as stale, opening a new PR")
+            pr = None
+
+        if pr is None:
+            title = latest_commit_subject() or branch
+            create_ok, create_detail = create_pr(gh_bin, branch, owner_repo, title)
+            if not r.step("PR created", create_ok, create_detail):
+                return _stop(r, ctx, "gh pr create failed", "inspect the error above")
+            pr, pr_res = find_pr_for_branch(gh_bin, branch, owner_repo)
+            if pr is None:
+                return _stop(r, ctx, "PR created but could not be looked up afterward", "gh pr list --head " + branch)
+        else:
+            r.step("existing PR reused", True, pr.get("url", ""))
 
     ctx["pr_url"] = pr.get("url")
     pr_number = pr.get("number")
@@ -512,6 +560,17 @@ def cmd_ship(args):
     if not r.step("origin/main SHA resolved", ld.is_valid_sha(main_sha), main_sha or "unknown"):
         return _stop(r, ctx, "could not resolve origin/main SHA after merge", "git fetch origin main")
     r.note(f"  origin/main -> {main_sha}")
+
+    # Never report success on trust alone: confirm the exact current
+    # branch HEAD -- not just "a" PR for this branch name -- is actually
+    # reachable from the freshly-fetched origin/main before calling this
+    # shipped. Catches a stale-PR reuse (or any other merge-step bug) that
+    # left new commits unmerged despite every earlier step reporting PASS.
+    head_ahead = commits_ahead_of_origin_main(branch)
+    if not r.step("current HEAD contained in origin/main", head_ahead == 0,
+                  f"ahead={head_ahead}" if head_ahead is not None else "could not determine"):
+        return _stop(r, ctx, "merge reported success but current HEAD is not in origin/main",
+                     "do not trust this as shipped -- inspect the PR/merge steps above")
 
     if args.no_deploy:
         ctx["final"] = "PASS"
