@@ -507,6 +507,20 @@ def cmd_ship(args):
             r.step("look up existing PR", False, (pr_res.stdout + pr_res.stderr).strip())
             return _stop(r, ctx, "could not query GitHub for an existing PR", "check gh auth / network")
 
+        # Reaching this `else` branch means already_merged_pr is None, which
+        # (see the ahead=0 block above) only happens when ahead > 0 -- i.e.
+        # the current branch HEAD is, by definition, NOT yet an ancestor of
+        # origin/main. find_pr_for_branch()'s MERGED fallback exists for the
+        # ahead=0 rerun-after-shipping case; here it would find a PR from a
+        # *previous* merge of this same branch name that does not cover the
+        # new commit(s) now on HEAD. Reusing it would push+delete-branch
+        # without ever creating/merging a PR for the new work. Stale merged
+        # PRs are never reused here -- only an OPEN PR counts as existing.
+        if pr is not None and pr.get("state") == "MERGED":
+            r.note(f"  found PR {pr.get('url', '')} but it is MERGED and predates the "
+                   "current (unmerged) commit on HEAD -- treating as stale, opening a new PR")
+            pr = None
+
         if pr is None:
             title = latest_commit_subject() or branch
             create_ok, create_detail = create_pr(gh_bin, branch, owner_repo, title)
@@ -546,6 +560,17 @@ def cmd_ship(args):
     if not r.step("origin/main SHA resolved", ld.is_valid_sha(main_sha), main_sha or "unknown"):
         return _stop(r, ctx, "could not resolve origin/main SHA after merge", "git fetch origin main")
     r.note(f"  origin/main -> {main_sha}")
+
+    # Never report success on trust alone: confirm the exact current
+    # branch HEAD -- not just "a" PR for this branch name -- is actually
+    # reachable from the freshly-fetched origin/main before calling this
+    # shipped. Catches a stale-PR reuse (or any other merge-step bug) that
+    # left new commits unmerged despite every earlier step reporting PASS.
+    head_ahead = commits_ahead_of_origin_main(branch)
+    if not r.step("current HEAD contained in origin/main", head_ahead == 0,
+                  f"ahead={head_ahead}" if head_ahead is not None else "could not determine"):
+        return _stop(r, ctx, "merge reported success but current HEAD is not in origin/main",
+                     "do not trust this as shipped -- inspect the PR/merge steps above")
 
     if args.no_deploy:
         ctx["final"] = "PASS"

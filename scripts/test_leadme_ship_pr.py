@@ -424,7 +424,17 @@ class GhRepositoryExplicitRegressionTests(unittest.TestCase):
         router.add_local(contains("diff", "--quiet"), FakeResult(0))
         router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
         router.add_local(contains("fetch", "origin"), FakeResult(0))
-        router.add_local(contains("rev-list", "--count"), FakeResult(0, "2\n"))
+        # ahead=2 before the merge lands (preflight); ahead=0 afterwards
+        # (post-merge verification) -- a real merge changes this between
+        # the two rev-list calls, exactly like the actual `git fetch`
+        # between them would.
+        rev_list_calls = {"n": 0}
+
+        def rev_list_result():
+            rev_list_calls["n"] += 1
+            return FakeResult(0, "2\n" if rev_list_calls["n"] == 1 else "0\n")
+
+        router.add_local(contains("rev-list", "--count"), rev_list_result)
         router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "a" * 40 + "\n"))
         router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
         router.add_local(
@@ -578,6 +588,182 @@ class GhRepositoryExplicitRegressionTests(unittest.TestCase):
         self.assertNotIn('"pr", "create"', src)
         self.assertNotIn('"pr", "merge"', src)
         self.assertNotIn('"auth", "setup-git"', src)
+
+
+# ---------------------------------------------------------------------------
+# Regression: a MERGED PR from a previous ship of this branch must never be
+# reused once new commits have been added on top -- only an OPEN PR, or no
+# PR at all, counts as "existing" once ahead > 0. And a ship must never
+# report SHIP COMPLETE without confirming the exact current HEAD landed in
+# origin/main, regardless of what the PR/merge steps claimed.
+#
+# Real-world failure this locks in: branch already merged once (PR #11),
+# then a new commit was added (ahead=1). find_pr_for_branch()'s "fall back
+# to the most recent MERGED PR" behavior -- added for the ahead=0 rerun
+# case in fdadd73 -- was *also* reached from the normal ahead>0 path, so
+# the ship reused PR #11, skipped creating/merging a PR for the new
+# commit, deleted the remote branch, and reported SHIP COMPLETE even
+# though origin/main never changed.
+# ---------------------------------------------------------------------------
+
+class StaleMergedPrRegressionTests(unittest.TestCase):
+    def _router_ahead_one_with_stale_merged_pr(self, branch="feature/x"):
+        router = FakeRouter()
+        router.add_local(contains("branch", "--show-current"), FakeResult(0, f"{branch}\n"))
+        router.add_local(contains("diff", "--quiet"), FakeResult(0))
+        router.add_local(contains("diff", "--cached", "--quiet"), FakeResult(0))
+        router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
+        router.add_local(contains("diff", "--check"), FakeResult(0))
+        router.add_local(contains("fetch", "origin"), FakeResult(0))
+        router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        router.add_local(contains("push", "-u", "origin"), FakeResult(0, "branch pushed"))
+        router.add_local(contains("push", "origin", "--delete"), FakeResult(0, "deleted"))
+        router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "d" * 40 + "\n"))
+
+        # ahead=1 in preflight (one new commit past the old merge);
+        # ahead=0 after the new PR is actually merged (post-merge check).
+        rev_list_calls = {"n": 0}
+
+        def rev_list_result():
+            rev_list_calls["n"] += 1
+            return FakeResult(0, "1\n" if rev_list_calls["n"] == 1 else "0\n")
+
+        router.add_local(contains("rev-list", "--count"), rev_list_result)
+
+        # First `pulls` GET (find_pr_for_branch): only the OLD merged PR
+        # exists -- no open PR for the branch's new commit yet. Second GET
+        # (after create_pr): the newly created OPEN PR is now visible.
+        pulls_get_calls = {"n": 0}
+
+        def pulls_get_result():
+            pulls_get_calls["n"] += 1
+            if pulls_get_calls["n"] == 1:
+                return FakeResult(
+                    0,
+                    '[{"number": 11, "html_url": "https://github.com/strollan/seo-app/pull/11", '
+                    '"state": "closed", "merged_at": "2026-08-09T18:32:44Z"}]',
+                )
+            return FakeResult(
+                0,
+                '[{"number": 20, "html_url": "https://github.com/strollan/seo-app/pull/20", '
+                '"state": "open", "merged_at": null}]',
+            )
+
+        # Order matters: the merge endpoint's path is a superstring of the
+        # bare pulls path, so it must be matched first.
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls/20/merge"), FakeResult(0, '{"merged": true}'))
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls", "POST"), FakeResult(0, '{"number": 20}'))
+        router.add_local(contains("api", "repos/strollan/seo-app/pulls", "GET"), pulls_get_result)
+        return router
+
+    def test_stale_merged_pr_is_not_reused_new_pr_is_created_and_merged(self):
+        router = self._router_ahead_one_with_stale_merged_pr()
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        out = buf.getvalue()
+
+        self.assertEqual(rc, 0, out)
+        self.assertIn("LEADMELEADS SHIP COMPLETE", out)
+
+        # The stale PR must be flagged and never treated as "reused".
+        self.assertIn("treating as stale, opening a new PR", out)
+        self.assertNotIn("existing PR reused", out)
+
+        # A new PR must actually have been created and then merged.
+        self.assertIn("[PASS] PR created", out)
+        self.assertIn("pull/20", out)
+        joined = [" ".join(c) for c in router.local_calls]
+        self.assertTrue(
+            any("pulls" in c and "POST" in c for c in joined),
+            "expected a POST to create a new PR",
+        )
+        self.assertTrue(
+            any("pulls/20/merge" in c for c in joined),
+            "expected the new PR (#20), not the stale one (#11), to be merged",
+        )
+        self.assertFalse(
+            any("pulls/11/merge" in c for c in joined),
+            "must never attempt to merge the stale already-merged PR",
+        )
+
+        # Final verification step must have run and passed.
+        self.assertIn("[PASS] current HEAD contained in origin/main", out)
+
+    def test_no_ship_complete_without_confirming_head_is_in_origin_main(self):
+        """Even if every push/PR/merge step reports PASS, SHIP COMPLETE
+        must never print unless a fresh post-merge check confirms the
+        current HEAD actually landed in origin/main."""
+        router = self._router_ahead_one_with_stale_merged_pr()
+        # Override: the post-merge rev-list check keeps reporting ahead=1
+        # forever, simulating a merge that "succeeded" per gh but somehow
+        # never actually incorporated the current HEAD into main. Inserted
+        # at the front so it wins over the stateful rule already registered
+        # by the fixture above.
+        router.local_rules.insert(0, (contains("rev-list", "--count"), FakeResult(0, "1\n")))
+
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        out = buf.getvalue()
+
+        self.assertEqual(rc, 1, out)
+        self.assertNotIn("LEADMELEADS SHIP COMPLETE", out)
+        self.assertIn("current HEAD is not in origin/main", out)
+
+    def test_ahead_zero_already_merged_behavior_from_fdadd73_is_preserved(self):
+        """Sibling case must still work: ahead=0 (no new commits at all)
+        with a genuinely covering MERGED PR is still recognized as already
+        shipped -- this fix only changes the ahead>0 stale-PR path."""
+        router = FakeRouter()
+        router.add_local(contains("branch", "--show-current"), FakeResult(0, "feature/x\n"))
+        router.add_local(contains("diff", "--quiet"), FakeResult(0))
+        router.add_local(contains("diff", "--cached", "--quiet"), FakeResult(0))
+        router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
+        router.add_local(contains("diff", "--check"), FakeResult(0))
+        router.add_local(contains("fetch", "origin"), FakeResult(0))
+        router.add_local(contains("rev-list", "--count"), FakeResult(0, "0\n"))
+        router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "c" * 40 + "\n"))
+        router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        router.add_local(
+            contains("push", "origin", "--delete"),
+            FakeResult(1, "", "error: unable to delete 'feature/x': remote ref does not exist"),
+        )
+        router.add_local(
+            contains("api", "repos/strollan/seo-app/pulls"),
+            FakeResult(
+                0,
+                '[{"number": 11, "html_url": "https://github.com/strollan/seo-app/pull/11", '
+                '"state": "closed", "merged_at": "2026-08-09T18:32:44Z"}]',
+            ),
+        )
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+        out = buf.getvalue()
+        self.assertEqual(rc, 0, out)
+        self.assertIn("already shipped", out)
+        self.assertIn("LEADMELEADS SHIP COMPLETE", out)
 
 
 # ---------------------------------------------------------------------------
@@ -862,7 +1048,17 @@ class FullPipelineDryRunTests(unittest.TestCase):
         router.add_local(contains("diff", "--quiet"), FakeResult(0))
         router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
         router.add_local(contains("fetch", "origin"), FakeResult(0))
-        router.add_local(contains("rev-list", "--count"), FakeResult(0, "2\n"))
+        # ahead=2 before the merge lands (preflight); ahead=0 afterwards
+        # (post-merge verification) -- a real merge changes this between
+        # the two rev-list calls, exactly like the actual `git fetch`
+        # between them would.
+        rev_list_calls = {"n": 0}
+
+        def rev_list_result():
+            rev_list_calls["n"] += 1
+            return FakeResult(0, "2\n" if rev_list_calls["n"] == 1 else "0\n")
+
+        router.add_local(contains("rev-list", "--count"), rev_list_result)
         router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "a" * 40 + "\n"))
         router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
         router.add_local(
