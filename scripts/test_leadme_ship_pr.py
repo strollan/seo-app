@@ -459,5 +459,194 @@ class DeployIdempotencyAndSafetyTests(unittest.TestCase):
         self.assertNotIn("systemctl restart", joined)
 
 
+
+# ---------------------------------------------------------------------------
+# Real-module contract test — no mocking of leadme_deploy's attribute
+# surface. The suites above only ever exercise leadme_ship_pr with
+# ld.run_local/ld.run_remote swapped for a FakeRouter; every ld.<name>
+# reference is still resolved against the real, imported leadme_deploy
+# module when that happens. But none of the earlier tests ever drove
+# cmd_ship() far enough (past preflight + github auth) to actually execute
+# the `ld.remote_origin_url(REPO_PATH)` line that shipped broken -- a
+# module using a name leadme_deploy never defined would only surface as an
+# AttributeError at call time, and nothing here called it. This test
+# statically resolves every `ld.<name>` this module references against the
+# real (unmocked) leadme_deploy module, so a future rename/removal on
+# either side is caught without needing to hand-drive every code path.
+# ---------------------------------------------------------------------------
+
+import ast
+
+
+class RealModuleContractTests(unittest.TestCase):
+    def _ld_attribute_uses(self):
+        source = Path(lsp.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=lsp.__file__)
+
+        referenced = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "ld"
+            ):
+                referenced.add(node.attr)
+
+        called = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "ld"
+            ):
+                called.add(node.func.attr)
+
+        return referenced, called
+
+    def test_every_ld_attribute_exists_on_the_real_leadme_deploy_module(self):
+        """Imports the real leadme_deploy module (already done at file
+        scope as `ld`, unmocked here) and confirms every `ld.<name>`
+        leadme_ship_pr.py references actually resolves via getattr."""
+        referenced, _called = self._ld_attribute_uses()
+        self.assertTrue(referenced, "expected to find ld.<name> references in leadme_ship_pr.py")
+
+        missing = sorted(name for name in referenced if not hasattr(ld, name))
+        self.assertEqual(
+            missing,
+            [],
+            "leadme_ship_pr.py references ld.<name> attributes that do not "
+            f"exist on the real leadme_deploy module: {missing}",
+        )
+
+    def test_every_ld_function_call_target_is_callable_on_the_real_module(self):
+        """Every `ld.<name>(...)` call site must resolve to something
+        callable on the real module -- catches the case where a name
+        exists but was repurposed into e.g. a constant."""
+        _referenced, called = self._ld_attribute_uses()
+        self.assertTrue(called, "expected to find ld.<name>(...) calls in leadme_ship_pr.py")
+
+        not_callable = sorted(
+            name for name in called if not callable(getattr(ld, name, None))
+        )
+        self.assertEqual(
+            not_callable,
+            [],
+            "leadme_ship_pr.py calls ld.<name>(...) for attributes that "
+            f"exist on the real module but are not callable: {not_callable}",
+        )
+
+    def test_remote_origin_url_regression_is_fixed(self):
+        """Locks in the actual root cause and its fix: leadme_ship_pr.py
+        must call the LOCAL git helper origin_remote_url() (git remote
+        get-url origin, run in the repo working copy) — not a nonexistent
+        SSH-to-production-style remote_origin_url(), which never existed
+        in leadme_deploy.py and is not something that should exist there
+        (all `remote_*()` names in that module are SSH-to-production
+        helpers; resolving the local `origin` git remote's URL is not a
+        production/SSH concern)."""
+        self.assertTrue(hasattr(ld, "origin_remote_url"))
+        self.assertFalse(hasattr(ld, "remote_origin_url"))
+
+        src = Path(lsp.__file__).read_text(encoding="utf-8")
+        self.assertIn("ld.origin_remote_url(", src)
+        self.assertNotIn("ld.remote_origin_url(", src)
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline dry run — drives cmd_ship() with --no-deploy through
+# preflight, github auth, push, PR reuse, and merge, with every
+# ld.run_local/ld.run_remote call intercepted by FakeRouter (the same
+# hermetic seam every other test in this file uses -- nothing here touches
+# a real git remote, gh, network, or SSH connection). --no-deploy is the
+# tool's own documented dry-run flag (see build_parser): it returns before
+# _deploy() ever runs, so no backup/pull/restart/production code executes
+# either, real or faked.
+#
+# This is the test that would have caught the shipped AttributeError: the
+# earlier PreflightTests all fail/return before the github-auth section,
+# and DeployIdempotencyAndSafetyTests calls _deploy() directly, skipping
+# cmd_ship()'s push/PR/merge phases entirely. This test is the first to
+# drive cmd_ship() across the exact line that broke
+# (ld.origin_remote_url(REPO_PATH), immediately after "gh auth setup-git").
+# ---------------------------------------------------------------------------
+
+class FullPipelineDryRunTests(unittest.TestCase):
+    def _build_router(self, branch="feature/contact-report-form"):
+        router = FakeRouter()
+        router.add_local(contains("branch", "--show-current"), FakeResult(0, f"{branch}\n"))
+        router.add_local(contains("diff", "--check"), FakeResult(0))
+        router.add_local(contains("diff", "--cached", "--quiet"), FakeResult(0))
+        router.add_local(contains("diff", "--quiet"), FakeResult(0))
+        router.add_local(contains("status", "--porcelain"), FakeResult(0, ""))
+        router.add_local(contains("fetch", "origin"), FakeResult(0))
+        router.add_local(contains("rev-list", "--count"), FakeResult(0, "2\n"))
+        router.add_local(contains("rev-parse", "origin/main"), FakeResult(0, "a" * 40 + "\n"))
+        router.add_local(contains("auth", "status"), FakeResult(0, "Logged in to github.com as tester\n"))
+        router.add_local(contains("auth", "setup-git"), FakeResult(0))
+        router.add_local(
+            contains("remote", "get-url", "origin"),
+            FakeResult(0, "https://github.com/strollan/seo-app.git\n"),
+        )
+        router.add_local(contains("push", "-u", "origin"), FakeResult(0, "branch pushed"))
+        router.add_local(contains("push", "origin", "--delete"), FakeResult(0, "deleted"))
+        router.add_local(
+            contains("pr", "list"),
+            FakeResult(
+                0,
+                '[{"number": 7, "url": "https://github.com/strollan/seo-app/pull/7", '
+                '"state": "OPEN", "mergedAt": null, "mergeCommit": null}]',
+            ),
+        )
+        router.add_local(contains("pr", "merge"), FakeResult(0, "Merged"))
+        return router
+
+    def test_no_deploy_dry_run_completes_without_attributeerror_or_real_side_effects(self):
+        router = self._build_router()
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.cmd_ship(ns(no_deploy=True))
+
+        out = buf.getvalue()
+
+        # The whole point: this must not raise/report an AttributeError for
+        # any ld.<name> reference, and must reach the documented dry-run
+        # stopping point cleanly.
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("AttributeError", out)
+        self.assertIn("origin remote resolves to owner/repo", out)
+        self.assertIn("[PASS] origin remote resolves to owner/repo", out)
+        self.assertIn("no-deploy given: PR merged, not deploying", out)
+        self.assertIn("LEADMELEADS SHIP COMPLETE", out)
+
+        # Proves the fixed call actually executed (not skipped/short-circuited).
+        origin_url_calls = [c for c in router.local_calls if "remote" in c and "get-url" in c]
+        self.assertEqual(len(origin_url_calls), 1)
+
+        # --no-deploy must never reach production-safety/_deploy() code at
+        # all, faked or otherwise -- zero SSH calls of any kind.
+        self.assertEqual(router.remote_calls, [])
+
+    def test_no_deploy_dry_run_reports_zero_attributeerror_when_run_via_main(self):
+        """Same pipeline, entered through lsp.main() (the real ./scripts/
+        leadme-ship.sh entry point) rather than calling cmd_ship directly,
+        with --no-deploy passed on argv exactly as a caller would."""
+        router = self._build_router()
+        with mock.patch.object(ld, "run_local", router.run_local), \
+             mock.patch.object(lsp.shutil, "which", side_effect=lambda cmd: f"/usr/bin/{cmd}"), \
+             mock.patch.object(lsp.Path, "is_dir", return_value=True), \
+             mock.patch("pathlib.Path.exists", return_value=True):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lsp.main(["--no-deploy"])
+
+        self.assertEqual(rc, 0, buf.getvalue())
+        self.assertEqual(router.remote_calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -388,7 +388,7 @@ def cmd_ship(args):
     setup_res = gh(gh_bin, ["auth", "setup-git"], timeout=20)
     r.step("gh auth setup-git", setup_res.ok, (setup_res.stdout + setup_res.stderr).strip() if not setup_res.ok else "")
 
-    remote_url = ld.remote_origin_url(REPO_PATH)
+    remote_url = ld.origin_remote_url(REPO_PATH)
     owner_repo = owner_repo_from_url(remote_url)
     if not r.step("origin remote resolves to owner/repo", owner_repo is not None, remote_url or "(none)"):
         return _stop(r, ctx, "could not determine owner/repo from origin remote", "check `git remote -v`")
