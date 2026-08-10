@@ -12263,7 +12263,7 @@ CONTACT_MAX_PAGE_URL_LENGTH = 500
 
 CONTACT_RATE_LIMIT_MAX_ATTEMPTS = 5
 CONTACT_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
-CONTACT_RATE_LIMIT_MESSAGE = "Too many reports submitted. Please wait a few minutes and try again."
+CONTACT_RATE_LIMIT_MESSAGE = "Too many messages submitted. Please wait a few minutes and try again."
 
 _contact_rate_limit_lock = threading.Lock()
 _contact_rate_limit_attempts = {}
@@ -12359,9 +12359,9 @@ def contact_page(
             body_html="""
         <div id="contact-success" class="auth-success" tabindex="-1" role="status" aria-live="polite">
             <span class="contact-success-check" aria-hidden="true">&#10003;</span>
-            <p style="margin:0;">Thank you &mdash; your report has been received. We&rsquo;ll look into the issue as soon as possible.</p>
+            <p style="margin:0;">Thank you &mdash; your message has been sent. We&rsquo;ll get back to you as soon as possible.</p>
         </div>
-        <div class="auth-links"><a href="/contact">Send another report</a> &nbsp;|&nbsp; <a href="/">Back to Home</a></div>
+        <div class="auth-links"><a href="/contact">Send another message</a> &nbsp;|&nbsp; <a href="/">Back to Home</a></div>
         <script>
         (function () {
             var el = document.getElementById("contact-success");
@@ -12406,7 +12406,7 @@ def contact_page(
                 <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
             </div>
 
-            <button type="submit" id="contact-submit-btn">Send Report</button>
+            <button type="submit" id="contact-submit-btn">Send Message</button>
 
             <div class="auth-links"><a href="/">Back to Home</a></div>
         </form>
@@ -12430,7 +12430,7 @@ def contact_page(
             window.addEventListener("pageshow", function () {{
                 submitting = false;
                 btn.disabled = false;
-                btn.textContent = "Send Report";
+                btn.textContent = "Send Message";
             }});
         }})();
         </script>
@@ -12657,7 +12657,7 @@ def contact_post(
         print(f"[ERROR] Failed to send contact report email: {exc}", flush=True)
         return contact_page(
             request,
-            error="Your report could not be sent right now. Please try again in a moment.",
+            error="Your message could not be sent right now. Please try again in a moment.",
             email_value=clean_email,
             reason_value=clean_reason,
             message_value=clean_message,

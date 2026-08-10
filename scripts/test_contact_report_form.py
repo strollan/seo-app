@@ -59,8 +59,8 @@ class ContactFormTestCase(unittest.TestCase):
     def assert_prominent_success(self, body):
         """The confirmation is a distinct, unmissable state -- not helper text."""
         self.assertIn(
-            "Thank you &mdash; your report has been received. "
-            "We&rsquo;ll look into the issue as soon as possible.",
+            "Thank you &mdash; your message has been sent. "
+            "We&rsquo;ll get back to you as soon as possible.",
             body,
         )
         self.assertIn('id="contact-success"', body)
@@ -69,15 +69,15 @@ class ContactFormTestCase(unittest.TestCase):
         # Focus/scroll into view so the user can't miss it.
         self.assertIn(".focus()", body)
         self.assertIn(".scrollIntoView(", body)
-        # No leftover, still-submittable form once the report was sent.
+        # No leftover, still-submittable form once the message was sent.
         self.assertNotIn("<form", body)
         self.assertNotIn('type="submit"', body)
 
     def assert_retryable_form(self, body):
         """A form left for the user to fix/resubmit is a fresh, enabled form."""
         self.assertIn('id="contact-form"', body)
-        self.assertIn('<button type="submit" id="contact-submit-btn">Send Report</button>', body)
-        self.assertNotIn("your report has been received", body)
+        self.assertIn('<button type="submit" id="contact-submit-btn">Send Message</button>', body)
+        self.assertNotIn("your message has been sent", body)
 
 
 class ContactPageRenderTests(unittest.TestCase):
