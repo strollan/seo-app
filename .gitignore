@@ -183,6 +183,8 @@ test_*.py
 !scripts/test_guest_beta_access.py
 !scripts/test_analyze_rate_limit.py
 !scripts/test_guest_scan_rejection_messaging.py
+!scripts/test_email_agent.py
+!scripts/test_reset_email_transport.py
 !scripts/test_export_delete_admin_and_advanced_settings.py
 !scripts/test_contact_lookup_wording.py
 !scripts/test_search_provider_failure_surfacing.py
