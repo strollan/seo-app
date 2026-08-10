@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import requests
 from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -282,6 +283,71 @@ class MailFailureTests(ContactFormTestCase):
         self.assert_retryable_form(body)
         self.assertIn("could not be sent", body)
         send_email.assert_not_called()
+
+
+class ResendTransportTests(ContactFormTestCase):
+    """Regression: contact-report mail goes over the Resend HTTPS API, not
+    SMTP -- production cannot reach outbound SMTP ports (25/465/587) at all,
+    so the old smtplib path could never succeed there. An unreachable/
+    stalled transport must not hang the request either way.
+    """
+
+    RESEND_ENV = {
+        "RESEND_API_KEY": "test-key",
+        "SMTP_FROM": "no-reply@leadmeleads.com",
+        "CONTACT_REPORT_EMAIL": "admin@leadmeleads.com",
+    }
+
+    def test_successful_resend_send_shows_success_and_touches_no_smtp(self):
+        fake_response = mock.Mock(status_code=200)
+        fake_response.json.return_value = {"id": "email_123"}
+        with mock.patch.object(appmain, "auth_current_user", return_value=None), \
+             mock.patch("requests.post", return_value=fake_response) as post, \
+             mock.patch("smtplib.SMTP") as smtp_cls, \
+             mock.patch.dict(os.environ, self.RESEND_ENV):
+            response = self.submit()
+
+        body = response.body.decode()
+        self.assert_prominent_success(body)
+        post.assert_called_once()
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], "https://api.resend.com/emails")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer test-key")
+        self.assertEqual(kwargs["json"]["to"], ["admin@leadmeleads.com"])
+        self.assertEqual(kwargs["timeout"], 10)
+        smtp_cls.assert_not_called()
+
+    def test_timed_out_resend_send_returns_retryable_error_not_a_hang(self):
+        with mock.patch.object(appmain, "auth_current_user", return_value=None), \
+             mock.patch(
+                 "requests.post",
+                 side_effect=requests.exceptions.Timeout("timed out"),
+             ) as post, \
+             mock.patch("smtplib.SMTP") as smtp_cls, \
+             mock.patch.dict(os.environ, self.RESEND_ENV):
+            response = self.submit(message="Please keep this message.")
+
+        body = response.body.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assert_retryable_form(body)
+        self.assertIn("could not be sent", body)
+        self.assertIn("Please keep this message.", body)
+        post.assert_called_once()
+        smtp_cls.assert_not_called()
+
+    def test_resend_rejection_returns_retryable_error(self):
+        fake_response = mock.Mock(status_code=401, text="Invalid API key")
+        with mock.patch.object(appmain, "auth_current_user", return_value=None), \
+             mock.patch("requests.post", return_value=fake_response) as post, \
+             mock.patch("smtplib.SMTP") as smtp_cls, \
+             mock.patch.dict(os.environ, self.RESEND_ENV):
+            response = self.submit()
+
+        body = response.body.decode()
+        self.assert_retryable_form(body)
+        self.assertIn("could not be sent", body)
+        post.assert_called_once()
+        smtp_cls.assert_not_called()
 
 
 class SubmitLockUXTests(ContactFormTestCase):

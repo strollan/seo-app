@@ -11760,15 +11760,9 @@ def _get_base_url(request):
 
 
 def _send_reset_email(to_email, reset_url):
-    import smtplib
-    from email.mime.text import MIMEText
     from datetime import timezone
 
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
-    smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    from_email = os.getenv("SMTP_FROM", smtp_user).strip()
+    from agents.email_agent import send_email
 
     requested_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -11778,17 +11772,9 @@ def _send_reset_email(to_email, reset_url):
         f"This link expires in 60 minutes. If you did not request a reset, ignore this email.\n\n"
         f"Requested at: {requested_at}"
     )
+    subject = f"Reset your LeadMeLeads password — {requested_at}"
 
-    msg = MIMEText(body, "plain")
-    msg["Subject"] = f"Reset your LeadMeLeads password — {requested_at}"
-    msg["From"] = from_email
-    msg["To"] = to_email
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        if smtp_user and smtp_password:
-            server.login(smtp_user, smtp_password)
-        server.sendmail(from_email, to_email, msg.as_string())
+    send_email(to_email, subject, body)
 
 
 def forgot_password_page(message="", error="", dev_link=""):
@@ -12343,25 +12329,9 @@ def _contact_prefill_page_url(request):
 
 
 def _send_contact_report_email(to_email, subject, body):
-    import smtplib
-    from email.mime.text import MIMEText
+    from agents.email_agent import send_email
 
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
-    smtp_port = int(os.getenv("SMTP_PORT", "587").strip() or "587")
-    smtp_user = os.getenv("SMTP_USER", "").strip()
-    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
-    from_email = os.getenv("SMTP_FROM", smtp_user).strip()
-
-    msg = MIMEText(body, "plain")
-    msg["Subject"] = subject
-    msg["From"] = from_email
-    msg["To"] = to_email
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        if smtp_user and smtp_password:
-            server.login(smtp_user, smtp_password)
-        server.sendmail(from_email, to_email, msg.as_string())
+    send_email(to_email, subject, body)
 
 
 def _contact_report_destination():
