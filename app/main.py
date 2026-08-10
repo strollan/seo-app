@@ -12387,10 +12387,21 @@ def contact_page(
     if success:
         return AuthHTMLResponse(_contact_page_html(
             body_html="""
-        <div class="auth-success">
+        <div id="contact-success" class="auth-success" tabindex="-1" role="status" aria-live="polite">
+            <span class="contact-success-check" aria-hidden="true">&#10003;</span>
             <p style="margin:0;">Thank you &mdash; your report has been received. We&rsquo;ll look into the issue as soon as possible.</p>
         </div>
         <div class="auth-links"><a href="/contact">Send another report</a> &nbsp;|&nbsp; <a href="/">Back to Home</a></div>
+        <script>
+        (function () {
+            var el = document.getElementById("contact-success");
+            if (!el) { return; }
+            if (typeof el.focus === "function") { el.focus(); }
+            if (typeof el.scrollIntoView === "function") {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+        })();
+        </script>
 """,
         ))
 
@@ -12407,7 +12418,7 @@ def contact_page(
 
     form_html = f"""
         {error_html}
-        <form method="post" action="/contact">
+        <form method="post" action="/contact" id="contact-form">
             <label>Email</label>
             <input name="email" type="email" autocomplete="email" maxlength="{CONTACT_MAX_EMAIL_LENGTH}" value="{email_safe}" required>
 
@@ -12425,10 +12436,34 @@ def contact_page(
                 <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off">
             </div>
 
-            <button type="submit">Send Report</button>
+            <button type="submit" id="contact-submit-btn">Send Report</button>
 
             <div class="auth-links"><a href="/">Back to Home</a></div>
         </form>
+        <script>
+        (function () {{
+            var form = document.getElementById("contact-form");
+            var btn = document.getElementById("contact-submit-btn");
+            if (!form || !btn) {{ return; }}
+            var submitting = false;
+            form.addEventListener("submit", function (event) {{
+                if (submitting) {{
+                    event.preventDefault();
+                    return;
+                }}
+                submitting = true;
+                btn.disabled = true;
+                btn.textContent = "Sending\\u2026";
+            }});
+            // A page restored from bfcache (browser back button) can still
+            // show the disabled/"Sending..." state from a prior submit.
+            window.addEventListener("pageshow", function () {{
+                submitting = false;
+                btn.disabled = false;
+                btn.textContent = "Send Report";
+            }});
+        }})();
+        </script>
 """
     return AuthHTMLResponse(_contact_page_html(body_html=form_html))
 
@@ -12468,13 +12503,24 @@ button {{
     color: white; font-weight: 950; cursor: pointer;
     box-sizing: border-box;
 }}
+button:disabled {{
+    opacity: .65; cursor: not-allowed;
+}}
 .auth-error {{
     background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;
     border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
 }}
 .auth-success {{
-    background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;
-    border-radius: 12px; padding: 11px 13px; margin-bottom: 14px; font-weight: 800;
+    background: #dcfce7; color: #166534; border: 2px solid #16a34a;
+    border-radius: 14px; padding: 20px 18px; margin-bottom: 14px; font-weight: 800;
+    font-size: 17px; line-height: 1.5; box-shadow: 0 8px 24px rgba(22,163,74,.18);
+    display: flex; align-items: flex-start; gap: 12px;
+}}
+.auth-success:focus {{ outline: 3px solid #16a34a; outline-offset: 3px; }}
+.contact-success-check {{
+    flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%; background: #16a34a; color: #fff;
+    font-weight: 900; font-size: 17px; line-height: 1;
 }}
 .auth-links {{ margin-top: 16px; text-align: center; }}
 .auth-links a {{ color: #1e3a8a; font-weight: 800; text-decoration: none; }}
