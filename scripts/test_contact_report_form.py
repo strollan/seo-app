@@ -117,8 +117,12 @@ class ValidSubmissionTests(ContactFormTestCase):
 
         body = response.body.decode()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Thanks", body)
-        self.assertIn("We'll review your report as soon as possible.", body)
+        self.assertIn(
+            "Thank you &mdash; your report has been received. "
+            "We&rsquo;ll look into the issue as soon as possible.",
+            body,
+        )
+        self.assertIn('class="auth-success"', body)
         send_email.assert_called_once()
         to_email, subject, sent_body = send_email.call_args[0]
         self.assertEqual(to_email, "admin@leadmeleads.com")
@@ -189,7 +193,7 @@ class RequiredFieldTests(ContactFormTestCase):
             response = self.submit(message=too_long)
 
         body = response.body.decode()
-        self.assertNotIn("Thanks", body)
+        self.assertNotIn("your report has been received", body)
         send_email.assert_not_called()
 
 
@@ -201,7 +205,7 @@ class HoneypotTests(ContactFormTestCase):
 
         body = response.body.decode()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Thanks", body)
+        self.assertIn("your report has been received", body)
         send_email.assert_not_called()
 
 
@@ -241,7 +245,7 @@ class MailFailureTests(ContactFormTestCase):
             response = self.submit(message="Please keep this message.")
 
         body = response.body.decode()
-        self.assertNotIn("Thanks", body)
+        self.assertNotIn("your report has been received", body)
         self.assertIn("could not be sent", body)
         self.assertIn("Please keep this message.", body)
         send_email.assert_called_once()
@@ -253,7 +257,7 @@ class MailFailureTests(ContactFormTestCase):
             response = self.submit()
 
         body = response.body.decode()
-        self.assertNotIn("Thanks", body)
+        self.assertNotIn("your report has been received", body)
         self.assertIn("could not be sent", body)
         send_email.assert_not_called()
 
