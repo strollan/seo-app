@@ -55,6 +55,29 @@ class ContactFormTestCase(unittest.TestCase):
             website=website,
         )
 
+    def assert_prominent_success(self, body):
+        """The confirmation is a distinct, unmissable state -- not helper text."""
+        self.assertIn(
+            "Thank you &mdash; your report has been received. "
+            "We&rsquo;ll look into the issue as soon as possible.",
+            body,
+        )
+        self.assertIn('id="contact-success"', body)
+        self.assertIn('class="auth-success"', body)
+        self.assertIn('tabindex="-1"', body)
+        # Focus/scroll into view so the user can't miss it.
+        self.assertIn(".focus()", body)
+        self.assertIn(".scrollIntoView(", body)
+        # No leftover, still-submittable form once the report was sent.
+        self.assertNotIn("<form", body)
+        self.assertNotIn('type="submit"', body)
+
+    def assert_retryable_form(self, body):
+        """A form left for the user to fix/resubmit is a fresh, enabled form."""
+        self.assertIn('id="contact-form"', body)
+        self.assertIn('<button type="submit" id="contact-submit-btn">Send Report</button>', body)
+        self.assertNotIn("your report has been received", body)
+
 
 class ContactPageRenderTests(unittest.TestCase):
     def test_get_contact_renders_form(self):
@@ -117,12 +140,7 @@ class ValidSubmissionTests(ContactFormTestCase):
 
         body = response.body.decode()
         self.assertEqual(response.status_code, 200)
-        self.assertIn(
-            "Thank you &mdash; your report has been received. "
-            "We&rsquo;ll look into the issue as soon as possible.",
-            body,
-        )
-        self.assertIn('class="auth-success"', body)
+        self.assert_prominent_success(body)
         send_email.assert_called_once()
         to_email, subject, sent_body = send_email.call_args[0]
         self.assertEqual(to_email, "admin@leadmeleads.com")
@@ -167,7 +185,9 @@ class RequiredFieldTests(ContactFormTestCase):
              mock.patch.object(appmain, "_send_contact_report_email") as send_email:
             response = self.submit(message="   ")
 
-        self.assertIn("Message is required.", response.body.decode())
+        body = response.body.decode()
+        self.assertIn("Message is required.", body)
+        self.assert_retryable_form(body)
         send_email.assert_not_called()
 
     def test_invalid_email_is_rejected(self):
@@ -193,7 +213,7 @@ class RequiredFieldTests(ContactFormTestCase):
             response = self.submit(message=too_long)
 
         body = response.body.decode()
-        self.assertNotIn("your report has been received", body)
+        self.assert_retryable_form(body)
         send_email.assert_not_called()
 
 
@@ -205,7 +225,7 @@ class HoneypotTests(ContactFormTestCase):
 
         body = response.body.decode()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("your report has been received", body)
+        self.assert_prominent_success(body)
         send_email.assert_not_called()
 
 
@@ -220,7 +240,9 @@ class RateLimitTests(ContactFormTestCase):
 
             limited = self.submit(client_host="198.51.100.5")
 
-        self.assertIn(appmain.CONTACT_RATE_LIMIT_MESSAGE, limited.body.decode())
+        limited_body = limited.body.decode()
+        self.assertIn(appmain.CONTACT_RATE_LIMIT_MESSAGE, limited_body)
+        self.assert_retryable_form(limited_body)
         self.assertEqual(send_email.call_count, appmain.CONTACT_RATE_LIMIT_MAX_ATTEMPTS)
 
     def test_different_clients_have_independent_limits(self):
@@ -245,7 +267,7 @@ class MailFailureTests(ContactFormTestCase):
             response = self.submit(message="Please keep this message.")
 
         body = response.body.decode()
-        self.assertNotIn("your report has been received", body)
+        self.assert_retryable_form(body)
         self.assertIn("could not be sent", body)
         self.assertIn("Please keep this message.", body)
         send_email.assert_called_once()
@@ -257,9 +279,56 @@ class MailFailureTests(ContactFormTestCase):
             response = self.submit()
 
         body = response.body.decode()
-        self.assertNotIn("your report has been received", body)
+        self.assert_retryable_form(body)
         self.assertIn("could not be sent", body)
         send_email.assert_not_called()
+
+
+class SubmitLockUXTests(ContactFormTestCase):
+    """Client-side "don't let a slow response invite double-clicks" guard.
+
+    The form is a plain POST (full page reload), so there is no client
+    state to restore on error/validation failure -- each of those responses
+    is a freshly rendered page with an enabled button. These tests only
+    need to confirm the submit-lock script ships on every form render and
+    that it actually disables the button / blocks a second submit event.
+    """
+
+    def test_form_page_ships_submit_lock_script(self):
+        response = appmain.contact_get(make_request(referer=None))
+        body = response.body.decode()
+
+        self.assert_retryable_form(body)
+        self.assertIn('getElementById("contact-form")', body)
+        self.assertIn('getElementById("contact-submit-btn")', body)
+        self.assertIn("addEventListener(\"submit\"", body)
+        self.assertIn("btn.disabled = true", body)
+        self.assertIn('btn.textContent = "Sending', body)
+        # Static markup must not ship pre-disabled -- only the script
+        # disables it, and only after a real submit event.
+        self.assertNotIn('id="contact-submit-btn" disabled', body)
+
+    def test_error_response_also_ships_submit_lock_script_for_retry(self):
+        with mock.patch.object(appmain, "auth_current_user", return_value=None), \
+             mock.patch.object(appmain, "_send_contact_report_email") as send_email:
+            response = self.submit(message="   ")
+
+        body = response.body.decode()
+        self.assert_retryable_form(body)
+        self.assertIn('getElementById("contact-form")', body)
+        send_email.assert_not_called()
+
+    def test_success_page_has_no_active_form_to_resubmit(self):
+        with mock.patch.object(appmain, "auth_current_user", return_value=None), \
+             mock.patch.object(appmain, "_send_contact_report_email") as send_email, \
+             mock.patch.dict(os.environ, {"CONTACT_REPORT_EMAIL": "admin@leadmeleads.com"}):
+            response = self.submit()
+
+        body = response.body.decode()
+        self.assert_prominent_success(body)
+        self.assertNotIn('id="contact-form"', body)
+        self.assertNotIn('id="contact-submit-btn"', body)
+        send_email.assert_called_once()
 
 
 class AccountIdentityTests(ContactFormTestCase):
