@@ -129,6 +129,20 @@ class PublicPageMetadataTests(unittest.TestCase):
             ),
             "canonical": "https://leadmeleads.com/lead-list-vs-lead-finder",
         },
+        "/how-to-find-website-seo-opportunities-in-a-lead-list": {
+            "title": (
+                "How to Find Website and SEO Opportunities in a Local Lead List | "
+                "LeadMeLeads"
+            ),
+            "description": (
+                "A practical framework for auditing a local lead list to spot "
+                "website and SEO gaps worth prioritizing before outreach."
+            ),
+            "canonical": (
+                "https://leadmeleads.com/"
+                "how-to-find-website-seo-opportunities-in-a-lead-list"
+            ),
+        },
         "/resources": {
             "title": "Lead Generation Resources | LeadMeLeads",
             "description": (
@@ -384,6 +398,9 @@ class ArticleJsonLdTests(unittest.TestCase):
         "/how-to-find-local-leads": seo_meta.FIND_LOCAL_LEADS_PAGE,
         "/local-lead-generation": seo_meta.LOCAL_LEAD_GENERATION_PAGE,
         "/lead-list-vs-lead-finder": seo_meta.LEAD_LIST_VS_FINDER_PAGE,
+        "/how-to-find-website-seo-opportunities-in-a-lead-list": (
+            seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE
+        ),
     }
 
     def test_article_jsonld_present_and_valid(self):
@@ -541,10 +558,11 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/how-to-verify-local-business-leads-before-outreach",
                 "https://leadmeleads.com/local-lead-generation",
                 "https://leadmeleads.com/lead-list-vs-lead-finder",
+                "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
                 "https://leadmeleads.com/resources",
             },
         )
-        self.assertEqual(len(urls), 10)
+        self.assertEqual(len(urls), 11)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text

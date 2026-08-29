@@ -2473,6 +2473,16 @@ async def verify_local_business_leads_page(request: Request):
     )
 
 
+@app.get("/how-to-find-website-seo-opportunities-in-a-lead-list")
+async def find_website_seo_opportunities_in_lead_list_page(request: Request):
+    return render_public_guide(
+        request,
+        "how_to_find_website_seo_opportunities_in_a_lead_list.html",
+        seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE,
+        [],
+    )
+
+
 @app.get("/local-lead-generation")
 async def local_lead_generation_page(request: Request):
     return render_public_guide(

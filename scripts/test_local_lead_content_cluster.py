@@ -47,6 +47,7 @@ PAGES = {
 
 WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
 VERIFY_LEADS_PATH = "/how-to-verify-local-business-leads-before-outreach"
+OPPORTUNITIES_PATH = "/how-to-find-website-seo-opportunities-in-a-lead-list"
 
 
 class LocalLeadContentClusterTests(unittest.TestCase):
@@ -295,6 +296,163 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         word_count = len(plain.split())
         self.assertGreaterEqual(word_count, 900)
         self.assertLessEqual(word_count, 1200)
+
+    def test_opportunities_article_exact_metadata_and_single_h1(self):
+        response = self.client.get(OPPORTUNITIES_PATH)
+        body = response.text
+        self.assertEqual(response.status_code, 200)
+        title = re.search(r"<title>([^<]+)</title>", body).group(1)
+        description = html.unescape(
+            re.search(r'<meta name="description" content="([^"]+)"', body).group(1)
+        )
+        canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+        self.assertEqual(
+            title,
+            seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE.title,
+        )
+        self.assertEqual(
+            title,
+            "How to Find Website and SEO Opportunities in a Local Lead List | LeadMeLeads",
+        )
+        self.assertEqual(
+            description,
+            seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE.description,
+        )
+        self.assertEqual(description, (
+            "A practical framework for auditing a local lead list to spot "
+            "website and SEO gaps worth prioritizing before outreach."
+        ))
+        self.assertEqual(canonical, seo_meta.canonical_url(OPPORTUNITIES_PATH))
+        self.assertEqual(
+            canonical,
+            "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
+        )
+        self.assertEqual(
+            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            ["How to Find Website and SEO Opportunities in a Local Lead List"],
+        )
+        self.assertIn('name="robots" content="index, follow"', body)
+        self.assertNotIn("noindex", response.headers.get("X-Robots-Tag", "").lower())
+
+    def test_opportunities_sitemap_contains_page_exactly_once(self):
+        sitemap = self.client.get("/sitemap.xml").text
+        loc = f"<loc>{seo_meta.canonical_url(OPPORTUNITIES_PATH)}</loc>"
+        self.assertEqual(sitemap.count(loc), 1)
+
+    def test_opportunities_resources_hub_lists_article_once(self):
+        resources = self.client.get("/resources").text
+        self.assertEqual(resources.count(f'href="{OPPORTUNITIES_PATH}"'), 1)
+
+    def test_opportunities_article_has_hero_and_inline_images_with_alt_text(self):
+        body = self.client.get(OPPORTUNITIES_PATH).text
+        hero_src = "/static/images/resources/website-seo-opportunities-lead-list-hero.png"
+        inline_src = "/static/images/resources/website-seo-opportunities-lead-review.png"
+        self.assertEqual(body.count(hero_src), 1)
+        self.assertEqual(body.count(inline_src), 1)
+        imgs_by_src = {}
+        for tag in re.findall(r"<img\b[^>]*>", body):
+            src_match = re.search(r'src="([^"]+)"', tag)
+            if not src_match:
+                continue
+            alt_match = re.search(r'alt="([^"]*)"', tag)
+            imgs_by_src[src_match.group(1)] = alt_match.group(1) if alt_match else None
+        self.assertEqual(
+            imgs_by_src.get(hero_src),
+            "Local lead list dashboard showing website and SEO "
+            "opportunities for local businesses",
+        )
+        self.assertEqual(
+            imgs_by_src.get(inline_src),
+            "LeadMeLeads local business lead detail showing website, "
+            "contact and search information",
+        )
+
+    def test_opportunities_schema_and_no_faq(self):
+        response = self.client.get(OPPORTUNITIES_PATH)
+        scripts = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            response.text,
+            re.DOTALL,
+        )
+        articles = [json.loads(item) for item in scripts if '"Article"' in item]
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["@type"], "Article")
+        self.assertEqual(
+            articles[0]["mainEntityOfPage"],
+            seo_meta.canonical_url(OPPORTUNITIES_PATH),
+        )
+        self.assertEqual(
+            articles[0]["headline"],
+            seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE.title,
+        )
+        self.assertNotIn('"FAQPage"', response.text)
+
+    def test_opportunities_links_resolve_to_indexable_paths(self):
+        allowed = set(seo_meta.PUBLIC_INDEXABLE_PATHS)
+        body = self.client.get(OPPORTUNITIES_PATH).text
+        links = re.findall(r'href="(/[^"#?]*)"', body)
+        for target in links:
+            if target.startswith("/static/"):
+                continue
+            with self.subTest(target=target):
+                self.assertIn(target, allowed | {"/login", "/create-account", "/history", "/settings", "/logout"})
+
+    def test_opportunities_article_has_no_links_to_unpublished_articles(self):
+        body = self.client.get(OPPORTUNITIES_PATH).text
+        self.assertNotIn("/how-to-decide-which-local-leads-to-contact-first", body)
+        self.assertNotIn("/website-seo-gaps-personalized-outreach", body)
+
+    def test_opportunities_keeps_lead_finder_cta_and_approved_copy(self):
+        body = self.client.get(OPPORTUNITIES_PATH).text
+        self.assertIn('href="/lead-bot">LeadMeLeads\' Lead Finder</a>', body)
+        approved_copy = (
+            "Why This Matters More Than List Size",
+            "Step 1: Confirm the Website Actually Exists and Loads",
+            "Don't filter out an active business just because its website is missing, broken, parked, or hard to find.",
+            "Step 7: Prioritize the List Based on What You Found",
+            "A Note on What This Process Doesn't Tell You",
+        )
+        for exact_text in approved_copy:
+            self.assertEqual(body.count(exact_text), 1)
+
+    def test_opportunities_template_has_no_draft_placeholder_or_editorial_scaffolding(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/how_to_find_website_seo_opportunities_in_a_lead_list.html"
+        ).read_text(encoding="utf-8")
+        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
+        for forbidden in (
+            "<!DOCTYPE html>",
+            "<style>",
+            "draft-banner",
+            "placeholder-",
+            "DRAFT",
+            "SEO Title:",
+            "Meta Description:",
+            "Slug:",
+            "Target keyword:",
+            "Topics:",
+            "Internal Link Opportunities",
+            "Image Concepts",
+            "Source / Verification Notes",
+            "[[CANONICAL_URL]]",
+            "[[IMAGE_URL]]",
+            "[[PUBLISHER_LOGO_URL]]",
+            "[[PUBLISH_DATE]]",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_opportunities_word_count_in_target_range(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/how_to_find_website_seo_opportunities_in_a_lead_list.html"
+        ).read_text(encoding="utf-8")
+        start = source.index("{% block content %}") + len("{% block content %}")
+        end = source.index("{% endblock %}", start)
+        plain = re.sub(r"<[^>]+>", " ", source[start:end])
+        word_count = len(plain.split())
+        self.assertGreaterEqual(word_count, 1300)
+        self.assertLessEqual(word_count, 1700)
 
     def test_articles_link_to_each_other(self):
         without_list_body = self.client.get(WITHOUT_LIST_PATH).text

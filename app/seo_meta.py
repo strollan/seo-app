@@ -33,6 +33,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/how-to-verify-local-business-leads-before-outreach",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
+    "/how-to-find-website-seo-opportunities-in-a-lead-list",
     "/resources",
 )
 
@@ -173,6 +174,18 @@ LEAD_LIST_VS_FINDER_PAGE = SeoPage(
         "targeting, contact data, research time, and prospect relevance."
     ),
     canonical_path="/lead-list-vs-lead-finder",
+)
+
+FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE = SeoPage(
+    title=(
+        "How to Find Website and SEO Opportunities in a Local Lead List | "
+        "LeadMeLeads"
+    ),
+    description=(
+        "A practical framework for auditing a local lead list to spot "
+        "website and SEO gaps worth prioritizing before outreach."
+    ),
+    canonical_path="/how-to-find-website-seo-opportunities-in-a-lead-list",
 )
 
 RESOURCES_PAGE = SeoPage(
