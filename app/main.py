@@ -2493,6 +2493,16 @@ async def check_contactability_local_business_leads_page(request: Request):
     )
 
 
+@app.get("/compare-prospect-website-to-outranking-competitor")
+async def compare_prospect_website_to_outranking_competitor_page(request: Request):
+    return render_public_guide(
+        request,
+        "compare_prospect_website_to_outranking_competitor.html",
+        seo_meta.COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE,
+        [],
+    )
+
+
 @app.get("/local-lead-generation")
 async def local_lead_generation_page(request: Request):
     return render_public_guide(

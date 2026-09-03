@@ -49,6 +49,7 @@ WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-lis
 VERIFY_LEADS_PATH = "/how-to-verify-local-business-leads-before-outreach"
 OPPORTUNITIES_PATH = "/how-to-find-website-seo-opportunities-in-a-lead-list"
 CONTACTABILITY_PATH = "/check-contactability-local-business-leads"
+COMPARE_OUTRANKING_PATH = "/compare-prospect-website-to-outranking-competitor"
 
 # Utility routes that are intentional noindex pages -- deliberately absent
 # from PUBLIC_INDEXABLE_PATHS -- yet are legitimate internal link targets
@@ -659,6 +660,196 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         word_count = len(plain.split())
         self.assertGreaterEqual(word_count, 1600)
         self.assertLessEqual(word_count, 1800)
+
+    def test_compare_outranking_article_exact_metadata_and_single_h1(self):
+        response = self.client.get(COMPARE_OUTRANKING_PATH)
+        body = response.text
+        self.assertEqual(response.status_code, 200)
+        title = html.unescape(re.search(r"<title>([^<]+)</title>", body).group(1))
+        description = html.unescape(
+            re.search(r'<meta name="description" content="([^"]+)"', body).group(1)
+        )
+        canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+        self.assertEqual(
+            title,
+            seo_meta.COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE.title,
+        )
+        self.assertEqual(
+            title,
+            "Comparing a Prospect's Website to the Competitor That Outranks "
+            "It | LeadMeLeads",
+        )
+        self.assertEqual(
+            description,
+            seo_meta.COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE.description,
+        )
+        self.assertEqual(description, (
+            "How to compare a sales prospect's site against the competitor "
+            "outranking it in search: what to measure, and how to present "
+            "the gap without overclaiming."
+        ))
+        self.assertEqual(canonical, seo_meta.canonical_url(COMPARE_OUTRANKING_PATH))
+        self.assertEqual(
+            canonical,
+            "https://leadmeleads.com/compare-prospect-website-to-outranking-competitor",
+        )
+        self.assertEqual(
+            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            ["Comparing a Prospect's Website to the Competitor That Outranks It"],
+        )
+        self.assertIn('name="robots" content="index, follow"', body)
+        self.assertNotIn("noindex", response.headers.get("X-Robots-Tag", "").lower())
+
+    def test_compare_outranking_sitemap_contains_page_exactly_once(self):
+        sitemap = self.client.get("/sitemap.xml").text
+        loc = f"<loc>{seo_meta.canonical_url(COMPARE_OUTRANKING_PATH)}</loc>"
+        self.assertEqual(sitemap.count(loc), 1)
+
+    def test_compare_outranking_resources_hub_lists_article_once(self):
+        resources = self.client.get("/resources").text
+        self.assertEqual(resources.count(f'href="{COMPARE_OUTRANKING_PATH}"'), 1)
+
+    def test_compare_outranking_article_has_exactly_two_images_with_alt_text(self):
+        body = self.client.get(COMPARE_OUTRANKING_PATH).text
+        hero_src = "/static/images/resources/compare-outranking-competitor-hero.png"
+        inline_src = (
+            "/static/images/resources/"
+            "compare-outranking-competitor-what-to-compare.png"
+        )
+        self.assertEqual(body.count(hero_src), 1)
+        self.assertEqual(body.count(inline_src), 1)
+        article_imgs = [
+            tag
+            for tag in re.findall(r"<img\b[^>]*>", body)
+            if "/static/images/resources/" in tag
+        ]
+        self.assertEqual(len(article_imgs), 2)
+        imgs_by_src = {}
+        for tag in article_imgs:
+            src_match = re.search(r'src="([^"]+)"', tag)
+            alt_match = re.search(r'alt="([^"]*)"', tag)
+            imgs_by_src[src_match.group(1)] = alt_match.group(1) if alt_match else None
+        self.assertEqual(
+            imgs_by_src.get(hero_src),
+            "Two competing websites shown side by side with a middle column "
+            "listing differences between them",
+        )
+        self.assertEqual(
+            imgs_by_src.get(inline_src),
+            "Comparison worksheet listing what to compare between a prospect "
+            "website and the competitor that outranks it: title and meta, H1 "
+            "and service focus, reviews and trust signals, content depth, "
+            "and mobile speed and usability",
+        )
+
+    def test_compare_outranking_inline_image_follows_the_complete_what_to_compare_section(self):
+        body = self.client.get(COMPARE_OUTRANKING_PATH).text
+        section_heading = "<h2>What to Compare</h2>"
+        last_subsection = "<h3>Brand and entity signals</h3>"
+        next_heading = "<h2>Turn the Comparison Into Something the Prospect Can Act On</h2>"
+        inline = "/static/images/resources/compare-outranking-competitor-what-to-compare.png"
+        self.assertEqual(body.count(section_heading), 1)
+        self.assertEqual(body.count(last_subsection), 1)
+        self.assertLess(body.index(section_heading), body.index(last_subsection))
+        self.assertLess(body.index(last_subsection), body.index(inline))
+        self.assertLess(body.index(inline), body.index(next_heading))
+
+    def test_compare_outranking_schema_and_no_faq(self):
+        response = self.client.get(COMPARE_OUTRANKING_PATH)
+        scripts = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            response.text,
+            re.DOTALL,
+        )
+        articles = [json.loads(item) for item in scripts if '"Article"' in item]
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["@type"], "Article")
+        self.assertEqual(
+            articles[0]["mainEntityOfPage"],
+            seo_meta.canonical_url(COMPARE_OUTRANKING_PATH),
+        )
+        self.assertEqual(
+            articles[0]["headline"],
+            seo_meta.COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE.title,
+        )
+        self.assertNotIn('"FAQPage"', response.text)
+
+    def test_compare_outranking_links_resolve_to_indexable_paths(self):
+        allowed = set(seo_meta.PUBLIC_INDEXABLE_PATHS)
+        body = self.client.get(COMPARE_OUTRANKING_PATH).text
+        links = re.findall(r'href="(/[^"#?]*)"', body)
+        for target in links:
+            if target.startswith("/static/"):
+                continue
+            with self.subTest(target=target):
+                self.assertIn(target, allowed | UTILITY_NOINDEX_PATHS | {"/login", "/create-account", "/history", "/settings", "/logout"})
+
+    def test_compare_outranking_article_has_no_links_to_unpublished_articles(self):
+        body = self.client.get(COMPARE_OUTRANKING_PATH).text
+        self.assertNotIn("/how-to-decide-which-local-leads-to-contact-first", body)
+        self.assertNotIn("/website-seo-gaps-personalized-outreach", body)
+        self.assertNotIn("/shortlist-best-prospects-50-lead-search", body)
+
+    def test_compare_outranking_keeps_lead_finder_cta_and_approved_copy(self):
+        body = self.client.get(COMPARE_OUTRANKING_PATH).text
+        self.assertIn('href="/lead-bot">Open Lead Finder</a>', body)
+        approved_copy = (
+            "Why a Head-to-Head Comparison Beats a Generic Audit",
+            "Pick the Competitor That Actually Outranks the Prospect",
+            'Define "Outranks" Precisely Before You Present It',
+            "What to Compare",
+            "Turn the Comparison Into Something the Prospect Can Act On",
+            "Avoid These Traps When You Present the Gap",
+            "A Repeatable Comparison Workflow",
+            "The Bottom Line",
+            "Building these comparisons for every prospect by hand is slow. "
+            "See how LeadMeLeads assembles the ranking snapshot and gap "
+            "analysis for you.",
+        )
+        for exact_text in approved_copy:
+            self.assertEqual(body.count(exact_text), 1)
+
+    def test_compare_outranking_template_has_no_draft_placeholder_or_editorial_scaffolding(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/compare_prospect_website_to_outranking_competitor.html"
+        ).read_text(encoding="utf-8")
+        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
+        for forbidden in (
+            "<!DOCTYPE html>",
+            "<style>",
+            "draft-banner",
+            "placeholder-",
+            "DRAFT",
+            "SEO Title:",
+            "Meta Description:",
+            "Slug:",
+            "Target keyword:",
+            "Topics:",
+            "Internal Link Opportunities",
+            "Image Concepts",
+            "Source / Verification Notes",
+            "[[AUTHOR_NAME]]",
+            "[[CANONICAL_URL]]",
+            "[[DATE_MODIFIED]]",
+            "[[DATE_PUBLISHED]]",
+            "[[IMAGE_URL]]",
+            "[[PUBLISHER_NAME]]",
+            "concept card",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_compare_outranking_word_count_in_target_range(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/compare_prospect_website_to_outranking_competitor.html"
+        ).read_text(encoding="utf-8")
+        start = source.index("{% block content %}") + len("{% block content %}")
+        end = source.index("{% endblock %}", start)
+        plain = re.sub(r"<[^>]+>", " ", source[start:end])
+        word_count = len(plain.split())
+        self.assertGreaterEqual(word_count, 1450)
+        self.assertLessEqual(word_count, 1700)
 
     def test_articles_link_to_each_other(self):
         without_list_body = self.client.get(WITHOUT_LIST_PATH).text

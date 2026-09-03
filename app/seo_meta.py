@@ -35,6 +35,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/lead-list-vs-lead-finder",
     "/how-to-find-website-seo-opportunities-in-a-lead-list",
     "/check-contactability-local-business-leads",
+    "/compare-prospect-website-to-outranking-competitor",
     "/resources",
 )
 
@@ -199,6 +200,19 @@ CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE = SeoPage(
         "observable contact signals."
     ),
     canonical_path="/check-contactability-local-business-leads",
+)
+
+COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE = SeoPage(
+    title=(
+        "Comparing a Prospect's Website to the Competitor That Outranks It | "
+        "LeadMeLeads"
+    ),
+    description=(
+        "How to compare a sales prospect's site against the competitor "
+        "outranking it in search: what to measure, and how to present the "
+        "gap without overclaiming."
+    ),
+    canonical_path="/compare-prospect-website-to-outranking-competitor",
 )
 
 RESOURCES_PAGE = SeoPage(

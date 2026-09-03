@@ -19,6 +19,7 @@ limits, or CSRF behavior -- purely additive metadata/markup and a response
 header.
 """
 
+import html
 import re
 import sys
 import unittest
@@ -158,6 +159,21 @@ class PublicPageMetadataTests(unittest.TestCase):
                 "check-contactability-local-business-leads"
             ),
         },
+        "/compare-prospect-website-to-outranking-competitor": {
+            "title": (
+                "Comparing a Prospect's Website to the Competitor That "
+                "Outranks It | LeadMeLeads"
+            ),
+            "description": (
+                "How to compare a sales prospect's site against the "
+                "competitor outranking it in search: what to measure, and "
+                "how to present the gap without overclaiming."
+            ),
+            "canonical": (
+                "https://leadmeleads.com/"
+                "compare-prospect-website-to-outranking-competitor"
+            ),
+        },
         "/resources": {
             "title": "Lead Generation Resources | LeadMeLeads",
             "description": (
@@ -184,7 +200,7 @@ class PublicPageMetadataTests(unittest.TestCase):
                 body = self.client.get(path).text
                 match = TITLE_RE.search(body)
                 self.assertIsNotNone(match, f"no <title> found for {path}")
-                self.assertEqual(match.group(1), expected["title"])
+                self.assertEqual(match.group(1), html.escape(expected["title"]))
 
     def test_titles_are_pairwise_unique(self):
         titles = [
@@ -198,7 +214,7 @@ class PublicPageMetadataTests(unittest.TestCase):
             with self.subTest(path=path):
                 body = self.client.get(path).text
                 self.assertIn(
-                    f'name="description" content="{expected["description"]}"',
+                    f'name="description" content="{html.escape(expected["description"])}"',
                     body,
                 )
 
@@ -264,9 +280,9 @@ class PublicPageMetadataTests(unittest.TestCase):
         for path, expected in self.EXPECTED.items():
             with self.subTest(path=path):
                 body = self.client.get(path).text
-                self.assertIn(f'property="og:title" content="{expected["title"]}"', body)
+                self.assertIn(f'property="og:title" content="{html.escape(expected["title"])}"', body)
                 self.assertIn(
-                    f'property="og:description" content="{expected["description"]}"',
+                    f'property="og:description" content="{html.escape(expected["description"])}"',
                     body,
                 )
                 self.assertIn(f'property="og:url" content="{expected["canonical"]}"', body)
@@ -278,9 +294,9 @@ class PublicPageMetadataTests(unittest.TestCase):
             with self.subTest(path=path):
                 body = self.client.get(path).text
                 self.assertIn('name="twitter:card" content="summary_large_image"', body)
-                self.assertIn(f'name="twitter:title" content="{expected["title"]}"', body)
+                self.assertIn(f'name="twitter:title" content="{html.escape(expected["title"])}"', body)
                 self.assertIn(
-                    f'name="twitter:description" content="{expected["description"]}"',
+                    f'name="twitter:description" content="{html.escape(expected["description"])}"',
                     body,
                 )
 
@@ -418,6 +434,9 @@ class ArticleJsonLdTests(unittest.TestCase):
         ),
         "/check-contactability-local-business-leads": (
             seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE
+        ),
+        "/compare-prospect-website-to-outranking-competitor": (
+            seo_meta.COMPARE_PROSPECT_WEBSITE_TO_OUTRANKING_COMPETITOR_PAGE
         ),
     }
 
@@ -578,10 +597,11 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/lead-list-vs-lead-finder",
                 "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
                 "https://leadmeleads.com/check-contactability-local-business-leads",
+                "https://leadmeleads.com/compare-prospect-website-to-outranking-competitor",
                 "https://leadmeleads.com/resources",
             },
         )
-        self.assertEqual(len(urls), 12)
+        self.assertEqual(len(urls), 13)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text
