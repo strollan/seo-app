@@ -34,6 +34,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
     "/how-to-find-website-seo-opportunities-in-a-lead-list",
+    "/check-contactability-local-business-leads",
     "/resources",
 )
 
@@ -186,6 +187,18 @@ FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE = SeoPage(
         "website and SEO gaps worth prioritizing before outreach."
     ),
     canonical_path="/how-to-find-website-seo-opportunities-in-a-lead-list",
+)
+
+CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE = SeoPage(
+    title=(
+        "How to Check for Contactability in Local Business Leads | LeadMeLeads"
+    ),
+    description=(
+        "A practical, diagnostic guide to checking contactability in local "
+        "business leads so you can prioritize outreach and research using "
+        "observable contact signals."
+    ),
+    canonical_path="/check-contactability-local-business-leads",
 )
 
 RESOURCES_PAGE = SeoPage(

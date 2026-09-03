@@ -143,6 +143,21 @@ class PublicPageMetadataTests(unittest.TestCase):
                 "how-to-find-website-seo-opportunities-in-a-lead-list"
             ),
         },
+        "/check-contactability-local-business-leads": {
+            "title": (
+                "How to Check for Contactability in Local Business Leads | "
+                "LeadMeLeads"
+            ),
+            "description": (
+                "A practical, diagnostic guide to checking contactability in "
+                "local business leads so you can prioritize outreach and "
+                "research using observable contact signals."
+            ),
+            "canonical": (
+                "https://leadmeleads.com/"
+                "check-contactability-local-business-leads"
+            ),
+        },
         "/resources": {
             "title": "Lead Generation Resources | LeadMeLeads",
             "description": (
@@ -401,6 +416,9 @@ class ArticleJsonLdTests(unittest.TestCase):
         "/how-to-find-website-seo-opportunities-in-a-lead-list": (
             seo_meta.FIND_WEBSITE_SEO_OPPORTUNITIES_IN_LEAD_LIST_PAGE
         ),
+        "/check-contactability-local-business-leads": (
+            seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE
+        ),
     }
 
     def test_article_jsonld_present_and_valid(self):
@@ -559,10 +577,11 @@ class SitemapXmlTests(unittest.TestCase):
                 "https://leadmeleads.com/local-lead-generation",
                 "https://leadmeleads.com/lead-list-vs-lead-finder",
                 "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
+                "https://leadmeleads.com/check-contactability-local-business-leads",
                 "https://leadmeleads.com/resources",
             },
         )
-        self.assertEqual(len(urls), 11)
+        self.assertEqual(len(urls), 12)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text

@@ -48,6 +48,14 @@ PAGES = {
 WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
 VERIFY_LEADS_PATH = "/how-to-verify-local-business-leads-before-outreach"
 OPPORTUNITIES_PATH = "/how-to-find-website-seo-opportunities-in-a-lead-list"
+CONTACTABILITY_PATH = "/check-contactability-local-business-leads"
+
+# Utility routes that are intentional noindex pages -- deliberately absent
+# from PUBLIC_INDEXABLE_PATHS -- yet are legitimate internal link targets
+# (e.g. the "Contact us" link in the shared guide footer). Enumerated
+# narrowly: anything not listed here or in PUBLIC_INDEXABLE_PATHS still
+# fails the link-resolution assertions below.
+UTILITY_NOINDEX_PATHS = frozenset({"/contact"})
 
 
 class LocalLeadContentClusterTests(unittest.TestCase):
@@ -121,7 +129,12 @@ class LocalLeadContentClusterTests(unittest.TestCase):
                 if target.startswith("/static/"):
                     continue
                 with self.subTest(page=path, target=target):
-                    self.assertIn(target, allowed | {"/login", "/create-account", "/history", "/settings", "/logout"})
+                    self.assertIn(
+                        target,
+                        allowed
+                        | UTILITY_NOINDEX_PATHS
+                        | {"/login", "/create-account", "/history", "/settings", "/logout"},
+                    )
             self.assertEqual(
                 re.findall(r'<a class="inline-cta" href="/lead-bot">', body),
                 ['<a class="inline-cta" href="/lead-bot">'],
@@ -274,7 +287,12 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             if target.startswith("/static/"):
                 continue
             with self.subTest(target=target):
-                self.assertIn(target, allowed | {"/login", "/create-account", "/history", "/settings", "/logout"})
+                self.assertIn(
+                    target,
+                    allowed
+                    | UTILITY_NOINDEX_PATHS
+                    | {"/login", "/create-account", "/history", "/settings", "/logout"},
+                )
 
     def test_verify_leads_template_has_no_draft_or_placeholder_markup(self):
         source = (
@@ -395,7 +413,12 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             if target.startswith("/static/"):
                 continue
             with self.subTest(target=target):
-                self.assertIn(target, allowed | {"/login", "/create-account", "/history", "/settings", "/logout"})
+                self.assertIn(
+                    target,
+                    allowed
+                    | UTILITY_NOINDEX_PATHS
+                    | {"/login", "/create-account", "/history", "/settings", "/logout"},
+                )
 
     def test_opportunities_article_has_no_links_to_unpublished_articles(self):
         body = self.client.get(OPPORTUNITIES_PATH).text
@@ -453,6 +476,189 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         word_count = len(plain.split())
         self.assertGreaterEqual(word_count, 1300)
         self.assertLessEqual(word_count, 1700)
+
+    def test_contactability_article_exact_metadata_and_single_h1(self):
+        response = self.client.get(CONTACTABILITY_PATH)
+        body = response.text
+        self.assertEqual(response.status_code, 200)
+        title = re.search(r"<title>([^<]+)</title>", body).group(1)
+        description = html.unescape(
+            re.search(r'<meta name="description" content="([^"]+)"', body).group(1)
+        )
+        canonical = re.search(r'<link rel="canonical" href="([^"]+)"', body).group(1)
+        self.assertEqual(
+            title,
+            seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE.title,
+        )
+        self.assertEqual(
+            title,
+            "How to Check for Contactability in Local Business Leads | LeadMeLeads",
+        )
+        self.assertEqual(
+            description,
+            seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE.description,
+        )
+        self.assertEqual(description, (
+            "A practical, diagnostic guide to checking contactability in local "
+            "business leads so you can prioritize outreach and research using "
+            "observable contact signals."
+        ))
+        self.assertEqual(canonical, seo_meta.canonical_url(CONTACTABILITY_PATH))
+        self.assertEqual(
+            canonical,
+            "https://leadmeleads.com/check-contactability-local-business-leads",
+        )
+        self.assertEqual(
+            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            ["How to Check for Contactability in Local Business Leads"],
+        )
+        self.assertIn('name="robots" content="index, follow"', body)
+        self.assertNotIn("noindex", response.headers.get("X-Robots-Tag", "").lower())
+
+    def test_contactability_sitemap_contains_page_exactly_once(self):
+        sitemap = self.client.get("/sitemap.xml").text
+        loc = f"<loc>{seo_meta.canonical_url(CONTACTABILITY_PATH)}</loc>"
+        self.assertEqual(sitemap.count(loc), 1)
+
+    def test_contactability_resources_hub_lists_article_once(self):
+        resources = self.client.get("/resources").text
+        self.assertEqual(resources.count(f'href="{CONTACTABILITY_PATH}"'), 1)
+
+    def test_contactability_article_has_hero_and_inline_images_with_alt_text(self):
+        body = self.client.get(CONTACTABILITY_PATH).text
+        hero_src = "/static/images/resources/contactability-lead-check-hero.png"
+        inline_src = "/static/images/resources/contactability-cross-check.png"
+        self.assertEqual(body.count(hero_src), 1)
+        self.assertEqual(body.count(inline_src), 1)
+        imgs_by_src = {}
+        for tag in re.findall(r"<img\b[^>]*>", body):
+            src_match = re.search(r'src="([^"]+)"', tag)
+            if not src_match:
+                continue
+            alt_match = re.search(r'alt="([^"]*)"', tag)
+            imgs_by_src[src_match.group(1)] = alt_match.group(1) if alt_match else None
+        self.assertEqual(
+            imgs_by_src.get(hero_src),
+            "LeadMeLeads lead detail showing a local business's phone, email, "
+            "website, and contact-page information, verified address, and "
+            "notes on why the lead may be worth contacting.",
+        )
+        self.assertEqual(
+            imgs_by_src.get(inline_src),
+            "Comparing a business website contact page and map listing to "
+            "cross-check phone number, address, and contact details.",
+        )
+
+    def test_contactability_inline_image_follows_the_repeatable_check_section(self):
+        body = self.client.get(CONTACTABILITY_PATH).text
+        section_heading = "<h2>A repeatable contactability check</h2>"
+        next_heading = "<h2>Reading the signals: present versus usable</h2>"
+        self.assertEqual(body.count(section_heading), 1)
+        self.assertLess(
+            body.index(section_heading), body.index("/static/images/resources/contactability-cross-check.png")
+        )
+        self.assertLess(
+            body.index("/static/images/resources/contactability-cross-check.png"),
+            body.index(next_heading),
+        )
+
+    def test_contactability_schema_and_no_faq(self):
+        response = self.client.get(CONTACTABILITY_PATH)
+        scripts = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            response.text,
+            re.DOTALL,
+        )
+        articles = [json.loads(item) for item in scripts if '"Article"' in item]
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["@type"], "Article")
+        self.assertEqual(
+            articles[0]["mainEntityOfPage"],
+            seo_meta.canonical_url(CONTACTABILITY_PATH),
+        )
+        self.assertEqual(
+            articles[0]["headline"],
+            seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE.title,
+        )
+        self.assertNotIn('"FAQPage"', response.text)
+
+    def test_contactability_links_resolve_to_indexable_paths(self):
+        allowed = set(seo_meta.PUBLIC_INDEXABLE_PATHS)
+        body = self.client.get(CONTACTABILITY_PATH).text
+        links = re.findall(r'href="(/[^"#?]*)"', body)
+        for target in links:
+            if target.startswith("/static/"):
+                continue
+            with self.subTest(target=target):
+                self.assertIn(
+                    target,
+                    allowed
+                    | UTILITY_NOINDEX_PATHS
+                    | {"/login", "/create-account", "/history", "/settings", "/logout"},
+                )
+
+    def test_contactability_article_has_no_links_to_unpublished_articles(self):
+        body = self.client.get(CONTACTABILITY_PATH).text
+        self.assertNotIn("/compare-prospect-website-to-outranking-competitor", body)
+        self.assertNotIn("/how-to-decide-which-local-leads-to-contact-first", body)
+        self.assertNotIn("/website-seo-gaps-personalized-outreach", body)
+        self.assertNotIn("/shortlist-best-prospects-50-lead-search", body)
+
+    def test_contactability_keeps_lead_finder_cta_and_approved_copy(self):
+        body = self.client.get(CONTACTABILITY_PATH).text
+        self.assertIn('href="/lead-bot">Open Lead Finder</a>', body)
+        approved_copy = (
+            "Why contactability is a prioritization input, not a verdict",
+            "What counts as a contact signal",
+            "A repeatable contactability check",
+            "Reading the signals: present versus usable",
+            "Turning your findings into a simple priority order",
+            "Where LeadMeLeads fits in the workflow",
+            "Use LeadMeLeads to keep your contactability notes organized and compare local leads side by side before you reach out.",
+        )
+        for exact_text in approved_copy:
+            self.assertEqual(body.count(exact_text), 1)
+
+    def test_contactability_template_has_no_draft_placeholder_or_editorial_scaffolding(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/check_contactability_local_business_leads.html"
+        ).read_text(encoding="utf-8")
+        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
+        for forbidden in (
+            "<!DOCTYPE html>",
+            "<style>",
+            "draft-banner",
+            "placeholder-",
+            "DRAFT",
+            "SEO Title:",
+            "Meta Description:",
+            "Slug:",
+            "Target keyword:",
+            "Topics:",
+            "Internal Link Opportunities",
+            "Image Concepts",
+            "Source / Verification Notes",
+            "[[AUTHOR_NAME]]",
+            "[[CANONICAL_URL]]",
+            "[[DATE_MODIFIED]]",
+            "[[DATE_PUBLISHED]]",
+            "[[IMAGE_URL]]",
+            "[[PUBLISHER_NAME]]",
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_contactability_word_count_in_target_range(self):
+        source = (
+            Path(__file__).parent.parent
+            / "app/templates/check_contactability_local_business_leads.html"
+        ).read_text(encoding="utf-8")
+        start = source.index("{% block content %}") + len("{% block content %}")
+        end = source.index("{% endblock %}", start)
+        plain = re.sub(r"<[^>]+>", " ", source[start:end])
+        word_count = len(plain.split())
+        self.assertGreaterEqual(word_count, 1600)
+        self.assertLessEqual(word_count, 1800)
 
     def test_articles_link_to_each_other(self):
         without_list_body = self.client.get(WITHOUT_LIST_PATH).text

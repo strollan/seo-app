@@ -2483,6 +2483,16 @@ async def find_website_seo_opportunities_in_lead_list_page(request: Request):
     )
 
 
+@app.get("/check-contactability-local-business-leads")
+async def check_contactability_local_business_leads_page(request: Request):
+    return render_public_guide(
+        request,
+        "check_contactability_local_business_leads.html",
+        seo_meta.CHECK_CONTACTABILITY_LOCAL_BUSINESS_LEADS_PAGE,
+        [],
+    )
+
+
 @app.get("/local-lead-generation")
 async def local_lead_generation_page(request: Request):
     return render_public_guide(
