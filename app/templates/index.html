@@ -689,6 +689,53 @@ a {
     line-height: 1.6;
 }
 
+.final-cta-actions {
+    display: flex;
+    gap: 13px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.comparison-card .card-actions {
+    margin-top: 16px;
+}
+
+.info-section .fine-print {
+    font-size: 14px;
+    color: rgba(226, 232, 240, 0.72);
+    line-height: 1.55;
+}
+
+.info-section.light .fine-print {
+    color: #475569;
+}
+
+.faq-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.faq-item {
+    padding: 18px 20px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.075);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.faq-item h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    letter-spacing: -0.02em;
+}
+
+.faq-item p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: rgba(239, 246, 255, 0.82);
+}
+
 @media (max-width: 940px) {
     .hero-grid,
     .section-grid,
@@ -800,6 +847,18 @@ a {
 
     .result-tag {
         width: max-content;
+    }
+
+    .final-cta-actions {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        max-width: 340px;
+        margin: 0 auto;
+    }
+
+    .final-cta-actions .btn {
+        width: 100%;
     }
 }
 
@@ -919,6 +978,48 @@ a {
         </section>
     </main>
 
+    <section class="info-section light" aria-labelledby="choose-tool-heading">
+        <h2 id="choose-tool-heading">Which tool should you use?</h2>
+        <p>
+            LeadMeLeads has two tools. Most people start with Lead Finder. Reach for
+            Compare URL when you already have specific websites to size up.
+        </p>
+        <div class="comparison-grid">
+            <article class="comparison-card">
+                <h3>Use Lead Finder when&hellip;</h3>
+                <p>
+                    You want a shortlist of local businesses worth contacting. Enter a
+                    keyword and a city, state, or ZIP code, then review each prospect&rsquo;s
+                    search position, available contact details, and a short reason it may
+                    be worth a look.
+                </p>
+                <div class="card-actions">
+                    <a class="dark" href="/lead-bot">Open Lead Finder</a>
+                </div>
+            </article>
+            <article class="comparison-card">
+                <h3>Use Compare URL when&hellip;</h3>
+                <p>
+                    You already have two websites in mind: yours and a competitor&rsquo;s,
+                    or two competitors. You want a side-by-side look at titles, meta
+                    descriptions, headings, and content gaps.
+                </p>
+                <div class="card-actions">
+                    <a class="dark" href="/compare">Compare Two Websites</a>
+                </div>
+            </article>
+        </div>
+        <p class="fine-print">
+            Lead scores and priority tags are prioritization signals to help you decide
+            what to review first. They are not promises about a business or its level of
+            interest. Qualification still happens through your own outreach.
+        </p>
+        <p class="fine-print">
+            Guests can run scans and view every result on screen. Exporting a prospect
+            list to CSV requires a free account.
+        </p>
+    </section>
+
     <section class="info-section" aria-labelledby="how-it-works-heading">
         <h2 id="how-it-works-heading">How It Works</h2>
         <div class="conversion-grid">
@@ -1033,13 +1134,60 @@ a {
         </p>
     </section>
 
-    <section class="final-cta" aria-label="Start a Lead Finder search">
+    <section class="info-section" aria-labelledby="faq-heading">
+        <h2 id="faq-heading">Common questions</h2>
+        <div class="faq-list">
+            <div class="faq-item">
+                <h3>Do I need an account to try it?</h3>
+                <p>
+                    No. Guests can run Lead Finder scans and Compare URL checks and see every
+                    result on screen. A free account adds CSV export and saved history.
+                </p>
+            </div>
+            <div class="faq-item">
+                <h3>What does the lead score mean?</h3>
+                <p>
+                    It is a prioritization signal that suggests which prospects to review first,
+                    based on public search and website context. It does not promise that a
+                    business needs your service or will respond.
+                </p>
+            </div>
+            <div class="faq-item">
+                <h3>Which tool should I start with?</h3>
+                <p>
+                    Start with Lead Finder to build a shortlist from a keyword and location. Use
+                    Compare URL when you already have two specific websites to compare.
+                </p>
+            </div>
+            <div class="faq-item">
+                <h3>Where does the data come from?</h3>
+                <p>
+                    Real local search results plus publicly available details from each
+                    business&rsquo;s website, such as titles, headings, phone numbers, emails, and
+                    contact pages when we find them.
+                </p>
+            </div>
+            <div class="faq-item">
+                <h3>Can I export my results?</h3>
+                <p>
+                    Yes, with a free account. Exports include business details, keyword and
+                    market, search position, and phone, email, and contact-page URL when
+                    available.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section class="final-cta" aria-label="Start with LeadMeLeads">
         <h2>Start with a search, not a spreadsheet.</h2>
         <p>
             Choose a keyword and location, review the available context, and save the prospects
             that deserve a closer look.
         </p>
-        <a class="btn btn-primary" href="/lead-bot">Find Local Leads</a>
+        <div class="final-cta-actions">
+            <a class="btn btn-primary" href="/lead-bot">Find Local Leads</a>
+            <a class="btn btn-secondary" href="/compare">Compare Two Websites</a>
+        </div>
     </section>
 
     <p class="footer-note">
