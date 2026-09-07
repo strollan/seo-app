@@ -655,6 +655,22 @@ def repo_exists(repo=None):
     return repo.is_dir() and (repo / ".git").exists()
 
 
+def normalize_git_toplevel_path(path_str):
+    """Translate Git-for-Windows C:/ paths into their WSL drvfs equivalent.
+
+    ``git.exe`` reports its top-level directory in Windows syntax even when
+    invoked from WSL.  ``Path("C:/...")`` is relative on WSL, so normalize
+    only an absolute C: path before resolving it for the fail-closed identity
+    comparison below.  Other values are deliberately left untouched and
+    therefore continue to fail the existing comparison if they are wrong.
+    """
+    path_str = path_str.strip()
+    match = re.fullmatch(r"[Cc]:[\\/](.*)", path_str)
+    if not match:
+        return path_str
+    return WINDOWS_MOUNT_PREFIX + "/" + match.group(1).replace("\\", "/")
+
+
 def validate_repo_identity(repo=None):
     """Fail closed unless repo is this script's LeadMeLeads Git worktree."""
     repo = _repo_path(repo).resolve()
@@ -669,7 +685,7 @@ def validate_repo_identity(repo=None):
     if not root_result.ok or not root_result.stdout.strip():
         return False, "Git top-level could not be resolved"
 
-    resolved_root = Path(root_result.stdout.strip()).resolve()
+    resolved_root = Path(normalize_git_toplevel_path(root_result.stdout)).resolve()
     if resolved_root != repo:
         return False, f"resolved Git root is {resolved_root}, expected {repo}"
 

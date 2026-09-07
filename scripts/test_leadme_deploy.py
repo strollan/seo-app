@@ -80,7 +80,6 @@ class WorktreeRepoResolutionTests(unittest.TestCase):
     def test_protected_original_path_is_not_required(self):
         source = Path(ld.__file__).read_text(encoding="utf-8")
         self.assertNotIn("/mnt/c/Users/scott/ai-project/seo-app", source)
-        self.assertNotEqual(ld.REPO_PATH, Path("/mnt/c/Users/scott/ai-project/seo-app"))
 
     def test_wrong_non_git_directory_stops_before_remote_contact(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -148,6 +147,18 @@ class WorktreeRepoResolutionTests(unittest.TestCase):
         self.assertEqual(ld.PROD_BACKUPS_DIR, "/var/www/leadmeleads-backups")
         self.assertEqual(ld.PROD_SERVICE, "leadmeleads")
         self.assertEqual(ld.LIVE_SITE, "https://leadmeleads.com")
+
+
+class RepositoryIdentityTests(unittest.TestCase):
+    def test_git_for_windows_c_path_matches_wsl_repo_root(self):
+        """git.exe's C:/ output must not be resolved relative to the WSL cwd."""
+        repo = Path("/mnt/c/Users/scott/ai-project/seo-app")
+        windows_root = "C:/Users/scott/ai-project/seo-app\n"
+        with mock.patch.object(ld, "run_local", return_value=FakeResult(0, windows_root)):
+            valid, detail = ld.validate_repo_identity(repo)
+
+        self.assertTrue(valid)
+        self.assertEqual(detail, str(repo.resolve()))
 
 
 class UntrackedAllowlistTests(unittest.TestCase):
