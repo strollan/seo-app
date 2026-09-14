@@ -2,11 +2,15 @@
 {% block page_styles %}
 <style>
 .resources-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-.resource-card { min-width:0; padding:22px; border:1px solid #dbe4f0; border-radius:14px; background:#f8fafc; }
+.resource-card { position:relative; min-width:0; padding:22px; border:1px solid #dbe4f0; border-radius:14px; background:#f8fafc; transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
 .resource-card-image { display:block; width:100%; height:auto; aspect-ratio:16 / 9; margin:0 0 18px; border-radius:10px; }
 .resource-card h2 { margin-bottom:10px; font-size:21px; }
 .resource-card p { font-size:15px; line-height:1.65; }
-.resource-card a { font-weight:800; }
+.resource-card-title-link { color:#0f172a; font-weight:800; text-decoration:none; }
+.resource-card-title-link::after { position:absolute; inset:0; content:""; }
+.resource-card-cta { display:inline-block; margin-top:4px; color:#0f2f7f; font-size:15px; font-weight:800; }
+.resource-card:hover, .resource-card:focus-within { border-color:#93c5fd; box-shadow:0 10px 24px rgba(15,23,42,.12); transform:translateY(-2px); }
+.resource-card-title-link:focus-visible { outline:3px solid #2563eb; outline-offset:5px; border-radius:4px; }
 @media (max-width:700px) {
   .resources-grid { grid-template-columns:1fr; }
   .resource-card { padding:18px; }
@@ -21,50 +25,50 @@
 <section class="section" aria-label="Lead generation guides">
   <div class="resources-grid">
     <article class="resource-card">
-      <h2>What Makes a Good Lead?</h2>
+      <h2><a class="resource-card-title-link" href="/what-makes-a-good-lead">What Makes a Good Lead?</a></h2>
       <p>Learn how market fit, contactability, and a specific reason for outreach separate a useful prospect from another name on a list.</p>
-      <a href="/what-makes-a-good-lead">Read what makes a good lead</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>How to Find Local Leads</h2>
+      <h2><a class="resource-card-title-link" href="/how-to-find-local-leads">How to Find Local Leads</a></h2>
       <p>Follow a practical process for choosing a market, finding reachable businesses, reviewing websites, and organizing research before outreach.</p>
-      <a href="/how-to-find-local-leads">Learn how to find local leads</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
       <img class="resource-card-image" src="/static/images/resources/find-local-business-leads-card.webp" width="720" height="405" loading="lazy" alt="Local storefronts connected to search results, a map pin, and verified contact cards.">
-      <h2>Find Local Business Leads Without Buying a List</h2>
+      <h2><a class="resource-card-title-link" href="/how-to-find-local-business-leads-without-buying-a-lead-list">Find Local Business Leads Without Buying a List</a></h2>
       <p>Use a focused search-and-review workflow as an alternative to starting with a purchased lead list.</p>
-      <a href="/how-to-find-local-business-leads-without-buying-a-lead-list">Learn how to research leads without buying a list</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Verify Local Business Leads Before Outreach</h2>
+      <h2><a class="resource-card-title-link" href="/how-to-verify-local-business-leads-before-outreach">Verify Local Business Leads Before Outreach</a></h2>
       <p>Confirm business status, websites, contact details, and location before contacting a prospect.</p>
-      <a href="/how-to-verify-local-business-leads-before-outreach">Learn how to verify leads before outreach</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Find Website and SEO Opportunities in a Lead List</h2>
+      <h2><a class="resource-card-title-link" href="/how-to-find-website-seo-opportunities-in-a-lead-list">Find Website and SEO Opportunities in a Lead List</a></h2>
       <p>Audit a local lead list step by step: check websites, search visibility, service gaps, and technical fundamentals, then prioritize what to verify.</p>
-      <a href="/how-to-find-website-seo-opportunities-in-a-lead-list">Learn how to find opportunities in a lead list</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Check for Contactability in Local Business Leads</h2>
+      <h2><a class="resource-card-title-link" href="/check-contactability-local-business-leads">Check for Contactability in Local Business Leads</a></h2>
       <p>Check websites, phone numbers, email and forms, map presence, and social profiles, then sort leads into confidence tiers before outreach.</p>
-      <a href="/check-contactability-local-business-leads">Learn how to check contactability</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Compare a Prospect's Website to the Competitor That Outranks It</h2>
+      <h2><a class="resource-card-title-link" href="/compare-prospect-website-to-outranking-competitor">Compare a Prospect's Website to the Competitor That Outranks It</a></h2>
       <p>Run a head-to-head comparison against the site winning the searches your prospect wants: what to measure, and how to present the gap without overclaiming.</p>
-      <a href="/compare-prospect-website-to-outranking-competitor">Learn how to compare against the outranking competitor</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Local Lead Generation Without the Giant Lead List</h2>
+      <h2><a class="resource-card-title-link" href="/local-lead-generation">Local Lead Generation Without the Giant Lead List</a></h2>
       <p>Compare inbound and outbound methods, referrals, directories, purchased lists, and hands-on business research.</p>
-      <a href="/local-lead-generation">Read the local lead generation guide</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
     <article class="resource-card">
-      <h2>Lead Lists vs. Lead Finders</h2>
+      <h2><a class="resource-card-title-link" href="/lead-list-vs-lead-finder">Lead Lists vs. Lead Finders</a></h2>
       <p>Compare static lead lists and active prospect finding across freshness, targeting, contact data, context, and research time.</p>
-      <a href="/lead-list-vs-lead-finder">Compare lists and lead finders</a>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
   </div>
 </section>

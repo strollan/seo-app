@@ -30,6 +30,9 @@ GUIDES = (
     "/how-to-find-local-leads",
     "/how-to-find-local-business-leads-without-buying-a-lead-list",
     "/how-to-verify-local-business-leads-before-outreach",
+    "/how-to-find-website-seo-opportunities-in-a-lead-list",
+    "/check-contactability-local-business-leads",
+    "/compare-prospect-website-to-outranking-competitor",
     "/local-lead-generation",
     "/lead-list-vs-lead-finder",
 )
@@ -99,12 +102,24 @@ class ResourcesHubTests(unittest.TestCase):
                     guide_response.text,
                 )
 
-    def test_without_list_card_uses_natural_anchor_text(self):
-        self.assertIn(
-            'href="/how-to-find-local-business-leads-without-buying-a-lead-list">'
-            "Learn how to research leads without buying a list</a>",
-            self.body,
-        )
+    def test_each_card_has_one_stretched_title_link_and_consistent_cta(self):
+        cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
+        self.assertEqual(len(cards), len(GUIDES))
+        for card, guide in zip(cards, GUIDES):
+            with self.subTest(guide=guide):
+                links = re.findall(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', card, re.DOTALL)
+                self.assertEqual(len(links), 1)
+                self.assertEqual(links[0][0], guide)
+                self.assertIn('class="resource-card-title-link"', card)
+                title = re.search(r'<h2><a[^>]*>(.*?)</a></h2>', card, re.DOTALL)
+                self.assertIsNotNone(title)
+                self.assertNotIn("Learn how", links[0][1])
+                self.assertIn('<span class="resource-card-cta" aria-hidden="true">Read guide →</span>', card)
+        self.assertEqual(self.body.count('class="resource-card-cta"'), len(GUIDES))
+        self.assertIn('.resource-card-title-link::after', self.body)
+        self.assertIn('position:absolute; inset:0', self.body)
+        self.assertIn('.resource-card:hover, .resource-card:focus-within', self.body)
+        self.assertIn('.resource-card-title-link:focus-visible', self.body)
 
     def test_without_list_card_includes_the_sized_thumbnail_only_on_that_card(self):
         matching_card = re.search(
@@ -112,7 +127,9 @@ class ResourcesHubTests(unittest.TestCase):
             rf'<img class="resource-card-image" src="{re.escape(CARD_IMAGE_PATH)}" '
             r'width="720" height="405" loading="lazy" '
             rf'alt="{re.escape(IMAGE_ALT)}">\s*'
-            r'<h2>Find Local Business Leads Without Buying a List</h2>',
+            r'<h2><a class="resource-card-title-link" '
+            r'href="/how-to-find-local-business-leads-without-buying-a-lead-list">'
+            r'Find Local Business Leads Without Buying a List</a></h2>',
             self.body,
         )
         self.assertIsNotNone(matching_card)
@@ -148,17 +165,6 @@ class ResourcesHubTests(unittest.TestCase):
         for guide in GUIDES:
             with self.subTest(guide=guide):
                 self.assertEqual(self.client.get(guide).status_code, 200)
-
-    def test_verify_leads_card_uses_natural_anchor_text(self):
-        self.assertIn(
-            'href="/how-to-verify-local-business-leads-before-outreach">'
-            "Learn how to verify leads before outreach</a>",
-            self.body,
-        )
-        self.assertEqual(
-            self.body.count('href="/how-to-verify-local-business-leads-before-outreach"'),
-            1,
-        )
 
     def test_no_faq_schema_on_hub(self):
         self.assertNotIn('"FAQPage"', self.body)
