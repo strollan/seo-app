@@ -206,6 +206,22 @@ class ResourcesHubTests(unittest.TestCase):
                     guide_response.text,
                 )
 
+    def test_shared_guide_footer_links_have_explicit_high_contrast_styles(self):
+        base_template = (
+            Path(__file__).resolve().parent.parent
+            / "app/templates/public_guide_base.html"
+        ).read_text()
+        self.assertIn(
+            ".public-guide-content .guide-resources-link a "
+            "{ color:#0f2f7f; font-weight:800;",
+            base_template,
+        )
+        self.assertIn(
+            ".public-guide-content .guide-resources-link a:focus-visible "
+            "{ outline:3px solid #2563eb;",
+            base_template,
+        )
+
     def test_each_card_has_one_stretched_title_link_and_consistent_cta(self):
         cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
         self.assertEqual(len(cards), len(GUIDES))
