@@ -308,5 +308,40 @@ class GoodLeadMobileLayoutSafetyTests(unittest.TestCase):
             )
 
 
+class GoodLeadResponsiveHeaderRegressionTests(unittest.TestCase):
+    """Locks the standalone Good Lead header to the shared guide layout fix."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = AsgiClient()
+        cls.body = cls.client.get(PATH).text
+
+    def test_body_uses_the_public_guide_scope(self):
+        self.assertRegex(self.body, r'<body class="[^"]*\bpublic-guide-page\b[^"]*">')
+
+    def test_proven_desktop_header_rule_is_present(self):
+        style = re.search(r"<style>(.*?)</style>", self.body, re.DOTALL).group(1)
+        compact = re.sub(r"\s+", "", style)
+        self.assertIn("@media(min-width:851px){", compact)
+        self.assertIn(
+            ".public-guide-page.header{flex-wrap:wrap!important;height:auto!important;min-height:0!important;}",
+            compact,
+        )
+        self.assertIn(".public-guide-page.header-left{min-width:300px!important;}", compact)
+        self.assertIn(".public-guide-page.nav{flex-wrap:wrap!important;}", compact)
+
+    def test_header_preserves_one_canonical_home_linked_logo_and_one_h1(self):
+        header = re.search(r'<div class="header">(.*?)</div>\s*</div>', self.body, re.DOTALL)
+        self.assertIsNotNone(header)
+        markup = header.group(1)
+        self.assertEqual(markup.count('src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1"'), 1)
+        self.assertRegex(markup, r'<a href="/" class="logo-link"><img[^>]+alt="LeadMeLeads">')
+        self.assertEqual(len(re.findall(r"<h1[^>]*>", self.body)), 1)
+
+    def test_existing_public_navigation_remains_present(self):
+        for href, label in (("/", "Home"), ("/lead-bot", "Lead Finder"), ("/compare", "Compare")):
+            self.assertRegex(self.body, rf'<a href="{re.escape(href)}">{label}</a>')
+
+
 if __name__ == "__main__":
     unittest.main()
