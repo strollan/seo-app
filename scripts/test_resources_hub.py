@@ -19,6 +19,36 @@ import app.seo_meta as seo_meta
 RESOURCE_IMAGES_DIR = Path(__file__).resolve().parent.parent / "app/static/images/resources"
 
 
+def webp_pixel_size(path):
+    """Read intrinsic width/height from a WebP file without extra dependencies."""
+    data = path.read_bytes()
+    if data[0:4] != b"RIFF" or data[8:12] != b"WEBP":
+        raise ValueError(f"not a webp file: {path}")
+    offset = 12
+    while offset + 8 <= len(data):
+        chunk = data[offset:offset + 4]
+        size = int.from_bytes(data[offset + 4:offset + 8], "little")
+        body = data[offset + 8:offset + 8 + size]
+        if chunk == b"VP8X":
+            width = 1 + int.from_bytes(body[4:7], "little")
+            height = 1 + int.from_bytes(body[7:10], "little")
+            return width, height
+        if chunk == b"VP8 ":
+            frame = body[3:6]
+            if frame != b"\x9d\x01\x2a":
+                raise ValueError(f"unexpected VP8 frame tag in {path}")
+            width = int.from_bytes(body[6:8], "little") & 0x3FFF
+            height = int.from_bytes(body[8:10], "little") & 0x3FFF
+            return width, height
+        if chunk == b"VP8L":
+            bits = int.from_bytes(body[1:5], "little")
+            width = (bits & 0x3FFF) + 1
+            height = ((bits >> 14) & 0x3FFF) + 1
+            return width, height
+        offset += 8 + size + (size % 2)
+    raise ValueError(f"no dimension chunk found in {path}")
+
+
 class AsgiClient:
     def get(self, path):
         async def request():
@@ -43,9 +73,21 @@ GUIDES = (
 WITH_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
 HERO_IMAGE_PATH = "/static/images/resources/find-local-business-leads-hero.webp"
 CARD_IMAGES = {
+    "/what-makes-a-good-lead": (
+        "/static/images/resources/what-makes-a-good-lead-card.webp",
+        "A local storefront connected to target fit, contactability, and website opportunity signals.",
+    ),
+    "/how-to-find-local-leads": (
+        "/static/images/resources/how-to-find-local-leads-card.webp",
+        "A map search identifies local storefronts and organizes them into a verified shortlist.",
+    ),
     "/how-to-find-local-business-leads-without-buying-a-lead-list": (
         "/static/images/resources/find-local-business-leads-card.webp",
         "Local storefronts connected to search results, a map pin, and verified contact cards.",
+    ),
+    "/how-to-verify-local-business-leads-before-outreach": (
+        "/static/images/resources/verify-local-business-leads-before-outreach-card.webp",
+        "A local storefront verified through website, phone, email, and location checks.",
     ),
     "/how-to-find-website-seo-opportunities-in-a-lead-list": (
         "/static/images/resources/website-seo-opportunities-lead-list-card.webp",
@@ -59,8 +101,39 @@ CARD_IMAGES = {
         "/static/images/resources/compare-outranking-competitor-card.webp",
         "Two competing websites shown side by side with a middle column listing differences between them.",
     ),
+    "/local-lead-generation": (
+        "/static/images/resources/local-lead-generation-without-giant-list-card.webp",
+        "A giant pile of stale lead records contrasts with a curated set of local businesses.",
+    ),
+    "/lead-list-vs-lead-finder": (
+        "/static/images/resources/lead-lists-vs-lead-finders-card.webp",
+        "A static lead list contrasts with a live map-based lead finder.",
+    ),
 }
 GUIDES_WITHOUT_HEROES = tuple(guide for guide in GUIDES if guide not in CARD_IMAGES)
+
+GUIDE_HEROES = {
+    "/what-makes-a-good-lead": (
+        "/static/images/resources/what-makes-a-good-lead-hero.webp",
+        "A local storefront connected to target fit, contactability, and website opportunity signals.",
+    ),
+    "/how-to-find-local-leads": (
+        "/static/images/resources/how-to-find-local-leads-hero.webp",
+        "A map search identifies local storefronts and organizes them into a verified shortlist.",
+    ),
+    "/how-to-verify-local-business-leads-before-outreach": (
+        "/static/images/resources/verify-local-business-leads-before-outreach-hero.webp",
+        "A local storefront verified through website, phone, email, and location checks.",
+    ),
+    "/local-lead-generation": (
+        "/static/images/resources/local-lead-generation-without-giant-list-hero.webp",
+        "A giant pile of stale lead records contrasts with a curated set of local businesses.",
+    ),
+    "/lead-list-vs-lead-finder": (
+        "/static/images/resources/lead-lists-vs-lead-finders-hero.webp",
+        "A static lead list contrasts with a live map-based lead finder.",
+    ),
+}
 CARD_TITLES_AND_DESCRIPTIONS = (
     ("What Makes a Good Lead?", "Learn how market fit, contactability, and a specific reason for outreach separate a useful prospect from another name on a list."),
     ("How to Find Local Leads", "Follow a practical process for choosing a market, finding reachable businesses, reviewing websites, and organizing research before outreach."),
@@ -154,7 +227,7 @@ class ResourcesHubTests(unittest.TestCase):
 
     def test_suitable_guide_heroes_map_to_sized_card_images_and_resolve(self):
         cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
-        self.assertEqual(len(CARD_IMAGES), 4)
+        self.assertEqual(len(CARD_IMAGES), 9)
         for card, guide in zip(cards, GUIDES):
             image_path, alt = CARD_IMAGES.get(guide, (None, None))
             with self.subTest(guide=guide):
@@ -188,6 +261,46 @@ class ResourcesHubTests(unittest.TestCase):
         hero_asset = RESOURCE_IMAGES_DIR / Path(HERO_IMAGE_PATH).name
         self.assertTrue(hero_asset.is_file())
         self.assertGreater(hero_asset.stat().st_size, 0)
+
+    def test_new_guide_heroes_are_sized_served_and_placed_before_the_lede(self):
+        for guide, (image_path, alt) in GUIDE_HEROES.items():
+            with self.subTest(guide=guide):
+                article = self.client.get(guide)
+                self.assertEqual(article.status_code, 200)
+                self.assertIn(
+                    f'<img src="{image_path}" width="1280" height="720" '
+                    f'loading="eager" fetchpriority="high" alt="{alt}">',
+                    article.text,
+                )
+                self.assertLess(
+                    article.text.index('<figure class="article-hero">'),
+                    article.text.index('<p class="lede">'),
+                )
+                asset_path = RESOURCE_IMAGES_DIR / Path(image_path).name
+                self.assertTrue(asset_path.is_file())
+                self.assertGreater(asset_path.stat().st_size, 0)
+                self.assertEqual(webp_pixel_size(asset_path), (1280, 720))
+                card_asset = RESOURCE_IMAGES_DIR / Path(image_path).name.replace("-hero.", "-card.")
+                self.assertEqual(webp_pixel_size(card_asset), (720, 405))
+                response = self.client.get(image_path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-type"], "image/webp")
+                self.assertGreater(len(response.content), 0)
+
+    def test_each_guide_has_one_h1_and_one_canonical_logo(self):
+        for guide in GUIDES:
+            with self.subTest(guide=guide):
+                article = self.client.get(guide).text
+                self.assertEqual(len(re.findall(r"<h1[ >]", article)), 1)
+                self.assertEqual(len(re.findall(r'class="logo-link"', article)), 1)
+
+    def test_no_external_or_base64_images_were_introduced(self):
+        pages = ["/resources"] + list(GUIDES)
+        for page in pages:
+            with self.subTest(page=page):
+                body = self.client.get(page).text
+                self.assertNotRegex(body, r'<img[^>]+src="https?://')
+                self.assertNotIn("data:image", body)
 
     def test_guides_without_heroes_have_no_broken_images_and_card_copy_order_remains_unchanged(self):
         cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
