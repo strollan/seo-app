@@ -81,24 +81,10 @@ a {
     min-width: 0;
 }
 
-.wordmark {
-    display: inline-flex;
-    align-items: baseline;
-    color: #f97316;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    font-size: clamp(1.6rem, 2.8vw, 2.25rem);
-    font-weight: 900;
-    letter-spacing: -0.055em;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.wordmark-accent {
-    color: #fb923c;
-}
-
-.wordmark-main {
-    color: #dbeafe;
+.brand-logo {
+    display: block;
+    width: clamp(170px, 20vw, 240px);
+    height: auto;
 }
 
 .nav {
@@ -807,10 +793,6 @@ a {
         flex-shrink: 1;
     }
 
-    .wordmark {
-        font-size: clamp(1.5rem, 8vw, 2rem);
-    }
-
     .nav {
         justify-content: center;
         width: 100%;
@@ -879,7 +861,7 @@ a {
     <main class="hero-shell">
         <header class="topbar">
             <a class="brand" href="/" aria-label="LeadMeLeads home" style="text-decoration:none;">
-                <span class="wordmark" aria-hidden="true"><span class="wordmark-accent">Lead</span><span class="wordmark-main">MeLeads</span></span>
+                <img class="brand-logo" src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" width="2090" height="511" alt="LeadMeLeads">
             </a>
 
             <nav class="nav" aria-label="Main navigation">
