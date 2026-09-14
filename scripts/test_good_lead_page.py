@@ -320,8 +320,17 @@ class GoodLeadResponsiveHeaderRegressionTests(unittest.TestCase):
         self.assertRegex(self.body, r'<body class="[^"]*\bpublic-guide-page\b[^"]*">')
 
     def test_proven_desktop_header_rule_is_present(self):
-        style = re.search(r"<style>(.*?)</style>", self.body, re.DOTALL).group(1)
-        compact = re.sub(r"\s+", "", style)
+        # The >850px header rule is defined once in the shared public header
+        # stylesheet (canonical). Good Lead opts into it via the
+        # public-guide-page body scope and by loading that stylesheet, so the
+        # behavior is locked at its canonical location rather than re-declared
+        # inline in this hand-migrated template.
+        self.assertIn('rel="stylesheet" href="/static/css/styles.css?v=', self.body)
+        stylesheet = (
+            Path(__file__).resolve().parent.parent
+            / "app/static/css/styles.css"
+        ).read_text()
+        compact = re.sub(r"\s+", "", stylesheet)
         self.assertIn("@media(min-width:851px){", compact)
         self.assertIn(
             ".public-guide-page.header{flex-wrap:wrap!important;height:auto!important;min-height:0!important;}",

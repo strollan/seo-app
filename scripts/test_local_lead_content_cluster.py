@@ -84,7 +84,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             self.assertEqual(titles[-1], expected["page"].title)
             self.assertEqual(html.unescape(descriptions[-1]), expected["page"].description)
             self.assertEqual(canonicals[-1], seo_meta.canonical_url(path))
-            self.assertEqual(re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL), [expected["h1"]])
+            self.assertEqual(re.findall(r"<h1[^>]*>(.*?)</h1>", body, re.DOTALL), [expected["h1"]])
         self.assertEqual(len(set(titles)), 3)
         self.assertEqual(len(set(descriptions)), 3)
         self.assertEqual(len(set(canonicals)), 3)
@@ -209,7 +209,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             "https://leadmeleads.com/how-to-verify-local-business-leads-before-outreach",
         )
         self.assertEqual(
-            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            re.findall(r"<h1[^>]*>(.*?)</h1>", body, re.DOTALL),
             ["How to Verify Local Business Leads Before Outreach"],
         )
         self.assertIn('name="robots" content="index, follow"', body)
@@ -347,7 +347,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
         )
         self.assertEqual(
-            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            re.findall(r"<h1[^>]*>(.*?)</h1>", body, re.DOTALL),
             ["How to Find Website and SEO Opportunities in a Local Lead List"],
         )
         self.assertIn('name="robots" content="index, follow"', body)
@@ -510,7 +510,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             "https://leadmeleads.com/check-contactability-local-business-leads",
         )
         self.assertEqual(
-            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            re.findall(r"<h1[^>]*>(.*?)</h1>", body, re.DOTALL),
             ["How to Check for Contactability in Local Business Leads"],
         )
         self.assertIn('name="robots" content="index, follow"', body)
@@ -694,7 +694,7 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             "https://leadmeleads.com/compare-prospect-website-to-outranking-competitor",
         )
         self.assertEqual(
-            re.findall(r"<h1>(.*?)</h1>", body, re.DOTALL),
+            re.findall(r"<h1[^>]*>(.*?)</h1>", body, re.DOTALL),
             ["Comparing a Prospect's Website to the Competitor That Outranks It"],
         )
         self.assertIn('name="robots" content="index, follow"', body)

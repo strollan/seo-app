@@ -1217,3 +1217,37 @@ label {
         display: block !important;
     }
 }
+
+/* ===== CANONICAL PUBLIC HEADER (2026-09-14) =====
+   The public marketing/content pages share one responsive header model.
+   Above 850px the shared "FINAL HEADER LOCK" rules force .nav to a fixed
+   nowrap width and .header-left to min-width:0, which on a long guide H1
+   shoves all the shortfall into the title column and crushes it to a
+   sliver. flex-wrap (content-aware, not a fixed pixel breakpoint) lets
+   the row drop .nav to its own line whenever .header-left would be
+   squeezed below a readable floor, and height:auto lets the header grow
+   to fit what it renders. Scoped to .public-guide-page so it only affects
+   the guide/article templates (and pages that opt into the canonical
+   header); auth, lead-bot, history and report are unaffected. */
+@media (min-width:851px) {
+  .public-guide-page .header { flex-wrap:wrap!important; height:auto!important; min-height:0!important; }
+  .public-guide-page .header-left { min-width:300px!important; }
+  .public-guide-page .nav { flex-wrap:wrap!important; }
+}
+
+/* Reusable long-guide-title treatment for lengthy public guide H1s. This
+   must outrank the shared .header h1 / .header-left h1 size locks
+   (equal specificity, defined later) so a long title scales with the
+   viewport instead of overflowing or stacking a word per line, while
+   text-wrap:balance keeps the wrapped lines even. */
+.header h1.long-guide-title,
+.header-left h1.long-guide-title,
+.header-text h1.long-guide-title {
+    font-size: clamp(28px, 3vw, 42px) !important;
+    line-height: 1.08 !important;
+    max-width: 100% !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    text-wrap: balance !important;
+}
+

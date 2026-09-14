@@ -1,0 +1,24 @@
+{% set _h1_render = page_h1|trim %}
+{% set _title_is_long = (_h1_render|length) > 40 %}
+<div class="hero">
+  <div class="header">
+    <div class="header-left">
+      {% if logo_url %}<a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" width="2090" height="511" alt="LeadMeLeads"></a>{% endif %}
+      <div>
+        <h1{% if _title_is_long %} class="long-guide-title"{% endif %}>{{ page_h1 }}</h1>
+        <p>{{ page_sub }}</p>
+      </div>
+    </div>
+    <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+    <div class="nav" id="compareNav">
+      <a href="/">Home</a>
+      <a href="/lead-bot">Lead Finder</a>
+      <a href="/compare">Compare</a>
+      {% if user %}<a href="/history">History</a><a href="/settings">Settings</a><a href="/logout">Logout</a>
+      {% else %}<a href="/login">Login</a><a href="/create-account">Create Account</a>{% endif %}
+    </div>
+  </div>
+</div>
+<div class="app-nav-overlay" data-nav-overlay></div>

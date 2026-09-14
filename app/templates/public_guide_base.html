@@ -51,55 +51,19 @@
   .public-guide-content .section, .public-guide-content .lede, .public-guide-content .final-cta { padding:16px 14px; }
   .public-guide-content ul, .public-guide-content ol { padding-left:20px; }
 }
-/* Responsive header fix (>850px only -- the <=850px stack and <=700px
-   hamburger drawer below are shared with /compare and already work, left
-   untouched). The shared styles.css "FINAL HEADER LOCK" block gives .nav
-   a fixed, unshrinkable width (flex-wrap:nowrap plus white-space:nowrap
-   pills) while giving .header-left min-width:0, so any shortfall between
-   the two is forced entirely onto the title column instead of being
-   shared -- on a long guide title this crushes the H1 to a sliver and
-   wraps it almost one word per line. The fixed .header height:94px also
-   can't grow for a wrapped multi-line title, so the overflow spills
-   visually into the article card below instead of pushing it down.
-   flex-wrap (content-aware, not a fixed pixel breakpoint) lets the row
-   drop .nav to its own line whenever .header-left would otherwise be
-   squeezed below a readable floor, and height:auto lets the header grow
-   to fit whatever it actually renders. Scoped to .public-guide-page,
-   which only the six guide/article templates that extend this base
-   carry -- compare.html/history.html/report.html use plain .compare-page
-   /.history-page/.report-page and are unaffected. */
-@media (min-width:851px) {
-  .public-guide-page .header { flex-wrap:wrap!important; height:auto!important; min-height:0!important; }
-  .public-guide-page .header-left { min-width:300px!important; }
-  .public-guide-page .nav { flex-wrap:wrap!important; }
-}
+/* The >850px responsive header behavior is defined once in the shared
+   /static/css/styles.css (canonical public header), scoped to
+   .public-guide-page. */
 </style>
 {% block page_styles %}{% endblock %}
 <link rel="icon" href="/static/favicon.ico?v=2">
-<link rel="stylesheet" href="/static/css/styles.css?v=2026-07-08-compare-nav-fix">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-09-14-canonical-header">
 </head>
 <body class="compare-page public-guide-page">
 <div class="container">
-  <div class="hero">
-    <div class="header">
-      <div class="header-left">
-        {% if logo_url %}<a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" width="2090" height="511" alt="LeadMeLeads"></a>{% endif %}
-        <div>
-          <h1>{% block h1 %}{% endblock %}</h1>
-          <p>{% block subtitle %}{% endblock %}</p>
-        </div>
-      </div>
-      <button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
-      </button>
-      <div class="nav" id="compareNav">
-        <a href="/">Home</a><a href="/lead-bot">Lead Finder</a><a href="/compare">Compare</a>
-        {% if user %}<a href="/history">History</a><a href="/settings">Settings</a><a href="/logout">Logout</a>
-        {% else %}<a href="/login">Login</a><a href="/create-account">Create Account</a>{% endif %}
-      </div>
-    </div>
-  </div>
-  <div class="app-nav-overlay" data-nav-overlay></div>
+  {% set page_h1 %}{% block h1 %}{% endblock %}{% endset %}
+  {% set page_sub %}{% block subtitle %}{% endblock %}{% endset %}
+  {% include "_public_header.html" %}
   <main class="public-guide-content">
     <article class="card">
       {% block content %}{% endblock %}
