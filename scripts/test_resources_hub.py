@@ -34,6 +34,11 @@ GUIDES = (
     "/lead-list-vs-lead-finder",
 )
 
+WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
+IMAGE_ALT = "Local storefronts connected to search results, a map pin, and verified contact cards."
+CARD_IMAGE_PATH = "/static/images/resources/find-local-business-leads-card.webp"
+HERO_IMAGE_PATH = "/static/images/resources/find-local-business-leads-hero.webp"
+
 
 class ResourcesHubTests(unittest.TestCase):
     @classmethod
@@ -100,6 +105,49 @@ class ResourcesHubTests(unittest.TestCase):
             "Learn how to research leads without buying a list</a>",
             self.body,
         )
+
+    def test_without_list_card_includes_the_sized_thumbnail_only_on_that_card(self):
+        matching_card = re.search(
+            r'<article class="resource-card">\s*'
+            rf'<img class="resource-card-image" src="{re.escape(CARD_IMAGE_PATH)}" '
+            r'width="720" height="405" loading="lazy" '
+            rf'alt="{re.escape(IMAGE_ALT)}">\s*'
+            r'<h2>Find Local Business Leads Without Buying a List</h2>',
+            self.body,
+        )
+        self.assertIsNotNone(matching_card)
+        self.assertEqual(self.body.count('class="resource-card-image"'), 1)
+        self.assertIn("aspect-ratio:16 / 9", self.body)
+
+    def test_without_list_article_includes_the_sized_hero_and_assets_are_served(self):
+        article = self.client.get(WITHOUT_LIST_PATH)
+        self.assertEqual(article.status_code, 200)
+        self.assertIn(
+            f'<img src="{HERO_IMAGE_PATH}" width="1280" height="720" '
+            f'loading="eager" fetchpriority="high" alt="{IMAGE_ALT}">',
+            article.text,
+        )
+        self.assertLess(
+            article.text.index(f'<figure class="article-hero">'),
+            article.text.index('<p class="lede">'),
+        )
+        for image_path in (CARD_IMAGE_PATH, HERO_IMAGE_PATH):
+            with self.subTest(image_path=image_path):
+                response = self.client.get(image_path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["content-type"], "image/webp")
+                self.assertGreater(len(response.content), 0)
+
+    def test_other_resource_cards_and_guide_routes_remain_unchanged(self):
+        cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
+        self.assertEqual(len(cards), 9)
+        self.assertEqual(sum(CARD_IMAGE_PATH in card for card in cards), 1)
+        for card in cards:
+            if CARD_IMAGE_PATH not in card:
+                self.assertNotIn('class="resource-card-image"', card)
+        for guide in GUIDES:
+            with self.subTest(guide=guide):
+                self.assertEqual(self.client.get(guide).status_code, 200)
 
     def test_verify_leads_card_uses_natural_anchor_text(self):
         self.assertIn(
