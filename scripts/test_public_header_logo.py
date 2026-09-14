@@ -63,7 +63,10 @@ class PublicHeaderLogoTests(unittest.TestCase):
                 faq=[],
             )
         soup = BeautifulSoup(html, "html.parser")
-        selector = ".topbar" if path == "/" else ".leadbot-brand" if path == "/lead-bot" else ".header"
+        # "/" now renders the canonical header chrome too (.home-header >
+        # .header, homepage-header-alignment fix), so every non-lead-bot
+        # public route exposes its header through ".header".
+        selector = ".leadbot-brand" if path == "/lead-bot" else ".header"
         header = soup.select_one(selector)
         self.assertIsNotNone(header, f"missing public header on {path}")
         return soup, header

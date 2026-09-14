@@ -42,20 +42,25 @@ a {
     overflow: hidden;
 }
 
-.topbar {
+/* ===== CANONICAL PUBLIC HEADER ALIGNMENT (2026-09-14) =====
+   Mirrors the computed styling of the shared canonical header in
+   app/static/css/styles.css (the one /resources, /what-makes-a-good-lead,
+   and /compare render through _public_header.html). The homepage does not
+   load styles.css because its "FINAL HEADER LOCK" rules are page-global
+   !important overrides (body background/padding, every h1, .card, label,
+   etc.) that would restyle the marketing content below the hero. So the
+   header chrome is mirrored here, scoped to .home-header, while the nav
+   markup, ids, and drawer JS stay shared via _public_nav.html and
+   /static/js/mobile-nav.js. Keep the values here in sync with
+   styles.css if the canonical header changes. */
+.home-header {
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 22px;
-    row-gap: 14px;
     padding: 20px 30px 18px;
     border-bottom: 1px solid rgba(191, 219, 254, 0.12);
     overflow: hidden;
 }
 
-.topbar::before {
+.home-header::before {
     content: "";
     position: absolute;
     inset: 0;
@@ -68,53 +73,233 @@ a {
     z-index: 0;
 }
 
-.brand,
-.nav {
+.home-header .header {
     position: relative;
     z-index: 1;
-}
-
-.brand {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
+    justify-content: space-between;
+    gap: 28px;
+    height: 94px;
+    min-height: 94px;
+    margin: 0;
+    padding: 0;
+}
+
+.home-header .header-left {
+    display: flex;
+    align-items: center;
+    gap: 28px;
     min-width: 0;
 }
 
-.brand-logo {
-    display: block;
-    width: clamp(170px, 20vw, 240px);
-    height: auto;
+.home-header .logo-link {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    background: transparent;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    text-decoration: none;
 }
 
-.nav {
+.home-header .logo {
+    display: block;
+    height: 81px;
+    width: auto;
+    max-width: 180px;
+    object-fit: contain;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    background: transparent;
+}
+
+.home-header .nav {
+    margin-left: auto;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
 }
 
-.nav a {
+.home-header .nav a {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-height: 44px;
-    padding: 12px 16px;
-    border-radius: 13px;
-    background: rgba(15, 23, 42, 0.60);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.90);
+    min-width: 118px;
+    height: 44px;
+    padding: 0 17px;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f2f7f;
+    border: 0;
+    box-shadow: none;
     text-decoration: none;
-    font-weight: 850;
-    font-size: 14px;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.14);
-    transition: background 0.18s, color 0.18s;
+    font-size: 16px;
+    line-height: 1;
+    font-weight: 900;
+    white-space: nowrap;
 }
 
-.nav a:hover {
-    background: #1e3a8a;
-    color: #ffffff;
+.home-header .nav a:hover {
+    transform: none;
+    background: #f8fafc;
+    color: #0f2f7f;
+    box-shadow: none;
+}
+
+.home-header .app-nav-toggle {
+    display: none;
+}
+
+.home-header .app-nav-overlay {
+    display: none;
+}
+
+@media (max-width: 850px) {
+    .home-header .header {
+        height: auto;
+        min-height: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 18px;
+    }
+
+    .home-header .header-left {
+        gap: 18px;
+    }
+
+    .home-header .logo {
+        height: 72px;
+    }
+
+    .home-header .nav {
+        margin-left: 0;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 700px) {
+    .home-header {
+        padding: 18px 20px 16px;
+    }
+
+    .home-header .logo,
+    .home-header .logo-link img {
+        height: 54px;
+        width: auto;
+        max-width: 225px;
+    }
+
+    .home-header .header {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .home-header .header-left {
+        flex-direction: column;
+        align-items: flex-start;
+        flex: 1 1 auto;
+        min-width: 0;
+        gap: 6px;
+    }
+
+    .home-header .app-nav-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        margin: 5px 0 0 0;
+        padding: 0;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.24);
+        background: rgba(255,255,255,.08);
+        color: #ffffff;
+        cursor: pointer;
+        flex: 0 0 auto;
+        position: relative;
+        z-index: 1002;
+    }
+
+    .home-header .app-nav-toggle svg {
+        width: 22px;
+        height: 22px;
+        pointer-events: none;
+    }
+
+    .home-header #compareNav {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: auto;
+        margin: 0;
+        width: min(78vw, 300px);
+        max-width: none;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 2px;
+        padding: 84px 20px 24px;
+        background: rgba(7, 21, 47, .98);
+        box-shadow: -18px 0 50px rgba(0,0,0,.35);
+        transform: translateX(100%);
+        transition: transform .2s ease;
+        z-index: 1001;
+    }
+
+    .home-header #compareNav.is-open {
+        transform: translateX(0);
+    }
+
+    .home-header #compareNav a {
+        width: 100%;
+        min-height: 44px;
+        height: auto;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        text-align: left;
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid rgba(255,255,255,.12);
+        border-radius: 0;
+        padding: 12px 4px;
+        margin: 0;
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 16px;
+        box-shadow: none;
+        white-space: normal;
+    }
+
+    .home-header #compareNav a:last-child {
+        border-bottom: 0;
+    }
+
+    .home-header .app-nav-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 10, 20, .5);
+        z-index: 1000;
+    }
+
+    .home-header .app-nav-overlay.is-open {
+        display: block;
+    }
 }
 
 .hero-grid {
@@ -737,15 +922,6 @@ a {
         grid-template-columns: 1fr;
     }
 
-    .topbar {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .nav {
-        justify-content: flex-start;
-    }
-
     .hero-grid {
         padding-top: 34px;
     }
@@ -770,40 +946,14 @@ a {
         padding: 18px 12px 32px;
     }
 
-    .topbar,
     .hero-grid {
         padding-left: 18px;
         padding-right: 18px;
     }
 
-    .topbar::before {
+    .home-header::before {
         opacity: 0.10;
         background-position: center bottom;
-    }
-
-    .topbar {
-        align-items: center;
-        text-align: center;
-    }
-
-    .brand {
-        width: 100%;
-        max-width: 100%;
-        justify-content: center;
-        flex-shrink: 1;
-    }
-
-    .nav {
-        justify-content: center;
-        width: 100%;
-    }
-
-    .nav a {
-        flex: 1 1 calc(50% - 5px);
-        text-align: center;
-        white-space: nowrap;
-        padding: 12px 10px;
-        font-size: 13px;
     }
 
     .hero-actions {
@@ -859,21 +1009,14 @@ a {
 <body>
 <div class="container">
     <main class="hero-shell">
-        <header class="topbar">
-            <a class="brand" href="/" aria-label="LeadMeLeads home" style="text-decoration:none;">
-                <img class="brand-logo" src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" width="2090" height="511" alt="LeadMeLeads">
-            </a>
-
-            <nav class="nav" aria-label="Main navigation">
-                <a href="/lead-bot">Lead Finder</a>
-                <a href="/compare">Compare URL</a>
-                {% if user %}
-                    <a href="/logout">Logout</a>
-                {% else %}
-                    <a href="/login">Login</a>
-                    <a href="/create-account">Create Account</a>
-                {% endif %}
-            </nav>
+        <header class="home-header">
+            <div class="header">
+                <div class="header-left">
+                    <a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" width="2090" height="511" alt="LeadMeLeads"></a>
+                </div>
+                {% include "_public_nav.html" %}
+            </div>
+            <div class="app-nav-overlay" data-nav-overlay></div>
         </header>
 
         <section class="hero-grid">
@@ -1169,5 +1312,6 @@ a {
         <a href="/contact">Contact us</a>.
     </p>
 </div>
+<script src="/static/js/mobile-nav.js" defer></script>
 </body>
 </html>

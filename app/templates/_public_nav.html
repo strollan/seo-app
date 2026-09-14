@@ -1,0 +1,10 @@
+<button type="button" class="app-nav-toggle" data-nav-toggle aria-expanded="false" aria-controls="compareNav" aria-label="Open menu">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+</button>
+<div class="nav" id="compareNav">
+  <a href="/">Home</a>
+  <a href="/lead-bot">Lead Finder</a>
+  <a href="/compare">Compare</a>
+  {% if user %}<a href="/history">History</a><a href="/settings">Settings</a><a href="/logout">Logout</a>
+  {% else %}<a href="/login">Login</a><a href="/create-account">Create Account</a>{% endif %}
+</div>
