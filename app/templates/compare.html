@@ -369,6 +369,42 @@ button:hover {
 }
 /* === CENTER ANALYZE BUTTON TEMPLATE FIX END === */
 
+/* === COMPARE EXPLAINER SECTION START === */
+.compare-explainer {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 4px;
+}
+
+.compare-explainer h2 {
+    font-size: 22px;
+    margin: 26px 0 8px;
+    color: #0f172a;
+}
+
+.compare-explainer p {
+    margin: 0 0 12px;
+    color: #334155;
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+.compare-explainer a {
+    color: #1e3a8a;
+    font-weight: 700;
+}
+
+@media (max-width: 700px) {
+    .compare-explainer h2 {
+        font-size: 19px;
+    }
+
+    .compare-explainer p {
+        font-size: 15px;
+    }
+}
+/* === COMPARE EXPLAINER SECTION END === */
+
 
 /* === HOME HEADER NAV ALIGNMENT FIX START === */
 .header {
@@ -640,8 +676,8 @@ body {
 <body class="compare-page">
 <div class="container">
 
-    {% set page_h1 = "Compare URL" %}
-    {% set page_sub = "Smart comparison of key on-page SEO signals, keyword overlap, and opportunity gaps." %}
+    {% set page_h1 = "Compare Two Websites for SEO" %}
+    {% set page_sub = "Enter two URLs to compare title tags, meta descriptions, headings, content depth, internal links, and image alt text side by side." %}
     {% include "_public_header.html" %}
 
     <div class="card">
@@ -673,6 +709,17 @@ body {
         <div class="footer-note">Built for fast, actionable SEO insights.</div>
         <div class="footer-note">Looking for prospects instead? Try the <a href="/lead-bot">Lead Finder</a> or explore <a href="/resources">lead generation resources</a>.</div>
     </div>
+
+    <section class="compare-explainer">
+        <h2>What this comparison checks</h2>
+        <p>Enter any two public URLs and LeadMeLeads fetches each page and compares the visible on-page SEO signals side by side: title tags and meta descriptions, H1 and H2 headings, word count, internal links, the canonical tag, images and alt text, and the keyword themes each page emphasizes. The report highlights where the two pages differ and includes practical recommendations.</p>
+
+        <h2>How to use the results</h2>
+        <p>Treat the differences as a checklist for your own page. If the other site has a clearer title, stronger headings, or more useful content depth, those are concrete elements you can improve. For a step-by-step walkthrough, see <a href="/compare-prospect-website-to-outranking-competitor">how to compare a prospect's website to the competitor that outranks it</a>.</p>
+
+        <h2>What the tool does not promise</h2>
+        <p>This is a single-page comparison of publicly visible HTML. It does not check backlinks, page speed, or search rankings, and it cannot predict where either page will rank. Use it to find visible gaps quickly, not as a guarantee of results.</p>
+    </section>
                 </div>
 
 <script src="/static/js/mobile-nav.js" defer></script>
