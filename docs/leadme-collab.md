@@ -141,8 +141,40 @@ Runs the whole pipeline in one call when Codex is usable: pre-flight,
 isolation (safety ref + worktree + branch), state directory + `task.md`,
 Claude implementation, verification, Codex review, and — automatically, with
 no separate command needed — repair + re-review cycles up to
-`max_review_cycles` (3). Ends at `READY FOR HUMAN REVIEW`, `NEEDS HUMAN`, or
+`max_review_cycles`. Ends at `READY FOR HUMAN REVIEW`, `NEEDS HUMAN`, or
 `FAILED`.
+
+Two optional start flags control the run's limits:
+
+- `--max-review-cycles N` — the maximum number of **repair cycles** (each is
+  one `NEEDS FIX` → Claude repair → Codex re-review iteration). Default is 2,
+  which preserves the historical three-review / two-repair loop.
+- `--max-ai-calls N` — a **hard cap** on the total number of Claude+Codex
+  invocations for the run. Default is no cap when omitted.
+
+The four-call safety cap (one repair cycle / four AI calls) is:
+
+```
+leadme-collab start "task" --max-review-cycles 1 --max-ai-calls 4
+```
+
+With that configuration the only permitted sequence is: Claude implementation
+(call 1) → Codex review (call 2); if the review is `PASS`, stop after two
+calls; if it is `NEEDS FIX`, Claude repair (call 3) → Codex re-review
+(call 4) → stop after the fourth call regardless of verdict. No fifth call is
+possible through start, resume, retry, recovery, or malformed state.
+
+### `leadme-collab capabilities` (or `doctor --json`)
+
+Emits machine-readable capability evidence as JSON without invoking any model.
+It reports that review cycles and the AI-call cap are configurable, that the
+one-cycle / four-call configuration is supported, and that no live model call
+was made:
+
+```
+leadme-collab capabilities --json
+leadme-collab doctor --json
+```
 
 If Codex isn't usable, the same phases run up through the first review step,
 which instead writes `review-prompt.md` and **pauses**, printing exactly
@@ -250,7 +282,8 @@ VERDICT: NEEDS HUMAN
 - **PASS** → task finishes as `READY FOR HUMAN REVIEW`.
 - **NEEDS FIX** → Claude repairs (smallest fix only) in the same worktree,
   diff/verification are recaptured, and a new review cycle starts — up to
-  `max_review_cycles` (3). After 3 unresolved cycles: `NEEDS HUMAN`.
+  `max_review_cycles` repair cycles (default 2, i.e. three reviews). After
+  that many unresolved cycles: `NEEDS HUMAN`.
 - **FAIL** → `FAILED` (reviewer judged it unsalvageable, not just needing a
   tweak).
 - **NEEDS HUMAN** → stops immediately, no more automated cycles.
@@ -259,6 +292,14 @@ VERDICT: NEEDS HUMAN
 
 Each cycle's review is archived as `review-cycle-N.md` so history isn't lost
 across cycles.
+
+Every Claude or Codex invocation reserves an AI-call slot before it runs. When
+`--max-ai-calls` is set, the reservation refuses once the budget is exhausted
+and the task ends in a clear terminal `NEEDS HUMAN` state with a reason such as
+"AI-call budget exhausted (4/4)" — it is never reported as a `PASS`. Limits
+and the running call count are stored in `state.json`, so they survive a
+process restart and `resume`; resume uses the limits stored when the run began
+and never resets or raises them.
 
 ## Worktrees and safety refs
 
@@ -302,6 +343,20 @@ events.log              — append-only timestamped event log
 guard pattern as `leadme-deploy`'s state file) — no passwords, tokens, SSH
 keys, SMTP secrets, or `.env` contents are ever written there.
 
+The AI-call budget fields persisted in `state.json` are:
+
+- `max_review_cycles` — number of repair cycles (default 2; 1 = one-repair-cap).
+- `max_ai_calls` — hard cap on Claude+Codex invocations (`null` = no cap).
+- `ai_calls_used` — running count of reserved/completed AI calls.
+- `ai_calls` — a list of call records, each with `call_number`, `role`
+  (`implement`/`review`/`repair`), `status` (`reserved`/`completed`),
+  `cycle`, `started_at`, and (when completed) `completed_at`.
+
+States created before this feature lack `max_ai_calls`, `ai_calls_used`, and
+`ai_calls`. Those legacy states load without crashing: they default to no
+AI-call cap and a zero call count, and are resumed with the historical
+review-cycle interpretation (where `max_review_cycles` counts review cycles).
+
 ## Limitations (V1)
 
 - **`doctor`'s Codex check doesn't run a live review probe.** It verifies
@@ -331,6 +386,10 @@ keys, SMTP secrets, or `.env` contents are ever written there.
   silently convert malformed output into PASS."
 - `leadme-collab start` currently requires the primary repo to already be on
   `main`; it does not create tasks from other starting branches.
+- **Invalid run limits are rejected.** `--max-review-cycles` must be non-negative
+  and at most 3; `--max-ai-calls` must be at least 2 (the initial implementation
+  and review), must be positive, and is capped at 12. A configuration incapable
+  of the initial implementation+review is refused rather than started.
 
 ## Cleanup
 

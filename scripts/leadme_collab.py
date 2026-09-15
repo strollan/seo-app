@@ -67,7 +67,26 @@ STATE_ROOT = Path.home() / ".local" / "state" / "leadme-collab"
 WORKTREE_ROOT = Path.home() / ".local" / "share" / "leadme-collab" / "worktrees"
 CURRENT_TASK_POINTER = STATE_ROOT / "current_task"
 
-MAX_REVIEW_CYCLES = 3
+# Maximum number of repair cycles allowed by default. A "repair cycle" is one
+# NEEDS FIX -> Claude repair -> Codex re-review iteration. The historical
+# default (three review cycles / two repairs) is preserved by a default of 2
+# here: a task with max_review_cycles=2 performs at most two repairs and at
+# most three reviews.
+MAX_REVIEW_CYCLES = 2
+
+# Hard cap on total Claude+Codex invocations for a run. None = no cap, which
+# preserves the historical behavior when --max-ai-calls is omitted.
+MAX_AI_CALLS = None
+
+# Conservative documented ceilings for the new start options. Values above
+# these are rejected rather than silently accepted.
+MAX_REVIEW_CYCLES_CEILING = 3
+MAX_AI_CALLS_CEILING = 12
+
+# The minimum AI-call budget that can perform the initial implementation and
+# the first review (one Claude call + one Codex call).
+MIN_AI_CALLS_FOR_INITIAL_WORK = 2
+
 CLAUDE_TIMEOUT_SECONDS = int(
     os.getenv("LEADME_CLAUDE_TIMEOUT_SECONDS", "240")
 )  # default fast lane: 4 minutes
@@ -1219,7 +1238,50 @@ def parse_verdict(review_text):
 # doctor
 # ---------------------------------------------------------------------------
 
+def _capabilities_dict():
+    """Machine-readable capability evidence. Pure static report — it never
+    runs a subprocess or invokes any model."""
+    return {
+        "tool": "leadme-collab",
+        "capabilities": {
+            "configurable_review_cycles": True,
+            "configurable_ai_call_cap": True,
+        },
+        "supported_configurations": [
+            {
+                "name": "jam-room",
+                "description": "one repair cycle / four AI calls",
+                "max_review_cycles": 1,
+                "max_ai_calls": 4,
+                "supported": True,
+            }
+        ],
+        "jam_room_supported": True,
+        "defaults": {
+            "max_review_cycles": MAX_REVIEW_CYCLES,
+            "max_ai_calls": MAX_AI_CALLS,
+        },
+        "ceilings": {
+            "max_review_cycles": MAX_REVIEW_CYCLES_CEILING,
+            "max_ai_calls": MAX_AI_CALLS_CEILING,
+        },
+        "min_ai_calls_for_initial_work": MIN_AI_CALLS_FOR_INITIAL_WORK,
+        "live_model_call_made": False,
+        "claude_invoked": False,
+        "codex_invoked": False,
+    }
+
+
+def cmd_capabilities(args):
+    print(json.dumps(_capabilities_dict(), indent=2))
+    return 0
+
+
 def cmd_doctor(args):
+    if getattr(args, "json", False):
+        print(json.dumps(_capabilities_dict(), indent=2))
+        return 0
+
     r = Reporter()
     r.title("LeadMe Collab Doctor")
 
@@ -1329,6 +1391,15 @@ def cmd_start(args):
         print("[FAIL] no task description provided")
         return 1
 
+    max_review_cycles = getattr(args, "max_review_cycles", None)
+    max_ai_calls = getattr(args, "max_ai_calls", None)
+    ok, limit_err = _validate_run_limits(max_review_cycles, max_ai_calls)
+    if not ok:
+        print(f"[FAIL] invalid limits: {limit_err}")
+        return 1
+    if max_review_cycles is None:
+        max_review_cycles = MAX_REVIEW_CYCLES
+
     if not getattr(args, "force_new", False):
         dup_tid, dup_state = find_active_duplicate(description)
         if dup_tid:
@@ -1410,7 +1481,10 @@ def cmd_start(args):
         "branch": branch_name(tid),
         "phase": "starting",
         "cycle": 1,
-        "max_review_cycles": MAX_REVIEW_CYCLES,
+        "max_review_cycles": max_review_cycles,
+        "max_ai_calls": max_ai_calls,
+        "ai_calls_used": 0,
+        "ai_calls": [],
         "reviewer_mode": None,
         "created_at": utc_now_iso(),
         "updated_at": utc_now_iso(),
@@ -1457,6 +1531,166 @@ def _write_state_update(tid, **updates):
     state["updated_at"] = utc_now_iso()
     write_task_state(tid, state)
     return state
+
+
+# ---------------------------------------------------------------------------
+# AI-call budget (four-call safety cap)
+# ---------------------------------------------------------------------------
+
+class AiCallBudgetExhausted(Exception):
+    """Raised when an AI-call reservation would exceed the configured cap."""
+
+
+def _effective_max_ai_calls(state):
+    """Effective max_ai_calls from state. Legacy states missing the field get
+    no cap (None), preserving the historical behavior."""
+    if not isinstance(state, dict):
+        return None
+    val = state.get("max_ai_calls")
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ai_calls_used(state):
+    """Count of AI calls already reserved/used. Legacy states default to 0.
+
+    Uses the max of the explicit counter and the number of recorded ai_calls,
+    so a malformed/corrupted state cannot silently bypass the cap.
+    """
+    if not isinstance(state, dict):
+        return 0
+    used = state.get("ai_calls_used")
+    if used is None:
+        used = 0
+    try:
+        used = int(used)
+    except (TypeError, ValueError):
+        used = 0
+    calls = state.get("ai_calls", [])
+    if isinstance(calls, list):
+        used = max(used, len(calls))
+    return used
+
+
+def _is_legacy_state(state):
+    """A state created before the AI-call cap predates the budget fields and
+    is resumed with the historical review-cycle semantics (max_review_cycles
+    counts review cycles; max_ai_calls is unset = no cap)."""
+    return not isinstance(state, dict) or "max_ai_calls" not in state
+
+
+def _at_review_cap(state):
+    """True when the current NEEDS FIX cannot be repaired because the
+    review-cycle cap has been reached.
+
+    New states interpret max_review_cycles as the number of repair cycles
+    (so cycle > max means the repair cap is hit). Legacy states keep the
+    historical total-review-cycle interpretation (cycle >= max).
+    """
+    if _is_legacy_state(state):
+        return state["cycle"] >= state["max_review_cycles"]
+    return state["cycle"] > state["max_review_cycles"]
+
+
+def _reserve_ai_call(tid, role):
+    """Reserve one AI-call slot atomically-enough for this single-run local CLI.
+
+    Reads the task state, refuses when the budget is exhausted, otherwise
+    increments ai_calls_used and records a reserved call (call_number, role,
+    cycle, started_at) under state["ai_calls"]. Returns the reserved record.
+    """
+    state = read_task_state(tid)
+    if state is None:
+        raise ValueError(f"no task state for {tid} to reserve an AI call")
+    max_calls = _effective_max_ai_calls(state)
+    used = _ai_calls_used(state)
+    if max_calls is not None and used >= max_calls:
+        raise AiCallBudgetExhausted(
+            f"AI-call budget exhausted ({used}/{max_calls}); "
+            f"cannot start a {role} call"
+        )
+    call_number = used + 1
+    state["ai_calls_used"] = call_number
+    calls = state.get("ai_calls", [])
+    if not isinstance(calls, list):
+        calls = []
+    record = {
+        "call_number": call_number,
+        "role": role,
+        "status": "reserved",
+        "cycle": state.get("cycle"),
+        "started_at": utc_now_iso(),
+    }
+    calls.append(record)
+    state["ai_calls"] = calls
+    state["updated_at"] = utc_now_iso()
+    write_task_state(tid, state)
+    return record
+
+
+def _complete_ai_call(tid, call_number):
+    """Mark a previously reserved call as completed (best-effort)."""
+    state = read_task_state(tid)
+    if state is None:
+        return
+    calls = state.get("ai_calls", [])
+    if not isinstance(calls, list):
+        return
+    for record in calls:
+        if record.get("call_number") == call_number and record.get("status") == "reserved":
+            record["status"] = "completed"
+            record["completed_at"] = utc_now_iso()
+    state["updated_at"] = utc_now_iso()
+    write_task_state(tid, state)
+
+
+def _fail_budget_exhausted(tid, r, role, exc):
+    """Emit a clear terminal state for budget exhaustion — never a PASS."""
+    reason = f"AI-call budget exhausted before {role}: {exc}"
+    r.step("AI-call budget available", False, str(exc))
+    _print_explanation(
+        r, reason,
+        detail_path=str(task_dir(tid) / "state.json"),
+        next_action=f"leadme-collab inspect {tid}",
+    )
+    _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
+    log_event(tid, "ai_budget_exhausted", f"role={role} {exc}")
+    return "needs_human"
+
+
+def _validate_run_limits(max_review_cycles, max_ai_calls):
+    """Validate user-supplied run limits. Returns (ok, error_message).
+
+    Rejects negative cycles, zero/negative AI-call limits, configurations
+    incapable of the initial implementation+review, and values above the
+    conservative documented ceilings.
+    """
+    if max_review_cycles is not None:
+        if max_review_cycles < 0:
+            return False, "max_review_cycles must be >= 0"
+        if max_review_cycles > MAX_REVIEW_CYCLES_CEILING:
+            return False, (
+                f"max_review_cycles exceeds conservative ceiling "
+                f"{MAX_REVIEW_CYCLES_CEILING}"
+            )
+    if max_ai_calls is not None:
+        if max_ai_calls <= 0:
+            return False, "max_ai_calls must be >= 1"
+        if max_ai_calls > MAX_AI_CALLS_CEILING:
+            return False, (
+                f"max_ai_calls exceeds conservative ceiling "
+                f"{MAX_AI_CALLS_CEILING}"
+            )
+        if max_ai_calls < MIN_AI_CALLS_FOR_INITIAL_WORK:
+            return False, (
+                f"max_ai_calls must be >= {MIN_AI_CALLS_FOR_INITIAL_WORK} "
+                f"to allow the initial implementation and review"
+            )
+    return True, ""
 
 
 def _print_explanation(r, reason, detail_path=None, next_action=None):
@@ -1537,7 +1771,12 @@ def _advance_task(tid, r=None):
             log_event(tid, "implementer_unavailable")
             return "needs_human"
 
+        try:
+            reserved = _reserve_ai_call(tid, "implement")
+        except AiCallBudgetExhausted as exc:
+            return _fail_budget_exhausted(tid, r, "implementation", exc)
         result = run_claude(prompt, cwd=wt, tid=tid)
+        _complete_ai_call(tid, reserved["call_number"])
         write_artifact(
             tid, "implementer-output.md",
             f"exit/is_error: {result['is_error']}\n"
@@ -1634,7 +1873,12 @@ def _start_review_cycle(tid, r):
             return "needs_human"
 
         log_event(tid, "codex_review_start", f"cycle={state['cycle']}")
+        try:
+            reserved = _reserve_ai_call(tid, "review")
+        except AiCallBudgetExhausted as exc:
+            return _fail_budget_exhausted(tid, r, "review", exc)
         result = run_codex_review(prompt, cwd=wt, tid=tid)
+        _complete_ai_call(tid, reserved["call_number"])
         write_artifact(
             tid, "codex-raw-output.md",
             f"returncode: {result['returncode']}\n"
@@ -1738,9 +1982,9 @@ def _try_resume_review(tid, r):
         return "needs_human"
 
     # NEEDS FIX
-    if state["cycle"] >= state["max_review_cycles"]:
-        reason = f"reviewer kept returning NEEDS FIX through all {state['max_review_cycles']} review cycles"
-        r.warn("max review cycles reached without PASS", str(state["max_review_cycles"]))
+    if _at_review_cap(state):
+        reason = f"reviewer kept returning NEEDS FIX through all {state['max_review_cycles']} repair cycle(s)"
+        r.warn("max repair cycles reached without PASS", str(state["max_review_cycles"]))
         _print_explanation(r, reason, detail_path=str(review_path), next_action=f"leadme-collab inspect {tid}")
         _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
         return "needs_human"
@@ -1770,7 +2014,12 @@ def _run_repair(tid, r, review_text):
         _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
         return "needs_human"
 
+    try:
+        reserved = _reserve_ai_call(tid, "repair")
+    except AiCallBudgetExhausted as exc:
+        return _fail_budget_exhausted(tid, r, "repair", exc)
     result = run_claude(prompt, cwd=wt, tid=tid)
+    _complete_ai_call(tid, reserved["call_number"])
     write_artifact(
         tid, "repair-output.md",
         f"exit/is_error: {result['is_error']}\n"
@@ -1935,7 +2184,11 @@ def cmd_status(args):
     r.title("LeadMe Collab Status")
     r.note(f"  task id:      {tid}")
     r.note(f"  phase:        {state.get('phase')}")
-    r.note(f"  cycle:        {state.get('cycle')}/{state.get('max_review_cycles')}")
+    r.note(f"  cycle:        {state.get('cycle')} (review; max repair cycles: {state.get('max_review_cycles')})")
+    max_calls = state.get("max_ai_calls")
+    used = state.get("ai_calls_used", 0)
+    budget = f"{used}/no-cap" if max_calls is None else f"{used}/{max_calls}"
+    r.note(f"  ai calls:     {budget}")
     r.note(f"  worktree:     {state.get('worktree')}")
     r.note(f"  branch:       {state.get('branch')}")
     r.note(f"  reviewer:     {state.get('reviewer_mode')}")
@@ -2280,7 +2533,11 @@ def build_parser():
     parser = argparse.ArgumentParser(prog="leadme-collab", description="Implement/review/repair loop automation.")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("doctor", help="diagnose the collab pipeline")
+    p_doctor = sub.add_parser("doctor", help="diagnose the collab pipeline")
+    p_doctor.add_argument(
+        "--json", action="store_true",
+        help="emit machine-readable capability JSON (no live model call)",
+    )
 
     p_start = sub.add_parser("start", help="start a new task")
     p_start.add_argument("task", nargs="?", default=None, help="task description")
@@ -2288,6 +2545,14 @@ def build_parser():
     p_start.add_argument(
         "--force-new", action="store_true",
         help="start a new task even if an active task with a matching description already exists",
+    )
+    p_start.add_argument(
+        "--max-review-cycles", type=int, default=None,
+        help="maximum number of repair cycles (default: 2; 1 = one-repair-cap mode)",
+    )
+    p_start.add_argument(
+        "--max-ai-calls", type=int, default=None,
+        help="hard cap on total Claude+Codex invocations (default: no cap; e.g. 4 for the four-call cap)",
     )
 
     p_status = sub.add_parser("status", help="show current task status")
@@ -2304,6 +2569,15 @@ def build_parser():
     p_abort.add_argument("--cleanup", action="store_true", help="also remove the worktree and task branch")
 
     sub.add_parser("list", help="list recent tasks")
+
+    p_capabilities = sub.add_parser(
+        "capabilities",
+        help="report machine-readable capability evidence (never invokes a model)",
+    )
+    p_capabilities.add_argument(
+        "--json", action="store_true",
+        help="emit JSON (default behavior; kept for parity with doctor --json)",
+    )
 
     p_promote = sub.add_parser(
         "promote", help="apply a completed/reviewed task worktree's changes into the primary repo",
@@ -2328,6 +2602,8 @@ def main(argv=None):
 
     if args.command == "doctor":
         return cmd_doctor(args)
+    if args.command == "capabilities":
+        return cmd_capabilities(args)
     if args.command == "start":
         return cmd_start(args)
     if args.command == "status":

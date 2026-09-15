@@ -1796,5 +1796,377 @@ class SecretScannerPrecisionTests(unittest.TestCase):
         lc._scan_for_secrets("PASSWORD=changeme-example")
         lc._scan_for_secrets("TOKEN=redacted-placeholder")
 
+
+# ---------------------------------------------------------------------------
+# Four-call safety cap (Jam Room) tests
+# ---------------------------------------------------------------------------
+
+def bootstrap_jam_room_task(test_case, tmp_path, tid="20260709-000000-jam-room",
+                            phase="isolated", max_review_cycles=1, max_ai_calls=4):
+    """Set up a real throwaway worktree + state configured for the one-repair-
+    cycle / four-AI-call cap. All model invocations are mocked by callers."""
+    repo = make_temp_git_repo(tmp_path)
+    test_case.isolate(tmp_path, repo_path=repo)
+    base_sha = ld.head_sha(repo)
+    lc.create_safety_ref(base_sha, tid)
+    ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+    test_case.assertTrue(ok, err)
+    lc.write_artifact(tid, "task.md", "# Task\n\nsome task\n")
+    state = {
+        "task_id": tid,
+        "task_description": "some task",
+        "repo": str(repo),
+        "base_branch": "main",
+        "base_commit": base_sha,
+        "safety_ref": lc.safety_ref_name(tid),
+        "worktree": str(wt_path),
+        "branch": branch,
+        "phase": phase,
+        "cycle": 1,
+        "max_review_cycles": max_review_cycles,
+        "max_ai_calls": max_ai_calls,
+        "ai_calls_used": 0,
+        "ai_calls": [],
+        "reviewer_mode": "codex",
+        "created_at": lc.utc_now_iso(),
+        "updated_at": lc.utc_now_iso(),
+        "final": None,
+    }
+    lc.write_task_state(tid, state)
+    lc.write_artifact(tid, "verification.md", "no changed files")
+    return tid, wt_path
+
+
+def usable_codex_info():
+    return {"available": True, "path": "/x/codex", "version": "0.144.1",
+            "authenticated": True, "usable_noninteractive": True, "detail": ""}
+
+
+def fake_claude_ok(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
+    return {"returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
+            "result_text": "ok", "is_error": False, "total_cost_usd": 0.01, "parsed": {},
+            "timed_out": False, "pid": 1234, "reason": ""}
+
+
+class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
+    def _patched_loop(self, tmp_path, codex_verdicts,
+                      tid="20260709-000000-jam-room", phase="isolated",
+                      max_review_cycles=1, max_ai_calls=4):
+        """Run the automated loop with every Claude/Codex invocation mocked,
+        returning (result, state, claude_calls, codex_calls)."""
+        tid, wt_path = bootstrap_jam_room_task(
+            self, tmp_path, tid=tid, phase=phase,
+            max_review_cycles=max_review_cycles, max_ai_calls=max_ai_calls,
+        )
+        claude_calls = []
+        codex_calls = []
+
+        def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
+            claude_calls.append(prompt)
+            return fake_claude_ok(prompt, cwd, timeout=timeout, tid=tid, **kw)
+
+        def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
+            codex_calls.append(prompt)
+            index = len(codex_calls) - 1
+            verdict = codex_verdicts[index] if index < len(codex_verdicts) else codex_verdicts[-1]
+            return fake_codex_result(verdict)
+
+        with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+             mock.patch.object(lc, "discover_claude", return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
+             mock.patch.object(lc, "run_codex_review", fake_codex), \
+             mock.patch.object(lc, "run_claude", fake_claude):
+            result = lc._advance_task(tid, lc.Reporter())
+
+        state = lc.read_task_state(tid)
+        return result, state, claude_calls, codex_calls
+
+    def test_first_review_pass_uses_exactly_two_calls(self):
+        """Case 1: PASS on the first Codex review -> exactly 2 calls."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, claude_calls, codex_calls = self._patched_loop(
+                Path(tmp), ["VERDICT: PASS\nclean change"])
+            self.assertEqual(result, "done")
+            self.assertEqual(state["final"], "READY FOR HUMAN REVIEW")
+            self.assertEqual(state["ai_calls_used"], 2)
+            self.assertEqual(len(state["ai_calls"]), 2)
+            self.assertEqual(len(claude_calls), 1)  # implement only
+            self.assertEqual(len(codex_calls), 1)  # one review
+
+    def test_needs_fix_repair_then_pass_uses_exactly_four_calls(self):
+        """Case 2: NEEDS FIX -> repair -> PASS -> exactly 4 calls."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, claude_calls, codex_calls = self._patched_loop(
+                Path(tmp), ["VERDICT: NEEDS FIX\nmissing null check",
+                            "VERDICT: PASS\nfixed"])
+            self.assertEqual(result, "done")
+            self.assertEqual(state["final"], "READY FOR HUMAN REVIEW")
+            self.assertEqual(state["ai_calls_used"], 4)
+            self.assertEqual(len(state["ai_calls"]), 4)
+            self.assertEqual(len(claude_calls), 2)  # implement + repair
+            self.assertEqual(len(codex_calls), 2)  # review + re-review
+            self.assertEqual(state["cycle"], 2)
+
+    def test_needs_fix_after_call_four_stops_with_no_fifth_call(self):
+        """Case 3: NEEDS FIX at call four -> stop, no fifth call."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, claude_calls, codex_calls = self._patched_loop(
+                Path(tmp), ["VERDICT: NEEDS FIX\nstill broken",
+                            "VERDICT: NEEDS FIX\nstill broken"])
+            self.assertEqual(result, "needs_human")
+            self.assertEqual(state["final"], "NEEDS HUMAN")
+            self.assertEqual(state["ai_calls_used"], 4)
+            self.assertEqual(len(state["ai_calls"]), 4)  # never a fifth
+            self.assertEqual(len(claude_calls), 2)  # implement + repair
+            self.assertEqual(len(codex_calls), 2)  # review + re-review
+            self.assertEqual(state["cycle"], 2)
+            self.assertNotIn("budget exhausted", state.get("final_reason", ""))
+
+    def test_resume_cannot_reset_ai_calls_used(self):
+        """Case 4: resuming a spent run must not reset the call counter."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(
+                self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["ai_calls_used"] = 4
+            state["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 2, "role": "review", "status": "completed"},
+                {"call_number": 3, "role": "repair", "status": "completed"},
+                {"call_number": 4, "role": "review", "status": "completed"},
+            ]
+            lc.write_task_state(tid, state)
+
+            codex_calls = []
+            with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_codex_review", lambda *a, **k: codex_calls.append(a) or fake_codex_result("VERDICT: PASS\nx")):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            self.assertEqual(result, "needs_human")
+            self.assertEqual(codex_calls, [])  # refused before invocation
+            state = lc.read_task_state(tid)
+            self.assertEqual(state["ai_calls_used"], 4)  # not reset
+            self.assertEqual(state["max_ai_calls"], 4)  # not changed
+            self.assertEqual(state["max_review_cycles"], 1)  # not changed
+            self.assertIn("budget exhausted", state.get("final_reason", ""))
+
+    def test_resume_cannot_increase_stored_limits(self):
+        """Case 5: resume must never increase stored limits."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(
+                self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["ai_calls_used"] = 2
+            lc.write_task_state(tid, state)
+
+            codex_calls = []
+            with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_codex_review", lambda *a, **k: codex_calls.append(a) or fake_codex_result("VERDICT: PASS\nx")):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            state = lc.read_task_state(tid)
+            self.assertEqual(state["max_ai_calls"], 4)  # unchanged
+            self.assertEqual(state["max_review_cycles"], 1)  # unchanged
+            self.assertEqual(state["ai_calls_used"], 3)  # only the review call consumed
+
+    def test_restart_preserves_limits_and_call_count(self):
+        """Case 6: limits and the call count survive a process restart."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "t-restart"
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "implemented", "cycle": 1,
+                "max_review_cycles": 1, "max_ai_calls": 4,
+                "ai_calls_used": 3,
+                "ai_calls": [{"call_number": 1, "role": "implement", "status": "completed"},
+                             {"call_number": 2, "role": "review", "status": "completed"},
+                             {"call_number": 3, "role": "repair", "status": "completed"}],
+            })
+            # Simulate a fresh process reading state from disk.
+            state = lc.read_task_state(tid)
+            self.assertEqual(state["max_review_cycles"], 1)
+            self.assertEqual(state["max_ai_calls"], 4)
+            self.assertEqual(state["ai_calls_used"], 3)
+            self.assertEqual(len(state["ai_calls"]), 3)
+
+    def test_malformed_state_cannot_bypass_call_cap(self):
+        """A corrupted counter cannot smuggle in a fifth call if records exist."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(
+                self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["ai_calls_used"] = 0  # corrupted/reset
+            state["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 2, "role": "review", "status": "completed"},
+                {"call_number": 3, "role": "repair", "status": "completed"},
+                {"call_number": 4, "role": "review", "status": "completed"},
+            ]
+            lc.write_task_state(tid, state)
+
+            codex_calls = []
+            with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_codex_review", lambda *a, **k: codex_calls.append(a) or fake_codex_result("VERDICT: PASS\nx")):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            self.assertEqual(result, "needs_human")
+            self.assertEqual(codex_calls, [])  # refused before invocation
+            self.assertIn("budget exhausted", lc.read_task_state(tid).get("final_reason", ""))
+
+    def test_invalid_limits_are_rejected(self):
+        """Case 7: invalid limits are rejected, not silently accepted."""
+        self.assertFalse(lc._validate_run_limits(-1, None)[0])
+        self.assertFalse(lc._validate_run_limits(0, 0)[0])
+        self.assertFalse(lc._validate_run_limits(0, -4)[0])
+        self.assertFalse(lc._validate_run_limits(0, 1)[0])  # cannot do implement+review
+        self.assertFalse(lc._validate_run_limits(lc.MAX_REVIEW_CYCLES_CEILING + 1, None)[0])
+        self.assertFalse(lc._validate_run_limits(None, lc.MAX_AI_CALLS_CEILING + 1)[0])
+        self.assertTrue(lc._validate_run_limits(1, 4)[0])
+        self.assertTrue(lc._validate_run_limits(0, 2)[0])
+        self.assertTrue(lc._validate_run_limits(None, None)[0])
+
+    def test_legacy_state_still_loads_with_documented_defaults(self):
+        """Case 8: a state missing the new fields loads without crashing."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            base_sha = ld.head_sha(repo)
+            tid = "t-legacy"
+            lc.create_safety_ref(base_sha, tid)
+            ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+            self.assertTrue(ok, err)
+            # Legacy state: no max_ai_calls / ai_calls_used fields.
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "isolated", "worktree": str(wt_path),
+                "branch": branch, "cycle": 1, "max_review_cycles": 3,
+                "reviewer_mode": "file-handoff",
+            })
+            state = lc.read_task_state(tid)
+            self.assertIsNotNone(state)
+            self.assertTrue(lc._is_legacy_state(state))
+            self.assertIsNone(lc._effective_max_ai_calls(state))  # no cap
+            self.assertEqual(lc._ai_calls_used(state), 0)
+            # Reserving a call on a legacy state must not raise.
+            record = lc._reserve_ai_call(tid, "implement")
+            self.assertEqual(record["call_number"], 1)
+
+    def test_default_behavior_remains_compatible(self):
+        """Case 9: default limits preserve the historical 3-review/2-repair loop."""
+        self.assertEqual(lc.MAX_REVIEW_CYCLES, 2)
+        self.assertIsNone(lc.MAX_AI_CALLS)  # no cap when omitted
+        self.assertTrue(lc._validate_run_limits(None, None)[0])
+
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, claude_calls, codex_calls = self._patched_loop(
+                Path(tmp), ["VERDICT: NEEDS FIX\nx", "VERDICT: NEEDS FIX\nx",
+                            "VERDICT: NEEDS FIX\nx"],
+                max_review_cycles=2, max_ai_calls=None)
+            # Default (max_review_cycles=2, no cap) -> 3 reviews / 2 repairs.
+            self.assertEqual(result, "needs_human")
+            self.assertEqual(state["final"], "NEEDS HUMAN")
+            self.assertEqual(len(codex_calls), 3)
+            self.assertEqual(len(claude_calls), 3)  # implement + 2 repairs
+            self.assertEqual(state["cycle"], 3)
+
+    def test_no_test_process_invokes_real_claude_or_codex(self):
+        """Case 11: the loop tests never reach the real subprocess spawner."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            # If run_claude/run_codex_review were not properly mocked, the loop
+            # would reach run_monitored (the real subprocess spawner) and raise.
+            with mock.patch.object(lc, "run_monitored", side_effect=AssertionError("real subprocess spawned")):
+                result, state, claude_calls, codex_calls = self._patched_loop(
+                    Path(tmp), ["VERDICT: PASS\nclean"])
+            self.assertEqual(result, "done")
+
+
+class CapabilityOutputTests(unittest.TestCase):
+    def test_capability_output_is_valid_json(self):
+        """Case 10: capability output parses as JSON and reports the evidence."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = lc.cmd_capabilities(argparse.Namespace())
+        self.assertEqual(rc, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertTrue(payload["capabilities"]["configurable_review_cycles"])
+        self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
+        self.assertTrue(payload["jam_room_supported"])
+        jam = [c for c in payload["supported_configurations"]
+               if c.get("name") == "jam-room"]
+        self.assertEqual(len(jam), 1)
+        self.assertEqual(jam[0]["max_review_cycles"], 1)
+        self.assertEqual(jam[0]["max_ai_calls"], 4)
+        self.assertTrue(jam[0]["supported"])
+        self.assertFalse(payload["live_model_call_made"])
+        self.assertFalse(payload["claude_invoked"])
+        self.assertFalse(payload["codex_invoked"])
+
+    def test_doctor_json_emits_capability_json(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = lc.cmd_doctor(argparse.Namespace(json=True))
+        self.assertEqual(rc, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
+
+
+class StartLimitArgumentTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_start_rejects_invalid_limits(self):
+        """Start refuses invalid --max-review-cycles / --max-ai-calls."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self.isolate(tmp_path, repo_path=tmp_path / "missing")
+            for args in (
+                argparse.Namespace(task="x", task_file=None, max_review_cycles=-1, max_ai_calls=None),
+                argparse.Namespace(task="x", task_file=None, max_review_cycles=None, max_ai_calls=0),
+                argparse.Namespace(task="x", task_file=None, max_review_cycles=None, max_ai_calls=1),
+                argparse.Namespace(task="x", task_file=None, max_review_cycles=None, max_ai_calls=999),
+            ):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_start(args)
+                self.assertEqual(rc, 1)
+                self.assertIn("invalid limits", buf.getvalue())
+
+    def test_start_defaults_when_flags_omitted(self):
+        """Omitting the flags keeps the historical defaults."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(lc, "discover_claude",
+                                   return_value={"available": False, "path": None, "version": None, "print_mode": False}), \
+                 mock.patch.object(lc, "discover_codex",
+                                   return_value={"available": False, "path": None, "version": None,
+                                                 "authenticated": False, "usable_noninteractive": False,
+                                                 "detail": "codex not found"}), \
+                 mock.patch.object(ld, "fetch_origin", return_value=(True, "")), \
+                 mock.patch.object(ld, "divergence_state", return_value=("in-sync", 0, 0)):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    lc.cmd_start(argparse.Namespace(
+                        task="do a thing", task_file=None,
+                        max_review_cycles=None, max_ai_calls=None,
+                    ))
+            # A task state was created with the documented defaults.
+            ids = lc.list_task_ids()
+            self.assertEqual(len(ids), 1)
+            state = lc.read_task_state(ids[0])
+            self.assertEqual(state["max_review_cycles"], lc.MAX_REVIEW_CYCLES)
+            self.assertIsNone(state["max_ai_calls"])
+            self.assertEqual(state["ai_calls_used"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
