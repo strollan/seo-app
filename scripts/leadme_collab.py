@@ -74,9 +74,11 @@ CURRENT_TASK_POINTER = STATE_ROOT / "current_task"
 # most three reviews.
 MAX_REVIEW_CYCLES = 2
 
-# Hard cap on total Claude+Codex invocations for a run. None = no cap, which
-# preserves the historical behavior when --max-ai-calls is omitted.
-MAX_AI_CALLS = None
+# Finite hard cap on total Claude+Codex invocations for a new run. Defaults
+# to 6: one implementation + three reviews + two repairs. Every new run gets a
+# finite cap; only genuine legacy states (with none of the budget fields) are
+# exempt from an independent AI-call cap.
+MAX_AI_CALLS = 6
 
 # Conservative documented ceilings for the new start options. Values above
 # these are rejected rather than silently accepted.
@@ -1399,6 +1401,8 @@ def cmd_start(args):
         return 1
     if max_review_cycles is None:
         max_review_cycles = MAX_REVIEW_CYCLES
+    if max_ai_calls is None:
+        max_ai_calls = MAX_AI_CALLS
 
     if not getattr(args, "force_new", False):
         dup_tid, dup_state = find_active_duplicate(description)
@@ -1541,46 +1545,21 @@ class AiCallBudgetExhausted(Exception):
     """Raised when an AI-call reservation would exceed the configured cap."""
 
 
-def _effective_max_ai_calls(state):
-    """Effective max_ai_calls from state. Legacy states missing the field get
-    no cap (None), preserving the historical behavior."""
-    if not isinstance(state, dict):
-        return None
-    val = state.get("max_ai_calls")
-    if val is None:
-        return None
-    try:
-        return int(val)
-    except (TypeError, ValueError):
-        return None
+class AiCallBudgetInvalid(Exception):
+    """Raised when a new-format state has a malformed AI-call budget."""
 
 
-def _ai_calls_used(state):
-    """Count of AI calls already reserved/used. Legacy states default to 0.
-
-    Uses the max of the explicit counter and the number of recorded ai_calls,
-    so a malformed/corrupted state cannot silently bypass the cap.
-    """
-    if not isinstance(state, dict):
-        return 0
-    used = state.get("ai_calls_used")
-    if used is None:
-        used = 0
-    try:
-        used = int(used)
-    except (TypeError, ValueError):
-        used = 0
-    calls = state.get("ai_calls", [])
-    if isinstance(calls, list):
-        used = max(used, len(calls))
-    return used
+VALID_CALL_ROLES = {"implement", "review", "repair"}
+VALID_CALL_STATUSES = {"reserved", "completed"}
 
 
 def _is_legacy_state(state):
-    """A state created before the AI-call cap predates the budget fields and
-    is resumed with the historical review-cycle semantics (max_review_cycles
-    counts review cycles; max_ai_calls is unset = no cap)."""
-    return not isinstance(state, dict) or "max_ai_calls" not in state
+    """A genuine legacy state has NONE of the new budget fields at all and is
+    resumed with the historical review-cycle semantics (max_review_cycles
+    counts review cycles) with no independent AI-call cap."""
+    if not isinstance(state, dict):
+        return True
+    return not any(k in state for k in ("max_ai_calls", "ai_calls_used", "ai_calls"))
 
 
 def _at_review_cap(state):
@@ -1596,28 +1575,126 @@ def _at_review_cap(state):
     return state["cycle"] > state["max_review_cycles"]
 
 
+def _effective_max_ai_calls(state):
+    """Effective max_ai_calls for a state. Legacy states get no cap (None).
+
+    For a new-format state a malformed value raises AiCallBudgetInvalid rather
+    than being reinterpreted as 'no cap'.
+    """
+    if _is_legacy_state(state):
+        return None
+    ok, reason = _validate_budget_state(state)
+    if not ok:
+        raise AiCallBudgetInvalid(reason)
+    return state["max_ai_calls"]
+
+
+def _ai_calls_used(state):
+    """Count of AI calls already reserved/used. Legacy states default to 0."""
+    if _is_legacy_state(state):
+        return 0
+    ok, reason = _validate_budget_state(state)
+    if not ok:
+        raise AiCallBudgetInvalid(reason)
+    return state["ai_calls_used"]
+
+
+def _validate_budget_state(state):
+    """Validate a new-format AI-call budget. Returns (ok, error_message).
+
+    Fails closed (rather than reinterpreting corruption as 'no cap') when any
+    budget field is malformed.
+    """
+    if not isinstance(state, dict):
+        return False, "state is not a dict"
+
+    if "max_ai_calls" not in state:
+        return False, "max_ai_calls is missing"
+    max_calls = state["max_ai_calls"]
+    if max_calls is None:
+        return False, "max_ai_calls is None"
+    if isinstance(max_calls, bool) or not isinstance(max_calls, int):
+        return False, "max_ai_calls is not an integer"
+    if max_calls < MIN_AI_CALLS_FOR_INITIAL_WORK:
+        return False, f"max_ai_calls is below {MIN_AI_CALLS_FOR_INITIAL_WORK}"
+    if max_calls > MAX_AI_CALLS_CEILING:
+        return False, f"max_ai_calls exceeds ceiling {MAX_AI_CALLS_CEILING}"
+
+    if "ai_calls_used" not in state:
+        return False, "ai_calls_used is missing"
+    used = state["ai_calls_used"]
+    if used is None:
+        return False, "ai_calls_used is None"
+    if isinstance(used, bool) or not isinstance(used, int):
+        return False, "ai_calls_used is not an integer"
+    if used < 0:
+        return False, "ai_calls_used is negative"
+
+    if "ai_calls" not in state:
+        return False, "ai_calls is missing"
+    calls = state["ai_calls"]
+    if calls is None:
+        return False, "ai_calls is None"
+    if not isinstance(calls, list):
+        return False, "ai_calls is not a list"
+
+    if used != len(calls):
+        return False, (
+            f"ai_calls_used ({used}) does not match call record count ({len(calls)})"
+        )
+
+    expected_numbers = list(range(1, len(calls) + 1))
+    numbers = []
+    for index, record in enumerate(calls):
+        if not isinstance(record, dict):
+            return False, f"call record {index} is not a dict"
+        number = record.get("call_number")
+        if isinstance(number, bool) or not isinstance(number, int):
+            return False, f"call record {index} has a non-integer call_number"
+        numbers.append(number)
+        role = record.get("role")
+        if role not in VALID_CALL_ROLES:
+            return False, f"call record {index} has invalid role {role!r}"
+        status = record.get("status")
+        if status not in VALID_CALL_STATUSES:
+            return False, f"call record {index} has invalid status {status!r}"
+
+    if numbers != expected_numbers:
+        return False, (
+            f"call numbers are not sequential 1..{len(calls)} (got {numbers})"
+        )
+
+    return True, ""
+
+
 def _reserve_ai_call(tid, role):
     """Reserve one AI-call slot atomically-enough for this single-run local CLI.
 
-    Reads the task state, refuses when the budget is exhausted, otherwise
-    increments ai_calls_used and records a reserved call (call_number, role,
-    cycle, started_at) under state["ai_calls"]. Returns the reserved record.
+    For a legacy state this returns a synthetic record and records nothing
+    (there is no independent cap to enforce). For a new-format state it
+    validates the budget, refuses when exhausted, otherwise increments
+    ai_calls_used and records a reserved call. Raises AiCallBudgetExhausted or
+    AiCallBudgetInvalid on refusal.
     """
     state = read_task_state(tid)
     if state is None:
         raise ValueError(f"no task state for {tid} to reserve an AI call")
-    max_calls = _effective_max_ai_calls(state)
-    used = _ai_calls_used(state)
-    if max_calls is not None and used >= max_calls:
+    if _is_legacy_state(state):
+        return {"call_number": 0, "role": role, "legacy": True}
+
+    ok, reason = _validate_budget_state(state)
+    if not ok:
+        raise AiCallBudgetInvalid(reason)
+
+    max_calls = state["max_ai_calls"]
+    used = state["ai_calls_used"]
+    if used >= max_calls:
         raise AiCallBudgetExhausted(
             f"AI-call budget exhausted ({used}/{max_calls}); "
             f"cannot start a {role} call"
         )
     call_number = used + 1
     state["ai_calls_used"] = call_number
-    calls = state.get("ai_calls", [])
-    if not isinstance(calls, list):
-        calls = []
     record = {
         "call_number": call_number,
         "role": role,
@@ -1625,22 +1702,24 @@ def _reserve_ai_call(tid, role):
         "cycle": state.get("cycle"),
         "started_at": utc_now_iso(),
     }
-    calls.append(record)
-    state["ai_calls"] = calls
+    state["ai_calls"].append(record)
     state["updated_at"] = utc_now_iso()
     write_task_state(tid, state)
     return record
 
 
 def _complete_ai_call(tid, call_number):
-    """Mark a previously reserved call as completed (best-effort)."""
+    """Mark a previously reserved call as completed (best-effort).
+
+    Legacy states (and the synthetic call_number 0) record nothing and are a
+    no-op.
+    """
     state = read_task_state(tid)
-    if state is None:
+    if state is None or _is_legacy_state(state):
         return
-    calls = state.get("ai_calls", [])
-    if not isinstance(calls, list):
+    if call_number == 0:
         return
-    for record in calls:
+    for record in state["ai_calls"]:
         if record.get("call_number") == call_number and record.get("status") == "reserved":
             record["status"] = "completed"
             record["completed_at"] = utc_now_iso()
@@ -1662,6 +1741,27 @@ def _fail_budget_exhausted(tid, r, role, exc):
     return "needs_human"
 
 
+def _fail_invalid_budget(tid, r, role, exc):
+    """Emit a clear terminal state for a malformed budget — never a PASS."""
+    reason = f"invalid AI-call budget state before {role}: {exc}"
+    r.step("AI-call budget state valid", False, str(exc))
+    _print_explanation(
+        r, reason,
+        detail_path=str(task_dir(tid) / "state.json"),
+        next_action=f"leadme-collab inspect {tid}",
+    )
+    _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
+    log_event(tid, "invalid_ai_budget_state", f"role={role} {exc}")
+    return "needs_human"
+
+
+def _fail_budget(tid, r, role, exc):
+    """Dispatch a budget refusal to the correct terminal state."""
+    if isinstance(exc, AiCallBudgetInvalid):
+        return _fail_invalid_budget(tid, r, role, exc)
+    return _fail_budget_exhausted(tid, r, role, exc)
+
+
 def _validate_run_limits(max_review_cycles, max_ai_calls):
     """Validate user-supplied run limits. Returns (ok, error_message).
 
@@ -1670,6 +1770,8 @@ def _validate_run_limits(max_review_cycles, max_ai_calls):
     conservative documented ceilings.
     """
     if max_review_cycles is not None:
+        if isinstance(max_review_cycles, bool) or not isinstance(max_review_cycles, int):
+            return False, "max_review_cycles must be an integer"
         if max_review_cycles < 0:
             return False, "max_review_cycles must be >= 0"
         if max_review_cycles > MAX_REVIEW_CYCLES_CEILING:
@@ -1678,6 +1780,8 @@ def _validate_run_limits(max_review_cycles, max_ai_calls):
                 f"{MAX_REVIEW_CYCLES_CEILING}"
             )
     if max_ai_calls is not None:
+        if isinstance(max_ai_calls, bool) or not isinstance(max_ai_calls, int):
+            return False, "max_ai_calls must be an integer"
         if max_ai_calls <= 0:
             return False, "max_ai_calls must be >= 1"
         if max_ai_calls > MAX_AI_CALLS_CEILING:
@@ -1773,8 +1877,8 @@ def _advance_task(tid, r=None):
 
         try:
             reserved = _reserve_ai_call(tid, "implement")
-        except AiCallBudgetExhausted as exc:
-            return _fail_budget_exhausted(tid, r, "implementation", exc)
+        except (AiCallBudgetExhausted, AiCallBudgetInvalid) as exc:
+            return _fail_budget(tid, r, "implementation", exc)
         result = run_claude(prompt, cwd=wt, tid=tid)
         _complete_ai_call(tid, reserved["call_number"])
         write_artifact(
@@ -1875,8 +1979,8 @@ def _start_review_cycle(tid, r):
         log_event(tid, "codex_review_start", f"cycle={state['cycle']}")
         try:
             reserved = _reserve_ai_call(tid, "review")
-        except AiCallBudgetExhausted as exc:
-            return _fail_budget_exhausted(tid, r, "review", exc)
+        except (AiCallBudgetExhausted, AiCallBudgetInvalid) as exc:
+            return _fail_budget(tid, r, "review", exc)
         result = run_codex_review(prompt, cwd=wt, tid=tid)
         _complete_ai_call(tid, reserved["call_number"])
         write_artifact(
@@ -2016,8 +2120,8 @@ def _run_repair(tid, r, review_text):
 
     try:
         reserved = _reserve_ai_call(tid, "repair")
-    except AiCallBudgetExhausted as exc:
-        return _fail_budget_exhausted(tid, r, "repair", exc)
+    except (AiCallBudgetExhausted, AiCallBudgetInvalid) as exc:
+        return _fail_budget(tid, r, "repair", exc)
     result = run_claude(prompt, cwd=wt, tid=tid)
     _complete_ai_call(tid, reserved["call_number"])
     write_artifact(

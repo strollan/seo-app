@@ -1961,6 +1961,10 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
                 self, Path(tmp), phase="implemented")
             state = lc.read_task_state(tid)
             state["ai_calls_used"] = 2
+            state["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 2, "role": "review", "status": "completed"},
+            ]
             lc.write_task_state(tid, state)
 
             codex_calls = []
@@ -2017,7 +2021,158 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
 
             self.assertEqual(result, "needs_human")
             self.assertEqual(codex_calls, [])  # refused before invocation
-            self.assertIn("budget exhausted", lc.read_task_state(tid).get("final_reason", ""))
+            final_reason = lc.read_task_state(tid).get("final_reason", "")
+            self.assertIn("invalid AI-call budget", final_reason)
+            self.assertIn("does not match call record count", final_reason)
+
+    def _assert_invalid_budget_state_fails_closed(self, mutate, expect_fragment):
+        """Bootstrap a bounded (Jam Room) state, corrupt a budget field, and
+        assert the loop fails closed to NEEDS HUMAN before any Codex call."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            mutate(state)
+            lc.write_task_state(tid, state)
+
+            codex_calls = []
+            with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_codex_review", lambda *a, **k: codex_calls.append(a) or fake_codex_result("VERDICT: PASS\nx")):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            self.assertEqual(result, "needs_human")
+            self.assertEqual(codex_calls, [])  # failed closed before invocation
+            state = lc.read_task_state(tid)
+            self.assertEqual(state["final"], "NEEDS HUMAN")
+            final_reason = state.get("final_reason", "")
+            self.assertIn("invalid AI-call budget", final_reason)
+            self.assertIn(expect_fragment, final_reason)
+
+    def test_broken_max_ai_calls_string_fails_closed(self):
+        """The reported defect: max_ai_calls='broken' must fail closed, not
+        be reinterpreted as 'no cap'."""
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", "broken"),
+            "max_ai_calls is not an integer",
+        )
+
+    def test_max_ai_calls_none_in_new_state_fails_closed(self):
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", None),
+            "max_ai_calls is None",
+        )
+
+    def test_max_ai_calls_missing_in_new_state_fails_closed(self):
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.pop("max_ai_calls", None),
+            "max_ai_calls is missing",
+        )
+
+    def test_boolean_negative_below_min_and_above_ceiling_caps_fail_closed(self):
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", True),
+            "max_ai_calls is not an integer",
+        )
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", -1),
+            "max_ai_calls is below 2",
+        )
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", 1),
+            "max_ai_calls is below 2",
+        )
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("max_ai_calls", 99),
+            "max_ai_calls exceeds ceiling 12",
+        )
+
+    def test_malformed_ai_calls_used_fails_closed(self):
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("ai_calls_used", "x"),
+            "ai_calls_used is not an integer",
+        )
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("ai_calls_used", -1),
+            "ai_calls_used is negative",
+        )
+
+    def test_ai_calls_not_a_list_fails_closed(self):
+        self._assert_invalid_budget_state_fails_closed(
+            lambda s: s.__setitem__("ai_calls", "notalist"),
+            "ai_calls is not a list",
+        )
+
+    def test_duplicate_call_numbers_fail_closed(self):
+        def mutate(s):
+            s["ai_calls_used"] = 2
+            s["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 1, "role": "review", "status": "completed"},
+            ]
+        self._assert_invalid_budget_state_fails_closed(mutate, "not sequential")
+
+    def test_non_sequential_call_numbers_fail_closed(self):
+        def mutate(s):
+            s["ai_calls_used"] = 2
+            s["ai_calls"] = [
+                {"call_number": 2, "role": "implement", "status": "completed"},
+                {"call_number": 3, "role": "review", "status": "completed"},
+            ]
+        self._assert_invalid_budget_state_fails_closed(mutate, "not sequential")
+
+    def test_invalid_role_or_status_fails_closed(self):
+        def mutate_role(s):
+            s["ai_calls_used"] = 2
+            s["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 2, "role": "hack", "status": "completed"},
+            ]
+        self._assert_invalid_budget_state_fails_closed(mutate_role, "invalid role")
+
+        def mutate_status(s):
+            s["ai_calls_used"] = 2
+            s["ai_calls"] = [
+                {"call_number": 1, "role": "implement", "status": "completed"},
+                {"call_number": 2, "role": "review", "status": "bogus"},
+            ]
+        self._assert_invalid_budget_state_fails_closed(mutate_status, "invalid status")
+
+    def test_genuine_legacy_state_resumes_with_historical_semantics(self):
+        """A state with no budget fields at all resumes with the historical
+        review-cycle semantics and stays bounded without crashing."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_review_task(
+                self, Path(tmp), reviewer_mode="codex", tid="20260709-000000-legacy")
+            state = lc.read_task_state(tid)
+            self.assertTrue(lc._is_legacy_state(state))  # no budget fields
+
+            codex_calls = []
+            claude_calls = []
+
+            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
+                codex_calls.append(prompt)
+                return fake_codex_result("VERDICT: NEEDS FIX\nstill broken")
+
+            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
+                claude_calls.append(prompt)
+                return fake_claude_ok(prompt, cwd, timeout=timeout, tid=tid, **kw)
+
+            with mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "discover_claude", return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
+                 mock.patch.object(lc, "run_codex_review", fake_codex), \
+                 mock.patch.object(lc, "run_claude", fake_claude):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            self.assertEqual(result, "needs_human")
+            # Historical semantics: max_review_cycles=3 -> 3 reviews / 2 repairs.
+            self.assertEqual(len(codex_calls), 3)
+            self.assertEqual(len(claude_calls), 2)
+            state = lc.read_task_state(tid)
+            self.assertEqual(state["cycle"], 3)
+            self.assertEqual(state["final"], "NEEDS HUMAN")
+            # Still a genuine legacy state: no budget fields were written.
+            self.assertTrue(lc._is_legacy_state(state))
 
     def test_invalid_limits_are_rejected(self):
         """Case 7: invalid limits are rejected, not silently accepted."""
@@ -2043,7 +2198,7 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
             lc.create_safety_ref(base_sha, tid)
             ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
             self.assertTrue(ok, err)
-            # Legacy state: no max_ai_calls / ai_calls_used fields.
+            # Legacy state: no max_ai_calls / ai_calls_used / ai_calls fields.
             lc.write_task_state(tid, {
                 "task_id": tid, "phase": "isolated", "worktree": str(wt_path),
                 "branch": branch, "cycle": 1, "max_review_cycles": 3,
@@ -2052,16 +2207,23 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
             state = lc.read_task_state(tid)
             self.assertIsNotNone(state)
             self.assertTrue(lc._is_legacy_state(state))
-            self.assertIsNone(lc._effective_max_ai_calls(state))  # no cap
+            self.assertIsNone(lc._effective_max_ai_calls(state))  # no independent cap
             self.assertEqual(lc._ai_calls_used(state), 0)
-            # Reserving a call on a legacy state must not raise.
+            # Reserving a call on a legacy state returns a synthetic record and
+            # must not write any budget fields (so it stays legacy).
             record = lc._reserve_ai_call(tid, "implement")
-            self.assertEqual(record["call_number"], 1)
+            self.assertEqual(record["call_number"], 0)
+            self.assertTrue(record.get("legacy"))
+            state = lc.read_task_state(tid)
+            self.assertTrue(lc._is_legacy_state(state))
+            self.assertNotIn("ai_calls_used", state)
+            self.assertNotIn("ai_calls", state)
 
     def test_default_behavior_remains_compatible(self):
-        """Case 9: default limits preserve the historical 3-review/2-repair loop."""
+        """Case 9: default limits permit the historical 3-review/2-repair loop
+        and cap total AI calls at six."""
         self.assertEqual(lc.MAX_REVIEW_CYCLES, 2)
-        self.assertIsNone(lc.MAX_AI_CALLS)  # no cap when omitted
+        self.assertEqual(lc.MAX_AI_CALLS, 6)  # finite default cap
         self.assertTrue(lc._validate_run_limits(None, None)[0])
 
         import tempfile
@@ -2069,13 +2231,15 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
             result, state, claude_calls, codex_calls = self._patched_loop(
                 Path(tmp), ["VERDICT: NEEDS FIX\nx", "VERDICT: NEEDS FIX\nx",
                             "VERDICT: NEEDS FIX\nx"],
-                max_review_cycles=2, max_ai_calls=None)
-            # Default (max_review_cycles=2, no cap) -> 3 reviews / 2 repairs.
+                max_review_cycles=2, max_ai_calls=6)
+            # Default (max_review_cycles=2, cap 6) -> 3 reviews / 2 repairs,
+            # exactly six AI calls.
             self.assertEqual(result, "needs_human")
             self.assertEqual(state["final"], "NEEDS HUMAN")
             self.assertEqual(len(codex_calls), 3)
             self.assertEqual(len(claude_calls), 3)  # implement + 2 repairs
             self.assertEqual(state["cycle"], 3)
+            self.assertEqual(state["ai_calls_used"], 6)
 
     def test_no_test_process_invokes_real_claude_or_codex(self):
         """Case 11: the loop tests never reach the real subprocess spawner."""
@@ -2164,7 +2328,7 @@ class StartLimitArgumentTests(unittest.TestCase, IsolatedDirsMixin):
             self.assertEqual(len(ids), 1)
             state = lc.read_task_state(ids[0])
             self.assertEqual(state["max_review_cycles"], lc.MAX_REVIEW_CYCLES)
-            self.assertIsNone(state["max_ai_calls"])
+            self.assertEqual(state["max_ai_calls"], 6)  # finite default cap
             self.assertEqual(state["ai_calls_used"], 0)
 
 

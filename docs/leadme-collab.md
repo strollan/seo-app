@@ -150,7 +150,8 @@ Two optional start flags control the run's limits:
   one `NEEDS FIX` → Claude repair → Codex re-review iteration). Default is 2,
   which preserves the historical three-review / two-repair loop.
 - `--max-ai-calls N` — a **hard cap** on the total number of Claude+Codex
-  invocations for the run. Default is no cap when omitted.
+  invocations for the run. Every new run gets a finite cap; the default is 6
+  (one implementation + three reviews + two repairs).
 
 The four-call safety cap (one repair cycle / four AI calls) is:
 
@@ -163,6 +164,10 @@ With that configuration the only permitted sequence is: Claude implementation
 calls; if it is `NEEDS FIX`, Claude repair (call 3) → Codex re-review
 (call 4) → stop after the fourth call regardless of verdict. No fifth call is
 possible through start, resume, retry, recovery, or malformed state.
+
+Note: the historical engine was already bounded by its review-cycle limit. It
+simply lacked an independent, persisted AI-call cap — it was never an
+unbounded loop.
 
 ### `leadme-collab capabilities` (or `doctor --json`)
 
@@ -293,13 +298,14 @@ VERDICT: NEEDS HUMAN
 Each cycle's review is archived as `review-cycle-N.md` so history isn't lost
 across cycles.
 
-Every Claude or Codex invocation reserves an AI-call slot before it runs. When
-`--max-ai-calls` is set, the reservation refuses once the budget is exhausted
-and the task ends in a clear terminal `NEEDS HUMAN` state with a reason such as
+Every Claude or Codex invocation reserves an AI-call slot before it runs. Once
+the budget is exhausted the reservation refuses and the task ends in a clear
+terminal `NEEDS HUMAN` state with a reason such as
 "AI-call budget exhausted (4/4)" — it is never reported as a `PASS`. Limits
 and the running call count are stored in `state.json`, so they survive a
 process restart and `resume`; resume uses the limits stored when the run began
-and never resets or raises them.
+and never resets or raises them. A malformed budget state also fails closed to
+`NEEDS HUMAN` (never reinterpreted as "no cap").
 
 ## Worktrees and safety refs
 
@@ -346,16 +352,21 @@ keys, SMTP secrets, or `.env` contents are ever written there.
 The AI-call budget fields persisted in `state.json` are:
 
 - `max_review_cycles` — number of repair cycles (default 2; 1 = one-repair-cap).
-- `max_ai_calls` — hard cap on Claude+Codex invocations (`null` = no cap).
+- `max_ai_calls` — finite hard cap on Claude+Codex invocations (default 6).
 - `ai_calls_used` — running count of reserved/completed AI calls.
 - `ai_calls` — a list of call records, each with `call_number`, `role`
   (`implement`/`review`/`repair`), `status` (`reserved`/`completed`),
   `cycle`, `started_at`, and (when completed) `completed_at`.
 
-States created before this feature lack `max_ai_calls`, `ai_calls_used`, and
-`ai_calls`. Those legacy states load without crashing: they default to no
-AI-call cap and a zero call count, and are resumed with the historical
-review-cycle interpretation (where `max_review_cycles` counts review cycles).
+States created before this feature lack all three budget fields. Those genuine
+legacy states load without crashing: they use the historical review-cycle
+semantics (where `max_review_cycles` counts review cycles) and have no
+independent AI-call cap, remaining naturally bounded by the review-cycle limit.
+Any state that has even one budget field is treated as a new-format state and
+is validated strictly before every Claude/Codex invocation — a malformed
+budget (bad `max_ai_calls`, `ai_calls_used`, or `ai_calls`) fails closed to
+`NEEDS HUMAN` with an explicit invalid-budget-state reason rather than being
+reinterpreted as "no cap".
 
 ## Limitations (V1)
 
