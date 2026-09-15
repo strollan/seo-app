@@ -162,7 +162,18 @@ a {
     display: none;
 }
 
-@media (max-width: 850px) {
+/* Homepage-only intermediate breakpoint. The one-row desktop header needs
+   logo (180px) + gap (28px) + nowrap nav (~670px) = ~878px of internal
+   width, i.e. ~980px of viewport, but the desktop row stayed active down
+   to 851px, so at ~851-950px the nav pills slid left over the logo
+   (document overflow stays 0 because .home-header has overflow:hidden).
+   1000px is the smallest measured boundary that leaves real separation:
+   at 1001px the logo/nav gap is ~49px, at 980px only ~28px and at 960px
+   ~8px (visually cramped). 701-1000px stacks logo and nav on separate
+   rows; <=700px keeps the hamburger drawer. Must stay in sync with the
+   850px guide-header breakpoint discussion in styles.css (guide pages
+   wrap content-aware via .public-guide-page rules instead). */
+@media (max-width: 1000px) {
     .home-header .header {
         height: auto;
         min-height: 0;
