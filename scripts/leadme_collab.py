@@ -1143,10 +1143,72 @@ def capture_diff(worktree_path):
     stat_res = git(["diff", "HEAD", "--stat"], cwd=worktree_path, timeout=30)
     files_res = git(["diff", "HEAD", "--name-only"], cwd=worktree_path, timeout=30)
     changed = [line for line in files_res.stdout.splitlines() if line.strip()]
+
+    # Untracked (new, never git-added) files are task-authored too. Enumerate
+    # them individually (including inside new directories) via the shared
+    # inventory, which excludes ignored files. This never stages or mutates
+    # the Git index.
+    _, untracked, _ignored = worktree_change_inventory(worktree_path)
+
+    patch = diff_res.stdout
+    stat = stat_res.stdout.strip()
+    for rel_path in untracked:
+        synth = _build_untracked_diff(worktree_path, rel_path)
+        patch += synth["patch"]
+        stat += ("\n" if stat else "") + synth["stat"]
+        changed.append(rel_path)
+
     return {
-        "patch": diff_res.stdout,
-        "stat": stat_res.stdout.strip(),
+        "patch": patch,
+        "stat": stat,
         "changed_files": changed,
+    }
+
+
+MAX_UNTRACKED_DIFF_BYTES = 20000  # bound a single new file's synthetic diff
+
+
+def _build_untracked_diff(worktree_path, rel_path):
+    """Build a synthetic diff entry for a single new untracked file.
+
+    Uses `git diff --no-index /dev/null <file>`; return code 1 means the files
+    differ, which is the expected "difference" outcome, not an execution
+    failure. Binary and oversized files are reported with a bounded marker
+    rather than dumping unlimited content.
+    """
+    full = Path(worktree_path) / rel_path
+    try:
+        data = full.read_bytes()
+    except OSError:
+        return {
+            "patch": f"# {rel_path}: untracked file could not be read\n",
+            "stat": f" {rel_path} | (unreadable)",
+        }
+
+    if b"\x00" in data:
+        return {
+            "patch": f"Binary file {rel_path} (untracked) differs; content not shown\n",
+            "stat": f" {rel_path} | Bin",
+        }
+
+    res = git(["diff", "--no-index", "--", "/dev/null", rel_path], cwd=worktree_path, timeout=30)
+    if res.returncode not in (0, 1):
+        return {
+            "patch": f"# {rel_path}: could not generate diff ({res.stderr.strip()})\n",
+            "stat": f" {rel_path} | (diff failed)",
+        }
+
+    patch = res.stdout
+    if len(patch) > MAX_UNTRACKED_DIFF_BYTES:
+        patch = (
+            patch[:MAX_UNTRACKED_DIFF_BYTES]
+            + f"\n...[diff truncated at {MAX_UNTRACKED_DIFF_BYTES} chars]...\n"
+        )
+
+    nlines = len(data.splitlines())
+    return {
+        "patch": patch,
+        "stat": f" {rel_path} | {nlines} +",
     }
 
 

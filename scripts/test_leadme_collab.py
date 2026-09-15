@@ -2808,5 +2808,151 @@ class OpenCodeLoopTests(unittest.TestCase, IsolatedDirsMixin):
             self.assertEqual(result, "done")
 
 
+class UntrackedDiffCaptureTests(unittest.TestCase, IsolatedDirsMixin):
+    """capture_diff() must surface new untracked files (the first real pilot
+    produced docs/jam-room-live-pilot.md as an untracked file, which Codex
+    never saw)."""
+
+    def _make_worktree(self, tmp_path, tid="20260709-000000-untracked"):
+        repo = make_temp_git_repo(tmp_path)
+        self.isolate(tmp_path, repo_path=repo)
+        base_sha = ld.head_sha(repo)
+        lc.create_safety_ref(base_sha, tid)
+        ok, wt_path, branch, err = lc.create_worktree(base_sha, tid)
+        self.assertTrue(ok, err)
+        return wt_path
+
+    def test_untracked_markdown_appears_in_changed_files(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "docs").mkdir(parents=True, exist_ok=True)
+            (wt / "docs" / "new.md").write_text("# New\n\ncontent\n", encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("docs/new.md", info["changed_files"])
+
+    def test_untracked_filename_and_contents_in_patch(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "docs").mkdir(parents=True, exist_ok=True)
+            (wt / "docs" / "new.md").write_text("# New\n\nhello world\n", encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("docs/new.md", info["patch"])
+            self.assertIn("hello world", info["patch"])
+
+    def test_nested_untracked_files_are_included(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "a" / "b").mkdir(parents=True, exist_ok=True)
+            (wt / "a" / "b" / "c.txt").write_text("deep\n", encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("a/b/c.txt", info["changed_files"])
+            self.assertIn("a/b/c.txt", info["patch"])
+
+    def test_ignored_files_are_excluded(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / ".gitignore").write_text("*.log\n", encoding="utf-8")
+            (wt / "debug.log").write_text("log\n", encoding="utf-8")
+            (wt / "notes.md").write_text("ok\n", encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("notes.md", info["changed_files"])
+            self.assertNotIn("debug.log", info["changed_files"])
+            self.assertNotIn("debug.log", info["patch"])
+
+    def test_tracked_modifications_still_work(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "README.md").write_text("hello\nworld\n", encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("README.md", info["changed_files"])
+            self.assertIn("world", info["patch"])
+
+    def test_capture_diff_does_not_stage_or_mutate_index(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "docs").mkdir(parents=True, exist_ok=True)
+            (wt / "docs" / "new.md").write_text("# New\n", encoding="utf-8")
+            lc.capture_diff(wt)
+            status = lc.git(["status", "--porcelain", "--untracked-files=all"], cwd=wt, timeout=15)
+            self.assertIn("?? docs/new.md", status.stdout)
+            cached = lc.git(["diff", "--cached", "--name-only"], cwd=wt, timeout=15)
+            self.assertEqual(cached.stdout.strip(), "")
+
+    def test_binary_untracked_file_uses_bounded_marker(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            (wt / "blob.bin").write_bytes(b"\x00\x01\x02")
+            info = lc.capture_diff(wt)
+            self.assertIn("blob.bin", info["changed_files"])
+            self.assertIn("content not shown", info["patch"])
+
+    def test_oversized_untracked_file_is_truncated(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            wt = self._make_worktree(Path(tmp))
+            big = "x" * (lc.MAX_UNTRACKED_DIFF_BYTES + 1000)
+            (wt / "big.txt").write_text(big, encoding="utf-8")
+            info = lc.capture_diff(wt)
+            self.assertIn("big.txt", info["changed_files"])
+            self.assertIn("truncated", info["patch"])
+
+    def test_end_to_end_untracked_file_reaches_codex_review_prompt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="isolated")
+            captured = {}
+
+            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
+                d = Path(cwd) / "docs"
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "pilot.md").write_text("# Pilot\n\nGenerated by implementer.\n", encoding="utf-8")
+                return fake_claude_ok(prompt, cwd, timeout=timeout, tid=tid, **kw)
+
+            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
+                captured["prompt"] = prompt
+                return fake_codex_result("VERDICT: PASS\nok")
+
+            with mock.patch.object(lc, "discover_claude",
+                                   return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
+                 mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_claude", fake_claude), \
+                 mock.patch.object(lc, "run_codex_review", fake_codex):
+                result = lc._advance_task(tid, lc.Reporter())
+
+            self.assertEqual(result, "done")
+            self.assertIn("docs/pilot.md", captured["prompt"])
+            self.assertIn("Generated by implementer", captured["prompt"])
+
+    def test_no_test_invokes_a_real_model(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="isolated")
+
+            def fake_claude(prompt, cwd, timeout=lc.CLAUDE_TIMEOUT_SECONDS, tid=None, **kw):
+                (Path(cwd) / "docs").mkdir(parents=True, exist_ok=True)
+                (Path(cwd) / "docs" / "pilot.md").write_text("# Pilot\n", encoding="utf-8")
+                return fake_claude_ok(prompt, cwd, timeout=timeout, tid=tid, **kw)
+
+            def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
+                return fake_codex_result("VERDICT: PASS\nok")
+
+            with mock.patch.object(lc, "discover_claude",
+                                   return_value={"available": True, "path": "/x", "version": "1", "print_mode": True}), \
+                 mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+                 mock.patch.object(lc, "run_claude", fake_claude), \
+                 mock.patch.object(lc, "run_codex_review", fake_codex), \
+                 mock.patch.object(lc, "run_monitored",
+                                   side_effect=AssertionError("real subprocess spawned")):
+                result = lc._advance_task(tid, lc.Reporter())
+            self.assertEqual(result, "done")
+
+
 if __name__ == "__main__":
     unittest.main()
