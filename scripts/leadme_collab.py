@@ -94,7 +94,7 @@ MIN_AI_CALLS_FOR_INITIAL_WORK = 2
 IMPLEMENTERS = ("claude", "opencode")
 DEFAULT_IMPLEMENTER = "claude"
 # Exact OpenCode model id (provider/model) confirmed via `opencode models`.
-DEFAULT_OPENCODE_MODEL = "openrouter/deepseek/deepseek-v4-flash"
+DEFAULT_OPENCODE_MODEL = "openrouter/deepseek/deepseek-v4.1-flash"
 OPENCODE_TIMEOUT_SECONDS = int(
     os.getenv("LEADME_OPENCODE_TIMEOUT_SECONDS", "600")
 )  # 10 minutes per OpenCode implementer invocation
@@ -905,10 +905,24 @@ def _opencode_text_from_content(content):
 def _opencode_assistant_text(events):
     """Collect the assistant's final text from OpenCode JSON events.
 
-    Tracks the most recent content per assistant message id so incremental
-    message.updated events do not duplicate text. Reads the message payload
-    from either `info` or `properties` to tolerate both event shapes.
+    Prefers the CLI's streamed shape `{"type":"text","part":{...}}`, joining
+    every text part in stream order without duplication. Falls back to the
+    `info`/`properties` message shape (deduplicating by message id), then to
+    common top-level result/text/message fields.
     """
+    # 1) New CLI shape: {"type":"text","part":{"type":"text","text":"..."}}
+    text_parts = []
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "text":
+            part = ev.get("part")
+            if isinstance(part, dict) and part.get("type") == "text":
+                text = part.get("text")
+                if isinstance(text, str):
+                    text_parts.append(text)
+    if text_parts:
+        return "".join(text_parts)
+
+    # 2) info/properties message shape (dedup by message id)
     ordered = []
     by_id = {}
     for ev in events:
@@ -927,6 +941,8 @@ def _opencode_assistant_text(events):
                 break
     if by_id:
         return "\n".join(by_id[mid] for mid in ordered)
+
+    # 3) fallback top-level fields
     for ev in events:
         if isinstance(ev, dict):
             for key in ("result", "text", "message"):
@@ -946,34 +962,35 @@ def _opencode_assistant_text(events):
 def _parse_opencode_events(stdout):
     """Parse OpenCode `--format json` output into (result_text, events, error).
 
-    error is non-empty when the output cannot be parsed into assistant text
-    (fail-closed). Handles NDJSON event streams, a JSON array, and a single
-    JSON object.
+    Strict JSONL: every nonblank line must be valid JSON, otherwise the run
+    fails closed even when other lines carry assistant text. Explicit OpenCode
+    `error` events also fail closed. error is non-empty whenever the output
+    cannot be trusted (fail-closed).
     """
     if not stdout or not stdout.strip():
         return None, [], "empty output"
     events = []
-    for line in stdout.splitlines():
+    for lineno, line in enumerate(stdout.splitlines(), 1):
         line = line.strip()
         if not line:
             continue
         try:
             obj = json.loads(line)
         except (ValueError, TypeError):
-            continue
+            return None, events, f"malformed JSON at line {lineno}"
         if isinstance(obj, list):
             events.extend(obj)
         elif isinstance(obj, dict):
             events.append(obj)
-    if not events:
-        try:
-            doc = json.loads(stdout)
-        except (ValueError, TypeError):
-            return None, [], "malformed JSON"
-        if isinstance(doc, list):
-            events = doc
-        elif isinstance(doc, dict):
-            events = [doc]
+        else:
+            return None, events, f"non-object JSON at line {lineno}"
+
+    # Explicit OpenCode error events fail closed.
+    for ev in events:
+        if isinstance(ev, dict) and ev.get("type") == "error":
+            detail = ev.get("error") or ev.get("message") or "OpenCode reported an error"
+            return None, events, f"OpenCode error event: {detail}"
+
     result_text = _opencode_assistant_text(events)
     if not result_text or not result_text.strip():
         return None, events, "no assistant text found in events"

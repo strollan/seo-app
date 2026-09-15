@@ -464,6 +464,75 @@ class OpenCodeImplementerTests(unittest.TestCase):
         self.assertFalse(result["is_error"])
         self.assertEqual(result["result_text"], "single object answer")
 
+    def _run_with_stdout(self, payload):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            return lc.run_opencode("task", cwd="/wt", model="m")
+
+    def test_run_opencode_jsonl_step_start_text_part_step_finish_succeeds(self):
+        # Realistic OpenCode CLI JSONL: step_start + text/part + step_finish.
+        payload = "\n".join([
+            json.dumps({"type": "step_start", "step": "default", "title": "Implement"}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "assistant response"}}),
+            json.dumps({"type": "step_finish", "step": "default"}),
+        ])
+        result = self._run_with_stdout(payload)
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "assistant response")
+
+    def test_run_opencode_jsonl_collects_multiple_text_parts_in_order(self):
+        payload = "\n".join([
+            json.dumps({"type": "text", "part": {"type": "text", "text": "First "}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "second "}}),
+            json.dumps({"type": "text", "part": {"type": "text", "text": "third"}}),
+        ])
+        result = self._run_with_stdout(payload)
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "First second third")
+
+    def test_run_opencode_jsonl_valid_text_then_malformed_line_fails_closed(self):
+        # One valid text event followed by a malformed line must fail closed,
+        # even though assistant text is present.
+        payload = "\n".join([
+            json.dumps({"type": "text", "part": {"type": "text", "text": "hello"}}),
+            "this is not json",
+        ])
+        result = self._run_with_stdout(payload)
+        self.assertTrue(result["is_error"])
+        self.assertIn("malformed JSON", result["reason"])
+
+    def test_run_opencode_explicit_error_event_fails_closed(self):
+        payload = "\n".join([
+            json.dumps({"type": "step_start", "step": "default"}),
+            json.dumps({"type": "error", "error": {"message": "model unavailable"}}),
+        ])
+        result = self._run_with_stdout(payload)
+        self.assertTrue(result["is_error"])
+        self.assertIn("OpenCode error event", result["reason"])
+
+    def test_run_opencode_does_not_spawn_a_real_subprocess(self):
+        # run_opencode goes through run_monitored; when that is mocked the
+        # real subprocess.Popen is never reached (no live model/subprocess).
+        with mock.patch.object(lc, "run_monitored",
+                               lambda *a, **k: fake_monitored_result(stdout=json.dumps({"result": "ok"}))), \
+             mock.patch.object(subprocess, "Popen",
+                               side_effect=AssertionError("real subprocess spawned")):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertFalse(result["is_error"])
+
+    def test_default_and_persisted_model_are_v41_flash(self):
+        self.assertEqual(lc.DEFAULT_OPENCODE_MODEL, "openrouter/deepseek/deepseek-v4.1-flash")
+        # A task that chose opencode but has no persisted model resolves to the
+        # current default (v4.1-flash).
+        self.assertEqual(lc._implementer_model({"implementer": "opencode"}),
+                         "openrouter/deepseek/deepseek-v4.1-flash")
+        self.assertEqual(
+            lc._implementer_model({"implementer": "opencode",
+                                   "implementer_model": "openrouter/deepseek/deepseek-v4.1-flash"}),
+            "openrouter/deepseek/deepseek-v4.1-flash",
+        )
+
     def test_run_opencode_malformed_json_fails_closed(self):
         def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
             return fake_monitored_result(stdout="this is not json at all")
