@@ -364,6 +364,187 @@ class CodexAdapterCommandTests(unittest.TestCase):
         self.assertIn("no output", result["reason"])
 
 
+class OpenCodeImplementerTests(unittest.TestCase):
+    """run_opencode() must build argv only (never shell=True), run
+    non-interactively, parse --format json events safely, and fail closed on
+    any error/malformed/empty output."""
+
+    def test_run_opencode_builds_expected_argv(self):
+        captured = {}
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            captured.update(args=args, cwd=cwd, timeout=timeout, role_label=role_label, tid=tid)
+            return fake_monitored_result(stdout=json.dumps({"result": "ok"}))
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("do the thing", cwd="/wt", model="openrouter/deepseek/deepseek-v4-flash", timeout=42, tid="t1")
+
+        self.assertEqual(captured["args"], [
+            "opencode", "run",
+            "--dir", "/wt",
+            "--model", "openrouter/deepseek/deepseek-v4-flash",
+            "--format", "json",
+            "do the thing",
+        ])
+        self.assertEqual(captured["cwd"], "/wt")
+        self.assertEqual(captured["timeout"], 42)
+        self.assertEqual(captured["tid"], "t1")
+        self.assertEqual(captured["role_label"], "OpenCode implementer")
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "ok")
+
+    def test_run_opencode_uses_argv_only_never_shell(self):
+        source = Path(lc.__file__).read_text(encoding="utf-8")
+        start = source.index("def run_opencode")
+        end = source.index("def _opencode_text_from_content")
+        snippet = source[start:end]
+        self.assertNotIn("shell=True", snippet)
+        self.assertNotIn("shell=", snippet)
+
+    def test_run_opencode_parses_ndjson_events(self):
+        events = [
+            {"type": "message.part.updated", "info": {"role": "assistant", "id": "m1",
+                                                      "content": [{"type": "text", "text": "edit "}]}},
+            {"type": "message.updated", "info": {"role": "assistant", "id": "m1",
+                                                 "content": [{"type": "text", "text": "edit done"}]}},
+        ]
+        payload = "\n".join(json.dumps(e) for e in events)
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "edit done")
+        self.assertEqual(len(result["parsed"]), 2)
+
+    def test_run_opencode_parses_properties_event_shape(self):
+        # The SDK's event.subscribe example reads event.properties, so the
+        # parser must tolerate that shape too.
+        events = [
+            {"type": "message.updated",
+             "properties": {"id": "m1", "role": "assistant",
+                            "content": [{"type": "text", "text": "made the change"}]}},
+        ]
+        payload = "\n".join(json.dumps(e) for e in events)
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "made the change")
+
+    def test_run_opencode_parses_single_text_part_content(self):
+        events = [
+            {"type": "message.updated",
+             "properties": {"id": "m1", "role": "assistant",
+                            "content": {"type": "text", "text": "single part text"}}},
+        ]
+        payload = "\n".join(json.dumps(e) for e in events)
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "single part text")
+
+    def test_run_opencode_parses_single_json_object(self):
+        payload = json.dumps({"result": "single object answer"})
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["result_text"], "single object answer")
+
+    def test_run_opencode_malformed_json_fails_closed(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout="this is not json at all")
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertTrue(result["is_error"])
+        self.assertIn("malformed JSON", result["reason"])
+
+    def test_run_opencode_empty_output_fails_closed(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout="")
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertTrue(result["is_error"])
+        self.assertIn("empty output", result["reason"])
+
+    def test_run_opencode_no_assistant_text_fails_closed(self):
+        # Valid JSON events but no assistant message content.
+        payload = json.dumps({"type": "session.updated", "info": {"role": "user", "content": "hi"}})
+
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(stdout=payload)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertTrue(result["is_error"])
+        self.assertIn("no assistant text", result["reason"])
+
+    def test_run_opencode_timeout_fails_closed(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(timed_out=True, returncode=-9, elapsed_seconds=5.0)
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("slow", cwd="/wt", model="m", timeout=5)
+        self.assertTrue(result["timed_out"])
+        self.assertTrue(result["is_error"])
+        self.assertIn("timed out", result["reason"])
+
+    def test_run_opencode_nonzero_exit_fails_closed(self):
+        def fake_run_monitored(args, cwd, timeout, role_label, input_text=None, tid=None, **kw):
+            return fake_monitored_result(returncode=2, stdout=json.dumps({"result": "ok"}), stderr="boom")
+
+        with mock.patch.object(lc, "run_monitored", fake_run_monitored):
+            result = lc.run_opencode("task", cwd="/wt", model="m")
+        self.assertTrue(result["is_error"])
+        self.assertIn("exited 2", result["reason"])
+
+    def test_discover_opencode_reports_available_when_present(self):
+        with mock.patch.object(lc, "shutil", which=lambda name: "/x/opencode" if name == "opencode" else None), \
+             mock.patch.object(ld, "run_local", lambda *a, **k: _OkResult("1.18.31")):
+            info = lc.discover_opencode()
+        self.assertTrue(info["available"])
+        self.assertEqual(info["path"], "/x/opencode")
+        self.assertEqual(info["version"], "1.18.31")
+
+    def test_discover_opencode_reports_unavailable_when_missing(self):
+        with mock.patch.object(lc, "shutil", which=lambda name: None):
+            info = lc.discover_opencode()
+        self.assertFalse(info["available"])
+
+    def test_validate_implementer_defaults_to_claude(self):
+        ok, impl = lc._validate_implementer(None)
+        self.assertTrue(ok)
+        self.assertEqual(impl, "claude")
+        ok, impl = lc._validate_implementer("opencode")
+        self.assertTrue(ok)
+        self.assertEqual(impl, "opencode")
+        ok, err = lc._validate_implementer("gemini")
+        self.assertFalse(ok)
+        self.assertIn("implementer", err)
+
+
+class _OkResult:
+    def __init__(self, stdout="", stderr="", ok=True):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.ok = ok
+
+
 class RunMonitoredTests(unittest.TestCase, IsolatedDirsMixin):
     """run_monitored() is the fix for the first-real-use failure (suspended
     process group + zero output looked identical to a hang). These use real
@@ -2253,20 +2434,28 @@ class FourCallCapTests(unittest.TestCase, IsolatedDirsMixin):
             self.assertEqual(result, "done")
 
 
-class CapabilityOutputTests(unittest.TestCase):
+class CapabilityOutputTests(unittest.TestCase, IsolatedDirsMixin):
     def test_capability_output_is_valid_json(self):
         """Case 10: capability output parses as JSON and reports the evidence."""
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            rc = lc.cmd_capabilities(argparse.Namespace())
-        self.assertEqual(rc, 0)
-        payload = json.loads(buf.getvalue())
-        self.assertTrue(payload["capabilities"]["configurable_review_cycles"])
-        self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
-        self.assertTrue(payload["jam_room_supported"])
-        jam = [c for c in payload["supported_configurations"]
-               if c.get("name") == "jam-room"]
-        self.assertEqual(len(jam), 1)
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_capabilities(argparse.Namespace())
+            self.assertEqual(rc, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertTrue(payload["capabilities"]["configurable_review_cycles"])
+            self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
+            self.assertTrue(payload["capabilities"]["configurable_implementer"])
+            self.assertEqual(payload["implementers"], ["claude", "opencode"])
+            self.assertEqual(payload["default_implementer"], "claude")
+            self.assertTrue(payload["claude_required"])  # no current task -> default claude
+            self.assertFalse(payload["opencode_invoked"])
+            self.assertTrue(payload["jam_room_supported"])
+            jam = [c for c in payload["supported_configurations"]
+                   if c.get("name") == "jam-room"]
+            self.assertEqual(len(jam), 1)
         self.assertEqual(jam[0]["max_review_cycles"], 1)
         self.assertEqual(jam[0]["max_ai_calls"], 4)
         self.assertTrue(jam[0]["supported"])
@@ -2275,12 +2464,35 @@ class CapabilityOutputTests(unittest.TestCase):
         self.assertFalse(payload["codex_invoked"])
 
     def test_doctor_json_emits_capability_json(self):
-        buf = io.StringIO()
-        with redirect_stdout(buf):
-            rc = lc.cmd_doctor(argparse.Namespace(json=True))
-        self.assertEqual(rc, 0)
-        payload = json.loads(buf.getvalue())
-        self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_doctor(argparse.Namespace(json=True))
+            self.assertEqual(rc, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertTrue(payload["capabilities"]["configurable_ai_call_cap"])
+
+    def test_claude_required_is_false_when_opencode_selected(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.isolate(Path(tmp))
+            tid = "cap-open"
+            lc.write_task_state(tid, {
+                "task_id": tid, "phase": "implemented",
+                "implementer": "opencode",
+                "implementer_model": "openrouter/deepseek/deepseek-v4-flash",
+            })
+            lc.set_current_task(tid)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_capabilities(argparse.Namespace())
+            self.assertEqual(rc, 0)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["current_implementer"], "opencode")
+            self.assertEqual(payload["current_implementer_model"], "openrouter/deepseek/deepseek-v4-flash")
+            self.assertFalse(payload["claude_required"])
 
 
 class StartLimitArgumentTests(unittest.TestCase, IsolatedDirsMixin):
@@ -2329,7 +2541,202 @@ class StartLimitArgumentTests(unittest.TestCase, IsolatedDirsMixin):
             state = lc.read_task_state(ids[0])
             self.assertEqual(state["max_review_cycles"], lc.MAX_REVIEW_CYCLES)
             self.assertEqual(state["max_ai_calls"], 6)  # finite default cap
+            self.assertEqual(state["implementer"], "claude")  # default for compatibility
+            self.assertIsNone(state["implementer_model"])
             self.assertEqual(state["ai_calls_used"], 0)
+
+
+class OpenCodeStartAndResumeTests(unittest.TestCase, IsolatedDirsMixin):
+    def test_start_persists_implementer_choices(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(lc, "discover_claude",
+                                   return_value={"available": False, "path": None, "version": None, "print_mode": False}), \
+                 mock.patch.object(lc, "discover_codex",
+                                   return_value={"available": False, "path": None, "version": None,
+                                                 "authenticated": False, "usable_noninteractive": False,
+                                                 "detail": "codex not found"}), \
+                 mock.patch.object(ld, "fetch_origin", return_value=(True, "")), \
+                 mock.patch.object(ld, "divergence_state", return_value=("in-sync", 0, 0)):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    lc.cmd_start(argparse.Namespace(
+                        task="do it", task_file=None,
+                        max_review_cycles=None, max_ai_calls=None,
+                        implementer="opencode",
+                        implementer_model="openrouter/deepseek/deepseek-v4-flash",
+                    ))
+            ids = lc.list_task_ids()
+            self.assertEqual(len(ids), 1)
+            state = lc.read_task_state(ids[0])
+            self.assertEqual(state["implementer"], "opencode")
+            self.assertEqual(state["implementer_model"], "openrouter/deepseek/deepseek-v4-flash")
+
+    def test_start_defaults_opencode_model_when_omitted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = make_temp_git_repo(tmp_path)
+            self.isolate(tmp_path, repo_path=repo)
+            with mock.patch.object(lc, "discover_claude",
+                                   return_value={"available": False, "path": None, "version": None, "print_mode": False}), \
+                 mock.patch.object(lc, "discover_codex",
+                                   return_value={"available": False, "path": None, "version": None,
+                                                 "authenticated": False, "usable_noninteractive": False,
+                                                 "detail": "codex not found"}), \
+                 mock.patch.object(ld, "fetch_origin", return_value=(True, "")), \
+                 mock.patch.object(ld, "divergence_state", return_value=("in-sync", 0, 0)):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    lc.cmd_start(argparse.Namespace(
+                        task="do it", task_file=None,
+                        max_review_cycles=None, max_ai_calls=None,
+                        implementer="opencode", implementer_model=None,
+                    ))
+            ids = lc.list_task_ids()
+            state = lc.read_task_state(ids[0])
+            self.assertEqual(state["implementer"], "opencode")
+            self.assertEqual(state["implementer_model"], lc.DEFAULT_OPENCODE_MODEL)
+
+    def test_start_rejects_invalid_implementer(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            self.isolate(tmp_path, repo_path=tmp_path / "missing")
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_start(argparse.Namespace(
+                    task="x", task_file=None,
+                    max_review_cycles=None, max_ai_calls=None,
+                    implementer="gemini", implementer_model=None,
+                ))
+            self.assertEqual(rc, 1)
+            self.assertIn("invalid implementer", buf.getvalue())
+
+    def test_resume_rejects_implementer_change(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["implementer"] = "claude"
+            state["implementer_model"] = None
+            lc.write_task_state(tid, state)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_resume(argparse.Namespace(
+                    task_id=tid, implementer="opencode", implementer_model=None))
+            self.assertEqual(rc, 1)
+            self.assertIn("cannot change implementer", buf.getvalue())
+
+    def test_resume_rejects_model_change(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["implementer"] = "opencode"
+            state["implementer_model"] = "openrouter/deepseek/deepseek-v4-flash"
+            lc.write_task_state(tid, state)
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = lc.cmd_resume(argparse.Namespace(
+                    task_id=tid, implementer=None, implementer_model="other/model"))
+            self.assertEqual(rc, 1)
+            self.assertIn("cannot change implementer model", buf.getvalue())
+
+    def test_resume_accepts_matching_choices(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            tid, wt_path = bootstrap_jam_room_task(self, Path(tmp), phase="implemented")
+            state = lc.read_task_state(tid)
+            state["implementer"] = "opencode"
+            state["implementer_model"] = "openrouter/deepseek/deepseek-v4-flash"
+            lc.write_task_state(tid, state)
+            with mock.patch.object(lc, "discover_opencode",
+                                   return_value={"available": False, "path": None, "version": None}), \
+                 mock.patch.object(lc, "discover_codex",
+                                   return_value={"available": False, "path": None, "version": None,
+                                                 "authenticated": False, "usable_noninteractive": False,
+                                                 "detail": "codex not found"}), \
+                 mock.patch.object(lc, "run_opencode", return_value={
+                     "returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
+                     "result_text": "ok", "is_error": False, "total_cost_usd": None,
+                     "parsed": [], "budget_exhausted": False, "timed_out": False,
+                     "pid": 1, "reason": ""}):
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    rc = lc.cmd_resume(argparse.Namespace(
+                        task_id=tid, implementer="opencode",
+                        implementer_model="openrouter/deepseek/deepseek-v4-flash"))
+            self.assertNotIn("cannot change", buf.getvalue())
+
+
+class OpenCodeLoopTests(unittest.TestCase, IsolatedDirsMixin):
+    def _opencode_loop(self, tmp_path, codex_verdicts, phase="isolated"):
+        tid, wt_path = bootstrap_jam_room_task(self, tmp_path, phase=phase)
+        state = lc.read_task_state(tid)
+        state["implementer"] = "opencode"
+        state["implementer_model"] = lc.DEFAULT_OPENCODE_MODEL
+        lc.write_task_state(tid, state)
+
+        opencode_calls = []
+
+        def fake_opencode(prompt, cwd, model, timeout=lc.OPENCODE_TIMEOUT_SECONDS, tid=None, **kw):
+            opencode_calls.append(prompt)
+            return {"returncode": 0, "stdout": "", "stderr": "", "elapsed_seconds": 1.0,
+                    "result_text": "ok", "is_error": False, "total_cost_usd": None,
+                    "parsed": [], "budget_exhausted": False, "timed_out": False,
+                    "pid": 1234, "reason": ""}
+
+        codex_calls = []
+
+        def fake_codex(prompt, cwd, timeout=lc.CODEX_TIMEOUT_SECONDS, tid=None, **kw):
+            codex_calls.append(prompt)
+            index = len(codex_calls) - 1
+            verdict = codex_verdicts[index] if index < len(codex_verdicts) else codex_verdicts[-1]
+            return fake_codex_result(verdict)
+
+        with mock.patch.object(lc, "discover_opencode",
+                               return_value={"available": True, "path": "/x/opencode", "version": "1"}), \
+             mock.patch.object(lc, "discover_codex", return_value=usable_codex_info()), \
+             mock.patch.object(lc, "run_opencode", fake_opencode), \
+             mock.patch.object(lc, "run_codex_review", fake_codex):
+            result = lc._advance_task(tid, lc.Reporter())
+
+        state = lc.read_task_state(tid)
+        return result, state, opencode_calls, codex_calls
+
+    def test_opencode_implementation_consumes_ai_call_budget(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, opencode_calls, codex_calls = self._opencode_loop(
+                Path(tmp), ["VERDICT: PASS\nclean"])
+            self.assertEqual(result, "done")
+            self.assertEqual(state["final"], "READY FOR HUMAN REVIEW")
+            self.assertEqual(state["ai_calls_used"], 2)  # implement + review
+            self.assertEqual(len(opencode_calls), 1)
+            self.assertEqual(len(codex_calls), 1)
+
+    def test_opencode_repair_uses_ai_call_budget(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result, state, opencode_calls, codex_calls = self._opencode_loop(
+                Path(tmp), ["VERDICT: NEEDS FIX\nx", "VERDICT: PASS\ny"])
+            self.assertEqual(result, "done")
+            self.assertEqual(state["ai_calls_used"], 4)  # implement + review + repair + review
+            self.assertEqual(len(opencode_calls), 2)  # implement + repair
+            self.assertEqual(len(codex_calls), 2)
+
+    def test_opencode_loop_never_reaches_real_subprocess_spawner(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(lc, "run_monitored",
+                                   side_effect=AssertionError("real subprocess spawned")):
+                result, state, opencode_calls, codex_calls = self._opencode_loop(
+                    Path(tmp), ["VERDICT: PASS\nclean"])
+            self.assertEqual(result, "done")
 
 
 if __name__ == "__main__":

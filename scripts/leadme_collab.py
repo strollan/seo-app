@@ -89,6 +89,16 @@ MAX_AI_CALLS_CEILING = 12
 # the first review (one Claude call + one Codex call).
 MIN_AI_CALLS_FOR_INITIAL_WORK = 2
 
+# Implementer choices. `claude` is the default for compatibility with legacy
+# runs; `opencode` is an optional implementer driven by the OpenCode CLI.
+IMPLEMENTERS = ("claude", "opencode")
+DEFAULT_IMPLEMENTER = "claude"
+# Exact OpenCode model id (provider/model) confirmed via `opencode models`.
+DEFAULT_OPENCODE_MODEL = "openrouter/deepseek/deepseek-v4-flash"
+OPENCODE_TIMEOUT_SECONDS = int(
+    os.getenv("LEADME_OPENCODE_TIMEOUT_SECONDS", "600")
+)  # 10 minutes per OpenCode implementer invocation
+
 CLAUDE_TIMEOUT_SECONDS = int(
     os.getenv("LEADME_CLAUDE_TIMEOUT_SECONDS", "240")
 )  # default fast lane: 4 minutes
@@ -540,6 +550,26 @@ def choose_reviewer_mode():
     return "file-handoff", codex
 
 
+def discover_opencode():
+    """Prove the OpenCode CLI is present (not just a PATH lookup)."""
+    path = shutil.which("opencode")
+    if not path:
+        return {"available": False, "path": None, "version": None}
+    version_res = ld.run_local(["opencode", "--version"], timeout=15)
+    return {
+        "available": True,
+        "path": path,
+        "version": version_res.stdout.strip() if version_res.ok else None,
+    }
+
+
+def _discover_implementer(implementer):
+    """Discover the CLI backing the chosen implementer."""
+    if implementer == "opencode":
+        return discover_opencode()
+    return discover_claude()
+
+
 # ---------------------------------------------------------------------------
 # Monitored subprocess execution (heartbeat + hard timeout + PID tracking)
 # ---------------------------------------------------------------------------
@@ -798,6 +828,181 @@ def _verified_budget_result_can_continue(result, changed_files, verify_ok):
         and changed_files
         and verify_ok
     )
+
+
+def run_opencode(prompt_text, cwd, model, timeout=OPENCODE_TIMEOUT_SECONDS, tid=None):
+    """Invoke the OpenCode CLI non-interactively in `cwd`.
+
+    Uses argv only (never invokes a shell). Parses `--format json` events
+    safely; any parse error, malformed JSON, empty output, or nonzero exit
+    fails closed (is_error=True). Returns a dict matching run_claude's shape.
+    """
+    args = [
+        "opencode", "run",
+        "--dir", str(cwd),
+        "--model", model,
+        "--format", "json",
+        prompt_text,
+    ]
+    result = run_monitored(args, cwd=cwd, timeout=timeout, role_label="OpenCode implementer", tid=tid)
+    result_text, events, parse_err = _parse_opencode_events(result["stdout"])
+
+    if result["timed_out"]:
+        reason = f"OpenCode implementer timed out after {int(result['elapsed_seconds'])}s (limit: {timeout}s)"
+    elif parse_err:
+        reason = f"OpenCode implementer exited {result['returncode']} with {parse_err}"
+    elif result["returncode"] != 0:
+        reason = f"OpenCode implementer exited {result['returncode']}"
+    elif not result_text or not result_text.strip():
+        reason = "OpenCode implementer produced no assistant text"
+    else:
+        reason = ""
+
+    return {
+        "returncode": result["returncode"],
+        "stdout": result["stdout"],
+        "stderr": result["stderr"],
+        "elapsed_seconds": result["elapsed_seconds"],
+        "result_text": result_text,
+        "is_error": bool(reason),
+        "total_cost_usd": None,
+        "parsed": events,
+        "budget_exhausted": False,
+        "timed_out": result["timed_out"],
+        "pid": result["pid"],
+        "reason": reason,
+    }
+
+
+def _opencode_text_from_content(content):
+    """Extract a string from OpenCode message content.
+
+    Handles a plain string, a single text part dict, or an array of parts
+    (text / reasoning), matching the shapes OpenCode emits in its JSON event
+    stream.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        if content.get("type") == "text":
+            text = content.get("text")
+            return text if isinstance(text, str) else None
+        return None
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    text = part.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            elif isinstance(part, str):
+                parts.append(part)
+        return "".join(parts)
+    return None
+
+
+def _opencode_assistant_text(events):
+    """Collect the assistant's final text from OpenCode JSON events.
+
+    Tracks the most recent content per assistant message id so incremental
+    message.updated events do not duplicate text. Reads the message payload
+    from either `info` or `properties` to tolerate both event shapes.
+    """
+    ordered = []
+    by_id = {}
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        for key in ("info", "properties"):
+            payload = ev.get(key)
+            if isinstance(payload, dict) and payload.get("role") == "assistant":
+                text = _opencode_text_from_content(payload.get("content"))
+                if text is None:
+                    break
+                mid = payload.get("id")
+                if mid not in by_id:
+                    ordered.append(mid)
+                by_id[mid] = text
+                break
+    if by_id:
+        return "\n".join(by_id[mid] for mid in ordered)
+    for ev in events:
+        if isinstance(ev, dict):
+            for key in ("result", "text", "message"):
+                val = ev.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val
+            for key in ("info", "properties"):
+                payload = ev.get(key)
+                if isinstance(payload, dict):
+                    for k in ("result", "text"):
+                        val = payload.get(k)
+                        if isinstance(val, str) and val.strip():
+                            return val
+    return None
+
+
+def _parse_opencode_events(stdout):
+    """Parse OpenCode `--format json` output into (result_text, events, error).
+
+    error is non-empty when the output cannot be parsed into assistant text
+    (fail-closed). Handles NDJSON event streams, a JSON array, and a single
+    JSON object.
+    """
+    if not stdout or not stdout.strip():
+        return None, [], "empty output"
+    events = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, list):
+            events.extend(obj)
+        elif isinstance(obj, dict):
+            events.append(obj)
+    if not events:
+        try:
+            doc = json.loads(stdout)
+        except (ValueError, TypeError):
+            return None, [], "malformed JSON"
+        if isinstance(doc, list):
+            events = doc
+        elif isinstance(doc, dict):
+            events = [doc]
+    result_text = _opencode_assistant_text(events)
+    if not result_text or not result_text.strip():
+        return None, events, "no assistant text found in events"
+    return result_text, events, ""
+
+
+def _implementer_name(state):
+    """The task's implementer ('claude' or 'opencode'), defaulting to 'claude'."""
+    if not isinstance(state, dict):
+        return DEFAULT_IMPLEMENTER
+    impl = state.get("implementer")
+    return impl if impl in IMPLEMENTERS else DEFAULT_IMPLEMENTER
+
+
+def _implementer_model(state):
+    """The task's implementer model (provider/model), defaulting to the
+    documented OpenCode model."""
+    if not isinstance(state, dict):
+        return DEFAULT_OPENCODE_MODEL
+    model = state.get("implementer_model")
+    return model or DEFAULT_OPENCODE_MODEL
+
+
+def _run_implementer(prompt, cwd, state, tid):
+    """Dispatch the implementer step to claude or opencode based on the task."""
+    impl = _implementer_name(state)
+    if impl == "opencode":
+        return run_opencode(prompt, cwd=cwd, model=_implementer_model(state), tid=tid)
+    return run_claude(prompt, cwd=cwd, tid=tid)
 
 
 def run_codex_review(prompt_text, cwd, timeout=CODEX_TIMEOUT_SECONDS, tid=None):
@@ -1243,12 +1448,28 @@ def parse_verdict(review_text):
 def _capabilities_dict():
     """Machine-readable capability evidence. Pure static report — it never
     runs a subprocess or invokes any model."""
+    current_impl = DEFAULT_IMPLEMENTER
+    current_model = None
+    tid = get_current_task()
+    if tid:
+        state = read_task_state(tid)
+        if state:
+            current_impl = _implementer_name(state)
+            if current_impl == "opencode":
+                current_model = _implementer_model(state)
     return {
         "tool": "leadme-collab",
         "capabilities": {
             "configurable_review_cycles": True,
             "configurable_ai_call_cap": True,
+            "configurable_implementer": True,
         },
+        "implementers": list(IMPLEMENTERS),
+        "default_implementer": DEFAULT_IMPLEMENTER,
+        "default_implementer_model": DEFAULT_OPENCODE_MODEL,
+        "current_implementer": current_impl,
+        "current_implementer_model": current_model,
+        "claude_required": current_impl == "claude",
         "supported_configurations": [
             {
                 "name": "jam-room",
@@ -1271,6 +1492,7 @@ def _capabilities_dict():
         "live_model_call_made": False,
         "claude_invoked": False,
         "codex_invoked": False,
+        "opencode_invoked": False,
     }
 
 
@@ -1404,6 +1626,19 @@ def cmd_start(args):
     if max_ai_calls is None:
         max_ai_calls = MAX_AI_CALLS
 
+    implementer = getattr(args, "implementer", None)
+    implementer_model = getattr(args, "implementer_model", None)
+    ok, impl = _validate_implementer(implementer)
+    if not ok:
+        print(f"[FAIL] invalid implementer: {impl}")
+        return 1
+    implementer = impl
+    if implementer == "opencode":
+        if not implementer_model:
+            implementer_model = DEFAULT_OPENCODE_MODEL
+    else:
+        implementer_model = None
+
     if not getattr(args, "force_new", False):
         dup_tid, dup_state = find_active_duplicate(description)
         if dup_tid:
@@ -1487,6 +1722,8 @@ def cmd_start(args):
         "cycle": 1,
         "max_review_cycles": max_review_cycles,
         "max_ai_calls": max_ai_calls,
+        "implementer": implementer,
+        "implementer_model": implementer_model,
         "ai_calls_used": 0,
         "ai_calls": [],
         "reviewer_mode": None,
@@ -1797,6 +2034,19 @@ def _validate_run_limits(max_review_cycles, max_ai_calls):
     return True, ""
 
 
+def _validate_implementer(implementer):
+    """Validate a user-supplied implementer. Returns (ok, normalized_value).
+
+    None defaults to 'claude' for compatibility. Anything outside
+    IMPLEMENTERS is rejected.
+    """
+    if implementer is None:
+        return True, DEFAULT_IMPLEMENTER
+    if implementer not in IMPLEMENTERS:
+        return False, f"implementer must be one of: {', '.join(IMPLEMENTERS)}"
+    return True, implementer
+
+
 def _print_explanation(r, reason, detail_path=None, next_action=None):
     """Always show a concrete reason for a non-PASS/error outcome — never
     just "[FAIL] verdict: NEEDS HUMAN" with nothing else."""
@@ -1857,29 +2107,30 @@ def _advance_task(tid, r=None):
     wt = state["worktree"]
 
     if state["phase"] == "isolated":
-        r.section("claude implementation")
+        impl = _implementer_name(state)
+        r.section(f"{impl} implementation")
         if not _check_no_concurrent_process(tid, state, r):
             return "needs_human"
 
         task_md_text = read_artifact(tid, "task.md") or ""
         prompt = build_implementer_prompt(task_md_text)
         write_artifact(tid, "implementer-prompt.md", prompt)
-        log_event(tid, "implementer_start")
+        log_event(tid, "implementer_start", f"implementer={impl}")
 
-        claude_info = discover_claude()
-        if not claude_info["available"]:
-            r.step("claude CLI available", False, "not found on PATH")
-            reason = "claude CLI not found on PATH — cannot run the implementer step"
-            _print_explanation(r, reason, next_action="install/fix the claude CLI, then: leadme-collab resume")
+        impl_info = _discover_implementer(impl)
+        if not impl_info["available"]:
+            r.step(f"{impl} CLI available", False, "not found on PATH")
+            reason = f"{impl} CLI not found on PATH — cannot run the implementer step"
+            _print_explanation(r, reason, next_action=f"install/fix the {impl} CLI, then: leadme-collab resume")
             _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
-            log_event(tid, "implementer_unavailable")
+            log_event(tid, "implementer_unavailable", f"implementer={impl}")
             return "needs_human"
 
         try:
             reserved = _reserve_ai_call(tid, "implement")
         except (AiCallBudgetExhausted, AiCallBudgetInvalid) as exc:
             return _fail_budget(tid, r, "implementation", exc)
-        result = run_claude(prompt, cwd=wt, tid=tid)
+        result = _run_implementer(prompt, cwd=wt, state=state, tid=tid)
         _complete_ai_call(tid, reserved["call_number"])
         write_artifact(
             tid, "implementer-output.md",
@@ -1891,8 +2142,8 @@ def _advance_task(tid, r=None):
             f"## stderr\n\n{result['stderr']}\n",
         )
         ok = not result["is_error"]
-        r.step("claude implementation complete", ok, "" if ok else result.get("reason", ""))
-        log_event(tid, "implementer_done", f"is_error={result['is_error']} elapsed={result['elapsed_seconds']}s")
+        r.step(f"{impl} implementation complete", ok, "" if ok else result.get("reason", ""))
+        log_event(tid, "implementer_done", f"implementer={impl} is_error={result['is_error']} elapsed={result['elapsed_seconds']}s")
 
         # Capture diff/verification regardless of outcome — even a failed
         # implementer run may have made partial edits worth seeing.
@@ -1912,17 +2163,17 @@ def _advance_task(tid, r=None):
                 result, diff_info["changed_files"], verify_ok
             ):
                 r.warn(
-                    "Claude budget reached after producing verified changes",
+                    "implementer budget reached after producing verified changes",
                     "continuing automatically to reviewer",
                 )
                 log_event(
                     tid,
                     "implementer_budget_salvaged",
-                    f"changed={len(diff_info['changed_files'])}",
+                    f"implementer={impl} changed={len(diff_info['changed_files'])}",
                 )
                 state = _write_state_update(tid, phase="implemented")
             else:
-                reason = result.get("reason") or "Claude implementer failed"
+                reason = result.get("reason") or f"{impl} implementer failed"
                 _print_explanation(
                     r, reason,
                     detail_path=str(task_dir(tid) / "implementer-output.md"),
@@ -2102,19 +2353,20 @@ def _run_repair(tid, r, review_text):
     diff_info = capture_diff(wt)
     task_md_text = read_artifact(tid, "task.md") or ""
 
-    r.section("claude repair")
+    impl = _implementer_name(state)
+    r.section(f"{impl} repair")
     if not _check_no_concurrent_process(tid, state, r):
         return "needs_human"
 
     prompt = build_repair_prompt(task_md_text, review_text, diff_info)
     write_artifact(tid, "repair-prompt.md", prompt)
-    log_event(tid, "repair_start", f"cycle={state['cycle']}")
+    log_event(tid, "repair_start", f"cycle={state['cycle']} implementer={impl}")
 
-    claude_info = discover_claude()
-    if not claude_info["available"]:
-        r.step("claude CLI available", False, "not found on PATH")
-        reason = "claude CLI not found on PATH — cannot run the repair step"
-        _print_explanation(r, reason, next_action="install/fix the claude CLI, then: leadme-collab resume")
+    impl_info = _discover_implementer(impl)
+    if not impl_info["available"]:
+        r.step(f"{impl} CLI available", False, "not found on PATH")
+        reason = f"{impl} CLI not found on PATH — cannot run the repair step"
+        _print_explanation(r, reason, next_action=f"install/fix the {impl} CLI, then: leadme-collab resume")
         _finalize(tid, "needs_human", "NEEDS HUMAN", reason)
         return "needs_human"
 
@@ -2122,7 +2374,7 @@ def _run_repair(tid, r, review_text):
         reserved = _reserve_ai_call(tid, "repair")
     except (AiCallBudgetExhausted, AiCallBudgetInvalid) as exc:
         return _fail_budget(tid, r, "repair", exc)
-    result = run_claude(prompt, cwd=wt, tid=tid)
+    result = _run_implementer(prompt, cwd=wt, state=state, tid=tid)
     _complete_ai_call(tid, reserved["call_number"])
     write_artifact(
         tid, "repair-output.md",
@@ -2135,7 +2387,7 @@ def _run_repair(tid, r, review_text):
     )
     ok = not result["is_error"]
     r.step("targeted repair complete", ok, "" if ok else result.get("reason", ""))
-    log_event(tid, "repair_done", f"cycle={state['cycle']} is_error={result['is_error']}")
+    log_event(tid, "repair_done", f"cycle={state['cycle']} implementer={impl} is_error={result['is_error']}")
 
     # Capture diff/verification regardless of outcome, same reasoning as the
     # initial implementer step.
@@ -2150,16 +2402,16 @@ def _run_repair(tid, r, review_text):
             result, new_diff["changed_files"], verify_ok
         ):
             r.warn(
-                "Claude repair budget reached after producing verified changes",
+                "implementer repair budget reached after producing verified changes",
                 "continuing automatically to reviewer",
             )
             log_event(
                 tid,
                 "repair_budget_salvaged",
-                f"cycle={state['cycle']} changed={len(new_diff['changed_files'])}",
+                f"cycle={state['cycle']} implementer={impl} changed={len(new_diff['changed_files'])}",
             )
         else:
-            reason = result.get("reason") or "Claude repair failed"
+            reason = result.get("reason") or f"{impl} repair failed"
             _print_explanation(
                 r, reason,
                 detail_path=str(task_dir(tid) / "repair-output.md"),
@@ -2293,6 +2545,10 @@ def cmd_status(args):
     used = state.get("ai_calls_used", 0)
     budget = f"{used}/no-cap" if max_calls is None else f"{used}/{max_calls}"
     r.note(f"  ai calls:     {budget}")
+    impl = _implementer_name(state)
+    impl_model = state.get("implementer_model") if impl == "opencode" else None
+    impl_label = f"{impl}{' (' + impl_model + ')' if impl_model else ''}"
+    r.note(f"  implementer:  {impl_label}")
     r.note(f"  worktree:     {state.get('worktree')}")
     r.note(f"  branch:       {state.get('branch')}")
     r.note(f"  reviewer:     {state.get('reviewer_mode')}")
@@ -2320,6 +2576,23 @@ def cmd_resume(args):
     state = read_task_state(tid)
     if state is None:
         print(f"[FAIL] no state found for task {tid}")
+        return 1
+
+    requested_impl = getattr(args, "implementer", None)
+    requested_model = getattr(args, "implementer_model", None)
+    stored_impl = _implementer_name(state)
+    stored_model = _implementer_model(state) if stored_impl == "opencode" else None
+    if requested_impl is not None and requested_impl != stored_impl:
+        print(
+            f"[FAIL] resume cannot change implementer: task is '{stored_impl}', "
+            f"requested '{requested_impl}'"
+        )
+        return 1
+    if requested_model is not None and requested_model != stored_model:
+        print(
+            f"[FAIL] resume cannot change implementer model: task is '{stored_model}', "
+            f"requested '{requested_model}'"
+        )
         return 1
 
     set_current_task(tid)
@@ -2658,12 +2931,29 @@ def build_parser():
         "--max-ai-calls", type=int, default=None,
         help="hard cap on total Claude+Codex invocations (default: no cap; e.g. 4 for the four-call cap)",
     )
+    p_start.add_argument(
+        "--implementer", default=None, choices=IMPLEMENTERS,
+        help="implementer to use for implementation/repair (default: claude for compatibility)",
+    )
+    p_start.add_argument(
+        "--implementer-model", default=None,
+        help="implementer model id, provider/model (used by opencode; default: "
+        + DEFAULT_OPENCODE_MODEL + ")",
+    )
 
     p_status = sub.add_parser("status", help="show current task status")
     p_status.add_argument("task_id", nargs="?", default=None)
 
     p_resume = sub.add_parser("resume", help="resume an interrupted task")
     p_resume.add_argument("task_id", nargs="?", default=None)
+    p_resume.add_argument(
+        "--implementer", default=None, choices=IMPLEMENTERS,
+        help="rejected if it differs from the task's stored implementer",
+    )
+    p_resume.add_argument(
+        "--implementer-model", default=None,
+        help="rejected if it differs from the task's stored implementer model",
+    )
 
     p_inspect = sub.add_parser("inspect", help="inspect diff/review/summary for a task")
     p_inspect.add_argument("task_id", nargs="?", default=None)
