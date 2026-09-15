@@ -211,15 +211,65 @@ class ResourcesHubTests(unittest.TestCase):
             Path(__file__).resolve().parent.parent
             / "app/templates/public_guide_base.html"
         ).read_text()
+        # Footer text sits on a dark navy background: both the plain text and
+        # the anchors must compute to explicit white, never a dark gray/blue.
+        self.assertIn(
+            ".public-guide-content .guide-resources-link "
+            "{ margin:18px 0 0; text-align:center; font-size:14px; color:#ffffff; }",
+            base_template,
+        )
         self.assertIn(
             ".public-guide-content .guide-resources-link a "
-            "{ color:#0f2f7f; font-weight:800;",
+            "{ color:#ffffff; font-weight:800;",
             base_template,
         )
         self.assertIn(
             ".public-guide-content .guide-resources-link a:focus-visible "
             "{ outline:3px solid #2563eb;",
             base_template,
+        )
+        # Footer destinations are unchanged.
+        self.assertIn(
+            '<p class="guide-resources-link">Explore all <a href="/resources">lead generation resources</a>.</p>',
+            base_template,
+        )
+        self.assertIn(
+            '<p class="guide-resources-link">Found a problem? <a href="/contact">Contact us</a>.</p>',
+            base_template,
+        )
+
+    def test_good_lead_footer_links_are_explicitly_white(self):
+        # The standalone Good Lead template does not extend the shared base,
+        # so it carries its own scoped copy of the white footer treatment.
+        good_lead_template = (
+            Path(__file__).resolve().parent.parent
+            / "app/templates/good_lead.html"
+        ).read_text()
+        self.assertIn(
+            ".good-lead-content .guide-resources-link "
+            "{ margin:18px 0 0; text-align:center; font-size:14px; color:#ffffff; }",
+            good_lead_template,
+        )
+        self.assertIn(
+            ".good-lead-content .guide-resources-link a "
+            "{ color:#ffffff; font-weight:800;",
+            good_lead_template,
+        )
+        self.assertIn(
+            ".good-lead-content .guide-resources-link a:focus-visible "
+            "{ outline:3px solid #2563eb;",
+            good_lead_template,
+        )
+        # The dark-gray inline footer style is gone and the destination is
+        # unchanged.
+        self.assertNotIn("#475569", good_lead_template)
+        self.assertIn(
+            '<p class="guide-resources-link">',
+            good_lead_template,
+        )
+        self.assertIn(
+            'Explore all <a href="/resources">lead generation resources</a>.',
+            good_lead_template,
         )
 
     def test_each_card_has_one_stretched_title_link_and_consistent_cta(self):
