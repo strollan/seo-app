@@ -11,6 +11,13 @@
 .resource-card-cta { display:inline-block; margin-top:4px; color:#0f2f7f; font-size:15px; font-weight:800; }
 .resource-card:hover, .resource-card:focus-within { border-color:#93c5fd; box-shadow:0 10px 24px rgba(15,23,42,.12); transform:translateY(-2px); }
 .resource-card-title-link:focus-visible { outline:3px solid #2563eb; outline-offset:5px; border-radius:4px; }
+.resource-filters { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 14px; }
+.resource-filter { appearance:none; -webkit-appearance:none; max-width:100%; min-width:0; padding:10px 16px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#0f2f7f; font-size:14px; font-weight:800; line-height:1.2; white-space:normal; overflow-wrap:anywhere; cursor:pointer; transition:background .18s ease, border-color .18s ease, color .18s ease; }
+.resource-filter:hover { border-color:#93c5fd; background:#eff6ff; }
+.resource-filter[aria-pressed="true"] { border-color:#1e3a8a; background:#1e3a8a; color:#fff; }
+.resource-filter:focus-visible { outline:3px solid #2563eb; outline-offset:3px; }
+.resource-filter-status { margin:0 0 18px; font-size:14px; color:#475569; overflow-wrap:anywhere; }
+.resources-grid [hidden] { display:none !important; }
 @media (max-width:700px) {
   .resources-grid { grid-template-columns:1fr; }
   .resource-card { padding:18px; }
@@ -23,56 +30,64 @@
 <p class="lede"><strong>These guides cover how to find, review, and organize local prospects without relying on giant generic lead lists.</strong> Use them to choose a prospecting approach, research individual businesses, and understand what makes a business worth contacting.</p>
 
 <section class="section" aria-label="Lead generation guides">
-  <div class="resources-grid">
-    <article class="resource-card">
+  <div class="resource-filters" role="group" aria-label="Filter resources by topic" data-resource-filters>
+    <button type="button" class="resource-filter" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" class="resource-filter" data-filter="finding-leads" aria-pressed="false">Finding Leads</button>
+    <button type="button" class="resource-filter" data-filter="verification" aria-pressed="false">Verification</button>
+    <button type="button" class="resource-filter" data-filter="website-seo" aria-pressed="false">Website &amp; SEO</button>
+    <button type="button" class="resource-filter" data-filter="outreach-comparison" aria-pressed="false">Outreach &amp; Comparison</button>
+  </div>
+  <p class="resource-filter-status" id="resource-filter-status" aria-live="polite">Showing all 9 guides.</p>
+  <div class="resources-grid" id="resources-grid">
+    <article class="resource-card" data-topic="finding-leads">
       <img class="resource-card-image" src="/static/images/resources/what-makes-a-good-lead-card.webp" width="720" height="405" loading="lazy" alt="A local storefront connected to target fit, contactability, and website opportunity signals.">
       <h2><a class="resource-card-title-link" href="/what-makes-a-good-lead">What Makes a Good Lead?</a></h2>
       <p>Learn how market fit, contactability, and a specific reason for outreach separate a useful prospect from another name on a list.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="finding-leads">
       <img class="resource-card-image" src="/static/images/resources/how-to-find-local-leads-card.webp" width="720" height="405" loading="lazy" alt="A map search identifies local storefronts and organizes them into a verified shortlist.">
       <h2><a class="resource-card-title-link" href="/how-to-find-local-leads">How to Find Local Leads</a></h2>
       <p>Follow a practical process for choosing a market, finding reachable businesses, reviewing websites, and organizing research before outreach.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="finding-leads">
       <img class="resource-card-image" src="/static/images/resources/find-local-business-leads-card.webp" width="720" height="405" loading="lazy" alt="Local storefronts connected to search results, a map pin, and verified contact cards.">
       <h2><a class="resource-card-title-link" href="/how-to-find-local-business-leads-without-buying-a-lead-list">Find Local Business Leads Without Buying a List</a></h2>
       <p>Use a focused search-and-review workflow as an alternative to starting with a purchased lead list.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="verification">
       <img class="resource-card-image" src="/static/images/resources/verify-local-business-leads-before-outreach-card.webp" width="720" height="405" loading="lazy" alt="A local storefront verified through website, phone, email, and location checks.">
       <h2><a class="resource-card-title-link" href="/how-to-verify-local-business-leads-before-outreach">Verify Local Business Leads Before Outreach</a></h2>
       <p>Confirm business status, websites, contact details, and location before contacting a prospect.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="website-seo">
       <img class="resource-card-image" src="/static/images/resources/website-seo-opportunities-lead-list-card.webp" width="720" height="405" loading="lazy" alt="Local lead list dashboard showing website and SEO opportunities for local businesses.">
       <h2><a class="resource-card-title-link" href="/how-to-find-website-seo-opportunities-in-a-lead-list">Find Website and SEO Opportunities in a Lead List</a></h2>
       <p>Audit a local lead list step by step: check websites, search visibility, service gaps, and technical fundamentals, then prioritize what to verify.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="verification">
       <img class="resource-card-image" src="/static/images/resources/contactability-lead-check-card.webp" width="720" height="405" loading="lazy" alt="LeadMeLeads lead detail showing a local business's phone, email, website, and contact-page information, verified address, and notes on why the lead may be worth contacting.">
       <h2><a class="resource-card-title-link" href="/check-contactability-local-business-leads">Check for Contactability in Local Business Leads</a></h2>
       <p>Check websites, phone numbers, email and forms, map presence, and social profiles, then sort leads into confidence tiers before outreach.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="outreach-comparison">
       <img class="resource-card-image" src="/static/images/resources/compare-outranking-competitor-card.webp" width="720" height="405" loading="lazy" alt="Two competing websites shown side by side with a middle column listing differences between them.">
       <h2><a class="resource-card-title-link" href="/compare-prospect-website-to-outranking-competitor">Compare a Prospect's Website to the Competitor That Outranks It</a></h2>
       <p>Run a head-to-head comparison against the site winning the searches your prospect wants: what to measure, and how to present the gap without overclaiming.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="outreach-comparison">
       <img class="resource-card-image" src="/static/images/resources/local-lead-generation-without-giant-list-card.webp" width="720" height="405" loading="lazy" alt="A giant pile of stale lead records contrasts with a curated set of local businesses.">
       <h2><a class="resource-card-title-link" href="/local-lead-generation">Local Lead Generation Without the Giant Lead List</a></h2>
       <p>Compare inbound and outbound methods, referrals, directories, purchased lists, and hands-on business research.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
-    <article class="resource-card">
+    <article class="resource-card" data-topic="outreach-comparison">
       <img class="resource-card-image" src="/static/images/resources/lead-lists-vs-lead-finders-card.webp" width="720" height="405" loading="lazy" alt="A static lead list contrasts with a live map-based lead finder.">
       <h2><a class="resource-card-title-link" href="/lead-list-vs-lead-finder">Lead Lists vs. Lead Finders</a></h2>
       <p>Compare static lead lists and active prospect finding across freshness, targeting, contact data, context, and research time.</p>
@@ -80,6 +95,42 @@
     </article>
   </div>
 </section>
+<script>
+(function () {
+  "use strict";
+  var group = document.querySelector("[data-resource-filters]");
+  var grid = document.getElementById("resources-grid");
+  if (!group || !grid) { return; }
+  var buttons = Array.prototype.slice.call(group.querySelectorAll("[data-filter]"));
+  var cards = Array.prototype.slice.call(grid.querySelectorAll(".resource-card"));
+  var status = document.getElementById("resource-filter-status");
+  var total = cards.length;
+
+  function applyFilter(filter, label) {
+    var shown = 0;
+    cards.forEach(function (card) {
+      var matches = filter === "all" || card.getAttribute("data-topic") === filter;
+      card.hidden = !matches;
+      if (matches) { shown += 1; }
+    });
+    buttons.forEach(function (button) {
+      var pressed = button.getAttribute("data-filter") === filter;
+      button.setAttribute("aria-pressed", pressed ? "true" : "false");
+    });
+    if (status) {
+      status.textContent = filter === "all"
+        ? "Showing all " + total + " guides."
+        : "Showing " + shown + " " + (shown === 1 ? "guide" : "guides") + " in " + label + ".";
+    }
+  }
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      applyFilter(button.getAttribute("data-filter"), button.textContent.trim());
+    });
+  });
+})();
+</script>
 {% endblock %}
 {% block cta_heading %}Ready to research a local market?{% endblock %}
 {% block cta_copy %}Search by business type and location, then review each prospect before outreach.{% endblock %}

@@ -146,6 +146,28 @@ CARD_TITLES_AND_DESCRIPTIONS = (
     ("Lead Lists vs. Lead Finders", "Compare static lead lists and active prospect finding across freshness, targeting, contact data, context, and research time."),
 )
 
+CARD_MARKUP_RE = r'<article[^>]*class="resource-card"[^>]*>(.*?)</article>'
+CARD_TAG_RE = r'<article[^>]*class="resource-card"[^>]*>'
+
+TOPIC_FILTERS = (
+    ("all", "All"),
+    ("finding-leads", "Finding Leads"),
+    ("verification", "Verification"),
+    ("website-seo", "Website & SEO"),
+    ("outreach-comparison", "Outreach & Comparison"),
+)
+CARD_TOPICS = {
+    "/what-makes-a-good-lead": "finding-leads",
+    "/how-to-find-local-leads": "finding-leads",
+    "/how-to-find-local-business-leads-without-buying-a-lead-list": "finding-leads",
+    "/how-to-verify-local-business-leads-before-outreach": "verification",
+    "/how-to-find-website-seo-opportunities-in-a-lead-list": "website-seo",
+    "/check-contactability-local-business-leads": "verification",
+    "/compare-prospect-website-to-outranking-competitor": "outreach-comparison",
+    "/local-lead-generation": "outreach-comparison",
+    "/lead-list-vs-lead-finder": "outreach-comparison",
+}
+
 
 class ResourcesHubTests(unittest.TestCase):
     @classmethod
@@ -273,7 +295,7 @@ class ResourcesHubTests(unittest.TestCase):
         )
 
     def test_each_card_has_one_stretched_title_link_and_consistent_cta(self):
-        cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
+        cards = re.findall(r'<article[^>]*class="resource-card"[^>]*>(.*?)</article>', self.body, re.DOTALL)
         self.assertEqual(len(cards), len(GUIDES))
         for card, guide in zip(cards, GUIDES):
             with self.subTest(guide=guide):
@@ -292,7 +314,7 @@ class ResourcesHubTests(unittest.TestCase):
         self.assertIn('.resource-card-title-link:focus-visible', self.body)
 
     def test_suitable_guide_heroes_map_to_sized_card_images_and_resolve(self):
-        cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
+        cards = re.findall(r'<article[^>]*class="resource-card"[^>]*>(.*?)</article>', self.body, re.DOTALL)
         self.assertEqual(len(CARD_IMAGES), 9)
         for card, guide in zip(cards, GUIDES):
             image_path, alt = CARD_IMAGES.get(guide, (None, None))
@@ -369,7 +391,7 @@ class ResourcesHubTests(unittest.TestCase):
                 self.assertNotIn("data:image", body)
 
     def test_guides_without_heroes_have_no_broken_images_and_card_copy_order_remains_unchanged(self):
-        cards = re.findall(r'<article class="resource-card">(.*?)</article>', self.body, re.DOTALL)
+        cards = re.findall(r'<article[^>]*class="resource-card"[^>]*>(.*?)</article>', self.body, re.DOTALL)
         self.assertEqual(len(cards), 9)
         for card, (title, description), guide in zip(cards, CARD_TITLES_AND_DESCRIPTIONS, GUIDES):
             with self.subTest(guide=guide):
@@ -395,6 +417,87 @@ class ResourcesHubTests(unittest.TestCase):
         self.assertIn(".resources-grid { grid-template-columns:1fr; }", self.body)
         self.assertIn("min-width:0", self.body)
         self.assertIn("overflow-wrap:anywhere", self.body)
+        self.assertNotRegex(self.body, r'(?<!max-)(?<!min-)width:\s*[4-9]\d{2,}px')
+
+    def test_topic_filter_controls_are_accessible_buttons(self):
+        self.assertEqual(self.body.count('class="resource-filter"'), len(TOPIC_FILTERS))
+        buttons = re.findall(
+            r'<button[^>]*class="resource-filter"[^>]*aria-pressed="(true|false)"[^>]*>(.*?)</button>',
+            self.body,
+            re.DOTALL,
+        )
+        self.assertEqual(len(buttons), len(TOPIC_FILTERS))
+        self.assertEqual([state for state, _ in buttons].count("true"), 1)
+        self.assertEqual(buttons[0][0], "true")
+        for (value, label), (state, rendered) in zip(TOPIC_FILTERS, buttons):
+            with self.subTest(filter=value):
+                self.assertEqual(rendered, label.replace("&", "&amp;"))
+                self.assertEqual(state, "true" if value == "all" else "false")
+                self.assertIn(
+                    f'data-filter="{value}"',
+                    self.body,
+                )
+        self.assertEqual(self.body.count('type="button" class="resource-filter"'), len(TOPIC_FILTERS))
+        self.assertIn('role="group"', self.body)
+        self.assertIn('aria-label="Filter resources by topic"', self.body)
+
+    def test_topic_filter_controls_have_active_and_focus_styling(self):
+        self.assertIn('.resource-filter[aria-pressed="true"]', self.body)
+        self.assertIn(".resource-filter:focus-visible", self.body)
+        self.assertIn("outline:3px solid #2563eb", self.body)
+
+    def test_visible_live_result_count(self):
+        self.assertIn('class="resource-filter-status"', self.body)
+        self.assertIn('id="resource-filter-status"', self.body)
+        self.assertIn('aria-live="polite"', self.body)
+        self.assertIn("Showing all 9 guides.", self.body)
+
+    def test_every_card_classified_into_exactly_one_published_topic(self):
+        card_tags = re.findall(CARD_TAG_RE, self.body)
+        self.assertEqual(len(card_tags), len(GUIDES))
+        topics = re.findall(r'<article[^>]*class="resource-card"[^>]*data-topic="([^"]+)"', self.body)
+        self.assertEqual(len(topics), len(GUIDES))
+        published = {value for value, _ in TOPIC_FILTERS if value != "all"}
+        for topic, guide in zip(topics, GUIDES):
+            with self.subTest(guide=guide):
+                self.assertIn(topic, published)
+                self.assertEqual(topic, CARD_TOPICS[guide])
+        for value in published:
+            self.assertGreaterEqual(topics.count(value), 1)
+
+    def test_cards_are_server_rendered_and_initially_visible_for_no_js(self):
+        card_tags = re.findall(CARD_TAG_RE, self.body)
+        self.assertEqual(len(card_tags), len(GUIDES))
+        for tag in card_tags:
+            self.assertNotIn("hidden", tag)
+            self.assertNotIn("display:none", tag)
+        for guide in GUIDES:
+            self.assertIn(f'href="{guide}"', self.body)
+        # Every topic token used by the buttons must match a card data-topic,
+        # and every card token must have a matching button.
+        button_tokens = {value for value, _ in TOPIC_FILTERS if value != "all"}
+        card_tokens = set(CARD_TOPICS.values())
+        self.assertEqual(button_tokens, card_tokens)
+
+    def test_filter_script_uses_safe_dom_apis_only(self):
+        template = (
+            Path(__file__).resolve().parent.parent / "app/templates/resources.html"
+        ).read_text()
+        for unsafe in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval("):
+            with self.subTest(api=unsafe):
+                self.assertNotIn(unsafe, template)
+        self.assertIn("textContent", template)
+        self.assertIn(".hidden =", template)
+        self.assertIn("setAttribute", template)
+        self.assertIn("addEventListener", template)
+        self.assertIn("getAttribute", template)
+
+    def test_filter_controls_wrap_without_horizontal_overflow(self):
+        self.assertIn(".resource-filters { display:flex; flex-wrap:wrap;", self.body)
+        self.assertIn("max-width:100%", self.body)
+        self.assertIn("min-width:0", self.body)
+        self.assertIn("overflow-wrap:anywhere", self.body)
+        self.assertIn(".resources-grid [hidden] { display:none !important; }", self.body)
         self.assertNotRegex(self.body, r'(?<!max-)(?<!min-)width:\s*[4-9]\d{2,}px')
 
 
