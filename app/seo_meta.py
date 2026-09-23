@@ -37,6 +37,7 @@ PUBLIC_INDEXABLE_PATHS = (
     "/check-contactability-local-business-leads",
     "/compare-prospect-website-to-outranking-competitor",
     "/resources",
+    "/privacy-policy",
 )
 
 # Static assets are served from here and must never be noindexed or
@@ -222,6 +223,15 @@ RESOURCES_PAGE = SeoPage(
         "business prospects for thoughtful outreach."
     ),
     canonical_path="/resources",
+)
+
+PRIVACY_POLICY_PAGE = SeoPage(
+    title="Privacy Policy | LeadMeLeads",
+    description=(
+        "Read the LeadMeLeads privacy policy, including how Slayer Status "
+        "uses WhatsApp Business Platform information."
+    ),
+    canonical_path="/privacy-policy",
 )
 
 # Single source of truth for the /what-makes-a-good-lead FAQ: the same

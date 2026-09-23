@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+{{ seo_meta_html | safe }}
+<link rel="icon" href="/static/favicon.ico?v=2">
+<link rel="stylesheet" href="/static/css/styles.css?v=2026-09-14-canonical-header">
+<style>
+* { box-sizing: border-box; }
+.privacy-policy-content { max-width: 980px; margin: 0 auto; }
+.privacy-policy-card { background: #fff; color: #0f172a; border: 1px solid #dbe4f0; border-radius: 20px; box-shadow: 0 10px 28px rgba(15,23,42,.07); overflow: hidden; }
+.privacy-policy-intro, .privacy-policy-section { padding: 30px 34px; }
+.privacy-policy-intro { background: #eff6ff; border-bottom: 1px solid #dbe4f0; }
+.privacy-policy-section { border-top: 1px solid #e5e7eb; }
+.privacy-policy-intro + .privacy-policy-section { border-top: 0; }
+.privacy-policy-content h2 { margin: 0 0 14px; color: #0f172a; font-size: 24px; font-weight: 800; letter-spacing: -.01em; }
+.privacy-policy-content p, .privacy-policy-content li { color: #1e293b; font-size: 16px; line-height: 1.7; overflow-wrap: anywhere; }
+.privacy-policy-content p { margin: 0 0 14px; }
+.privacy-policy-content p:last-child { margin-bottom: 0; }
+.privacy-policy-content ul { margin: 10px 0 0; padding-left: 24px; }
+.privacy-policy-content li + li { margin-top: 8px; }
+.privacy-policy-content a { color: #1e3a8a; font-weight: 700; }
+.privacy-policy-footer { margin: 28px 0 8px; text-align: center; color: rgba(219,234,254,.78); font-size: 14px; }
+.privacy-policy-footer a { color: #dbeafe; font-weight: 700; }
+.privacy-policy-content a:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; border-radius: 3px; }
+@media (max-width: 700px) {
+  .privacy-policy-intro, .privacy-policy-section { padding: 22px 18px; }
+  .privacy-policy-content h2 { font-size: 20px; }
+}
+@media (max-width: 480px) {
+  .privacy-policy-intro, .privacy-policy-section { padding: 16px 14px; }
+  .privacy-policy-content ul { padding-left: 20px; }
+}
+</style>
+</head>
+<body class="compare-page privacy-policy-page">
+<div class="container">
+  {% set page_h1 %}Privacy Policy{% endset %}
+  {% set page_sub %}How LeadMeLeads handles information used to provide its services.{% endset %}
+  {% include "_public_header.html" %}
+  <main class="privacy-policy-content">
+    <article class="privacy-policy-card">
+      <section class="privacy-policy-intro">
+        <p><strong>Last updated: September 24, 2026</strong></p>
+        <p>LeadMeLeads provides tools for local business research, website comparison, and related internal workflow utilities.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Information we may process</h2>
+        <p>When you use LeadMeLeads, we may process information you provide directly, such as account details, search inputs, website URLs, and other information needed to provide the requested service.</p>
+        <p>LeadMeLeads may also collect publicly available business and website information as part of its research tools.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>WhatsApp and Slayer Status</h2>
+        <p>LeadMeLeads operates an internal utility called Slayer Status that may use the WhatsApp Business Platform to receive status requests and send workflow-status responses.</p>
+        <p>When this integration is used, Meta may provide message-related information such as the sender's WhatsApp identifier, message content, message timestamps, and delivery-status information.</p>
+        <p>This information is used only to process the requested status command, deliver the response, troubleshoot the integration, and maintain service reliability.</p>
+        <p>We do not sell WhatsApp message data or use it for advertising.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>How information is used</h2>
+        <p>Information may be used to:</p>
+        <ul>
+          <li>provide requested features and services;</li>
+          <li>operate and maintain the application;</li>
+          <li>troubleshoot errors and improve reliability;</li>
+          <li>prevent abuse or misuse;</li>
+          <li>maintain account, workflow, and operational records where necessary.</li>
+        </ul>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Third-party services</h2>
+        <p>LeadMeLeads may rely on third-party service providers to operate certain features. These providers may process information according to their own privacy policies.</p>
+        <p>The Slayer Status WhatsApp integration uses Meta's WhatsApp Business Platform.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Data retention</h2>
+        <p>Information is retained only for as long as reasonably necessary for the purposes described above, operational requirements, security, troubleshooting, or legal obligations.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Data deletion requests</h2>
+        <p>To request deletion of personal information associated with LeadMeLeads or Slayer Status, contact:</p>
+        <p><a href="mailto:leadmeleads@gmail.com">leadmeleads@gmail.com</a></p>
+        <p>Include enough information for us to identify the relevant account or data.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Security</h2>
+        <p>We use reasonable technical and organizational measures intended to protect information against unauthorized access, loss, misuse, or alteration.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Children</h2>
+        <p>LeadMeLeads and Slayer Status are not intended for children under 13.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Changes to this policy</h2>
+        <p>This Privacy Policy may be updated periodically. The "Last updated" date above will reflect the latest revision.</p>
+      </section>
+
+      <section class="privacy-policy-section">
+        <h2>Contact</h2>
+        <p>For privacy questions or data deletion requests:</p>
+        <p><a href="mailto:leadmeleads@gmail.com">leadmeleads@gmail.com</a></p>
+      </section>
+    </article>
+    <footer class="privacy-policy-footer">LeadMeLeads &middot; <a href="/privacy-policy" aria-current="page">Privacy Policy</a></footer>
+  </main>
+</div>
+<script src="/static/js/mobile-nav.js" defer></script>
+</body>
+</html>
