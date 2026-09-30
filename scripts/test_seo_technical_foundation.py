@@ -23,6 +23,7 @@ import html
 import re
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -580,39 +581,32 @@ class SitemapXmlTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("xml", response.headers.get("content-type", ""))
 
-    def test_sitemap_contains_exactly_the_intended_pages(self):
+    def test_sitemap_contains_all_required_hand_built_pages(self):
         body = self.client.get("/sitemap.xml").text
         urls = re.findall(r"<loc>([^<]+)</loc>", body)
-        self.assertEqual(
-            set(urls),
-            {
-                "https://leadmeleads.com/",
-                "https://leadmeleads.com/lead-bot",
-                "https://leadmeleads.com/compare",
-                "https://leadmeleads.com/what-makes-a-good-lead",
-                "https://leadmeleads.com/how-to-find-local-leads",
-                "https://leadmeleads.com/how-to-find-local-business-leads-without-buying-a-lead-list",
-                "https://leadmeleads.com/how-to-verify-local-business-leads-before-outreach",
-                "https://leadmeleads.com/local-lead-generation",
-                "https://leadmeleads.com/lead-list-vs-lead-finder",
-                "https://leadmeleads.com/how-to-find-website-seo-opportunities-in-a-lead-list",
-                "https://leadmeleads.com/check-contactability-local-business-leads",
-                "https://leadmeleads.com/compare-prospect-website-to-outranking-competitor",
-                "https://leadmeleads.com/resources",
-            },
+        required = {seo_meta.canonical_url(path) for path in seo_meta.PUBLIC_INDEXABLE_PATHS}
+        self.assertTrue(required.issubset(set(urls)))
+
+    def test_sitemap_includes_a_validated_imported_guide(self):
+        imported_path = "/imported-guide-sitemap-test"
+        with mock.patch("app.imported_guides.public_paths", return_value=(imported_path,)):
+            body = self.client.get("/sitemap.xml").text
+        urls = set(re.findall(r"<loc>([^<]+)</loc>", body))
+        self.assertIn(seo_meta.canonical_url(imported_path), urls)
+        self.assertTrue(
+            {seo_meta.canonical_url(path) for path in seo_meta.PUBLIC_INDEXABLE_PATHS}.issubset(urls)
         )
-        self.assertEqual(len(urls), 13)
 
     def test_sitemap_has_no_fabricated_lastmod(self):
         body = self.client.get("/sitemap.xml").text
         self.assertNotIn("<lastmod>", body)
 
-    def test_sitemap_urls_match_public_indexable_paths_constant(self):
+    def test_sitemap_urls_match_all_public_indexable_paths(self):
         """Locks sitemap.xml to the same single source of truth used by
         the noindex middleware, so they can never silently drift apart."""
         body = self.client.get("/sitemap.xml").text
         urls = set(re.findall(r"<loc>([^<]+)</loc>", body))
-        expected = {seo_meta.canonical_url(path) for path in seo_meta.PUBLIC_INDEXABLE_PATHS}
+        expected = {seo_meta.canonical_url(path) for path in seo_meta.public_indexable_paths()}
         self.assertEqual(urls, expected)
 
     def test_sitemap_has_no_noindex_header(self):

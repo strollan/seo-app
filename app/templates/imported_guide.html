@@ -1,0 +1,22 @@
+{% extends "public_guide_base.html" %}
+{% block h1 %}{{ guide.title }}{% endblock %}
+{% block subtitle %}{{ guide.dek }}{% endblock %}
+{% block content %}
+<figure class="article-hero imported-guide-hero">
+  <img src="{{ guide.hero_image.url }}" loading="eager" fetchpriority="high" alt="{{ guide.hero_image.alt }}">
+</figure>
+{% for paragraph in guide.intro_paragraphs | default([]) %}<p>{{ paragraph }}</p>{% endfor %}
+{% for section in guide.body_sections %}
+{% set section_index = loop.index0 %}
+<section class="section">
+  <h2>{{ section.heading }}</h2>
+  {% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+  {% if section.bullets %}<ul>{% for bullet in section.bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endif %}
+  {% for image in guide.inline_images if image.placement_after_section == section_index %}
+  <figure class="article-figure"><img src="{{ image.url }}" loading="lazy" alt="{{ image.alt }}"></figure>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endblock %}
+{% block cta_heading %}Research your next local market.{% endblock %}
+{% block cta_copy %}Find businesses by keyword and location, then review the details before outreach.{% endblock %}

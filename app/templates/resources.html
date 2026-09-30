@@ -37,7 +37,7 @@
     <button type="button" class="resource-filter" data-filter="website-seo" aria-pressed="false">Website &amp; SEO</button>
     <button type="button" class="resource-filter" data-filter="outreach-comparison" aria-pressed="false">Outreach &amp; Comparison</button>
   </div>
-  <p class="resource-filter-status" id="resource-filter-status" aria-live="polite">Showing all 9 guides.</p>
+  <p class="resource-filter-status" id="resource-filter-status" aria-live="polite">Showing all {{ 9 + imported_guides|length }} guides.</p>
   <div class="resources-grid" id="resources-grid">
     <article class="resource-card" data-topic="finding-leads">
       <img class="resource-card-image" src="/static/images/resources/what-makes-a-good-lead-card.webp" width="720" height="405" loading="lazy" alt="A local storefront connected to target fit, contactability, and website opportunity signals.">
@@ -93,6 +93,14 @@
       <p>Compare static lead lists and active prospect finding across freshness, targeting, contact data, context, and research time.</p>
       <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
     </article>
+    {% for guide in imported_guides %}
+    <article class="resource-card" data-topic="{{ guide.resource_card.topic }}">
+      <img class="resource-card-image" src="{{ guide.hero_image.url }}" loading="lazy" alt="{{ guide.hero_image.alt }}">
+      <h2><a class="resource-card-title-link" href="/{{ guide.slug }}">{{ guide.title }}</a></h2>
+      <p>{{ guide.resource_card.summary }}</p>
+      <span class="resource-card-cta" aria-hidden="true">Read guide →</span>
+    </article>
+    {% endfor %}
   </div>
 </section>
 <script>

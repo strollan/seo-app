@@ -50,7 +50,7 @@ from agents.lead_contact_quality_agent import (
 from app.agent_service import run_agent_summary
 from app.competitor_agent import find_competitors
 from agents.seo_agent import run_seo_agent
-from app import seo_meta
+from app import imported_guides, seo_meta
 
 app = FastAPI()
 
@@ -2549,6 +2549,7 @@ async def resources_page(request: Request):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.RESOURCES_PAGE),
+            "imported_guides": list(imported_guides.load_imported_guides().values()),
         },
     )
 
@@ -16901,3 +16902,37 @@ def leadbot_delete_export(filename: str, request: AuthRequest, csrf_token: str =
 
     print(f"LEADBOT DELETE EXPORT deleted={deleted}", flush=True)
     return AuthRedirectResponse(url="/lead-bot?deleted=1", status_code=303)
+
+
+# Keep this catch-all single-segment route last. All established application
+# routes above retain precedence; only a validated imported-guide slug can
+# render here.
+@app.get("/{slug}", response_class=HTMLResponse)
+async def imported_guide_page(slug: str, request: Request):
+    guide = imported_guides.load_imported_guides().get(slug)
+    if guide is None:
+        raise StarletteHTTPException(status_code=404)
+    page = seo_meta.SeoPage(
+        title=guide["seo_title"],
+        description=guide["meta_description"],
+        canonical_path=f"/{slug}",
+        og_type="article",
+    )
+    return templates.TemplateResponse(
+        request,
+        "imported_guide.html",
+        {
+            "request": request,
+            "logo_url": safe_logo_url(),
+            "user": auth_current_user(request),
+            "guide": guide,
+            "faq": [],
+            "seo_meta_html": seo_meta.render_seo_meta_html(page),
+            "article_jsonld_html": seo_meta.render_article_jsonld(
+                page,
+                modified_at=guide["modified_at"],
+                image_url=seo_meta.canonical_url(guide["hero_image"]["url"]),
+            ),
+            "faq_jsonld_html": "",
+        },
+    )

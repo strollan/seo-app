@@ -18,6 +18,10 @@ from dataclasses import dataclass
 
 SITE_NAME = "LeadMeLeads"
 SITE_BASE_URL = "https://leadmeleads.com"
+# These are site-owned editorial facts, rather than package-template values.
+# Keep the publisher logo in sync with the established structured metadata.
+SITE_AUTHOR = "LeadMeLeads"
+PUBLISHER_LOGO_URL = f"{SITE_BASE_URL}/static/logo.png"
 
 # The only routes meant to be indexed. robots.txt, sitemap.xml, and the
 # noindex response middleware (see app/main.py) all key off this set --
@@ -462,27 +466,44 @@ def render_webapplication_jsonld(name: str, description: str, canonical_path: st
     })
 
 
-def render_article_jsonld(page: SeoPage) -> str:
+def render_article_jsonld(
+    page: SeoPage,
+    *,
+    author: str = SITE_AUTHOR,
+    modified_at: str | None = None,
+    published_at: str | None = None,
+    image_url: str | None = None,
+) -> str:
     """Minimal Article JSON-LD for a guide/resource page. Only fields
     directly backed by visible on-page content (headline, description,
-    canonical URL, publisher) -- deliberately omits datePublished /
-    dateModified since no publish date is shown anywhere on the page,
-    and fabricating one would violate the "accurate JSON-LD only" rule."""
-    return _jsonld_script({
+    canonical URL, publisher). An imported local guide may have a record
+    modification timestamp, but never receives datePublished until a real
+    public-publication record exists."""
+    data = {
         "@context": "https://schema.org",
         "@type": "Article",
         "headline": page.title,
         "description": page.description,
         "mainEntityOfPage": canonical_url(page.canonical_path),
+        "author": {"@type": "Organization", "name": author},
         "publisher": {
             "@type": "Organization",
             "name": SITE_NAME,
             "logo": {
                 "@type": "ImageObject",
-                "url": f"{SITE_BASE_URL}/static/logo.png",
+                "url": PUBLISHER_LOGO_URL,
             },
         },
-    })
+    }
+    if image_url:
+        data["image"] = image_url
+    if modified_at:
+        data["dateModified"] = modified_at
+    # A local import is explicitly not a publication event. Callers must pass
+    # a confirmed public timestamp to include this property.
+    if published_at:
+        data["datePublished"] = published_at
+    return _jsonld_script(data)
 
 
 def render_not_found_html() -> str:
@@ -551,13 +572,19 @@ def should_apply_noindex_header(path: str) -> bool:
     files themselves. Deny-list-based exclusions rather than an
     allow-list of private routes, so a new private route added later is
     noindexed by default."""
-    if path in PUBLIC_INDEXABLE_PATHS:
+    if path in public_indexable_paths():
         return False
     if path in CRAWLER_CONTROL_PATHS:
         return False
     if path.startswith(STATIC_ASSET_PREFIX):
         return False
     return True
+
+
+def public_indexable_paths() -> tuple[str, ...]:
+    """Static public pages plus validated locally imported guide records."""
+    from app import imported_guides
+    return (*PUBLIC_INDEXABLE_PATHS, *imported_guides.public_paths())
 
 
 def render_robots_txt() -> str:
@@ -587,7 +614,7 @@ def render_robots_txt() -> str:
 def render_sitemap_xml() -> str:
     urls = "\n".join(
         f"<url><loc>{html.escape(canonical_url(path))}</loc></url>"
-        for path in PUBLIC_INDEXABLE_PATHS
+        for path in public_indexable_paths()
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

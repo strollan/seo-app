@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "slug": "spot-inconsistent-business-details-lead-research",
+  "title": "How to Spot Inconsistent Business Details During Lead Research",
+  "dek": "Learn how to spot inconsistent business details during lead research: name, address, and phone mismatches, source weighting, and when to flag a lead.",
+  "intro_paragraphs": [
+    "A lead record is rarely wrong all at once. Usually it is right in most fields and stale in one or two, which is exactly why inconsistency is easy to miss. Spotting inconsistent business details during lead research is not about catching anyone in a lie. It is about noticing when the pieces do not fit together, and then deciding whether the mismatch changes how you should treat that lead."
+  ],
+  "body_sections": [
+    {
+      "heading": "Why Business Details Drift Out of Sync",
+      "paragraphs": [
+        "Most discrepancies have ordinary causes. Understanding them keeps you from treating normal record drift as a red flag.",
+        "Different sources update on different schedules. A company changes its phone number and updates the website the same day, but the directory listing, the industry association page, and the data provider's record may lag for months. Nobody is being deceptive. The records are simply on different clocks.",
+        "Renames and rebrands create a second layer. After a name change, the legal entity may keep the old registered name for years while the trading name appears everywhere else. Acquisitions behave the same way: the acquired company's brand lives on in directories long after the entity behind it has changed.",
+        "Multi-location businesses add structural ambiguity. One company can legitimately have a registered agent address, a billing address, a warehouse address, and three storefronts, all connected to the same phone number. Each of those addresses is real. They just answer different questions.",
+        "Finally, aggregators can copy from each other. A single error introduced in one feed can reappear across a dozen sites, which makes a wrong detail look well corroborated when it is actually one bad source wearing many hats."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Recognizing Name and Address Mismatches",
+      "paragraphs": [
+        "Start with the fields that often carry the most identifying weight: name and address. These are where genuine entity confusion often shows up first."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Name variations that are usually benign",
+      "paragraphs": [
+        "Most name differences are cosmetic. These are safe to normalize:",
+        "The test is whether the distinctive part survives. \"Northgate Dental\" and \"Northgate Dental Group\" describe the same practice. \"Northgate Dental\" and \"North Point Dental\" do not. When the distinguishing word changes, you are probably looking at two different businesses, not one business recorded twice."
+      ],
+      "bullets": [
+        "Suffix formatting: \"Inc.\" versus \"Incorporated,\" \"LLC\" versus \"L.L.C.\"",
+        "Legal name versus trade name, where the operating brand differs from the registered entity",
+        "Punctuation and connectors: apostrophes, ampersands, and the word \"and\"",
+        "Word order in descriptive names, such as \"Smith & Sons Plumbing\" versus \"Plumbing by Smith & Sons\""
+      ]
+    },
+    {
+      "heading": "Address discrepancies worth a second look",
+      "paragraphs": [
+        "Address mismatches often deserve closer inspection than name mismatches because a specific address is harder to duplicate by accident. This is a practical heuristic rather than a rule, since some address differences are formatting and some name differences matter a great deal.",
+        "A suite number difference at the same street address is usually data entry, but in a multi-tenant building it can also mean two separate tenants. A ZIP code that does not belong to the listed city may suggest that one record is stale, but it can also reflect postal boundary quirks, unincorporated areas, mail routing, or a data-entry error. Treat it as a prompt to check, not as proof. A PO box or mail drop in place of a street address is normal for a registered agent and unusual for a business claiming a retail counter.",
+        "Pay attention to how the fields cohere as a set. If the street number, street name, city, and postal code all describe the same place, one odd field is likely a typo. If two or three of them point somewhere else, you may be holding records for two different entities. That pattern often matters more than any single field, but it still needs context."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Phone numbers that point somewhere else",
+      "paragraphs": [
+        "Phone mismatches are often weaker evidence of an entity mismatch than address mismatches in many lead-verification workflows, but they can be useful as a tiebreaker. This depends on the field, the business type, and how the records were collected.",
+        "Area code differences alone mean little. Mobile numbers, VoIP services, and remote teams all break the assumption that a local number implies a local office. A toll-free number on one listing and a local number on another is often just two published lines for the same company. Call tracking numbers can complicate this, because they may rotate and end up attached to whichever listing was scraped most recently.",
+        "One signal worth acting on is a number that now belongs to a different business entirely, or a number that appears across several unrelated companies in your records. That points to shared answering services or a recycled number, and either one changes how you should open a conversation."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Web and registry signals",
+      "paragraphs": [
+        "The company's own web presence can be a useful place to check current operating details without making contact. It is often the most authoritative available source for how the business presents its current phone, hours, services, and location information, but freshness varies, and a website is not necessarily authoritative for legal status or registered entity facts.",
+        "Look for a domain that does not match the brand name on the listing, social profiles linking to a different domain, or a site whose content has clearly stopped changing. A registry record adds a different kind of evidence: legal entity name, entity status, formation date, and registered agent. What it can prove depends on the jurisdiction and the record's update cadence. For regulated trades, a licensing board record may confirm whether the license number on a listing belongs to that business, where the board publishes searchable records."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Using Inconsistencies to Verify Lead Accuracy",
+      "paragraphs": [
+        "Once you have found a mismatch, the goal is not to collect more mismatches. It is to decide whether the lead is what it claims to be."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Classify the discrepancy first",
+      "paragraphs": [
+        "Sort what you found into three buckets.",
+        "Cosmetic discrepancies are formatting differences with no effect on identity. Structural discrepancies are explained by how businesses actually operate, such as a legal name that differs from the brand, or a registered agent address that differs from the operating address. Contradictory discrepancies are the ones that cannot both be true for the same field at the same time, such as two different cities for a single claimed office, or a phone number that now reaches an unrelated company.",
+        "A dissolved entity still marketing actively is not automatically a contradiction. Status terms vary by jurisdiction, and some businesses continue limited activity during wind-down or administrative lag. Treat that pattern as a prompt to verify status and activity, not as proof by itself.",
+        "Only the third bucket is a red flag by itself. The second bucket is a prompt to verify. The first bucket can be normalized and forgotten."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Weight sources by field, authority, and freshness",
+      "paragraphs": [
+        "Treat sources as a hierarchy rather than a pile, but judge each source by the field you are verifying and the jurisdiction involved.",
+        "State business filings may be authoritative for legal entity facts in that state, but update cadence varies, and they may not reflect trade names. Licensing boards may be authoritative for license status where they publish searchable records, but coverage and update frequency vary. A company's own site and published documents can be the most current available source for operating details such as phone, hours, services, and locations, but not necessarily for legal status. Information confirmed directly with the business can clarify how the business describes itself, though it is not independent evidence.",
+        "Secondary sources include map listings and industry directories, which may be current but are not authoritative. Tertiary sources include bulk data providers and scraped aggregators, which are fast and cheap but can be stale.",
+        "When sources disagree, prefer the source that is most authoritative for the specific field and current enough for the decision, rather than averaging or assuming repetition means accuracy."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Match on a composite, not a single field",
+      "paragraphs": [
+        "No single field is strong enough on its own. As a practical heuristic, compare at least three identifiers together: legal or trade name, street address, phone number, domain, or license number. Weight each identifier by what it is good for and how current it is.",
+        "When two of three match and one is off, that often looks like ordinary drift, but treat it as a prompt to check rather than a conclusion. When one matches and two are off, stop and consider that you may have merged two entities with similar names into a single lead record, or split one entity across two records."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Confirm with a direct check",
+      "paragraphs": [
+        "Before you act on a discrepancy, verify it at the narrowest point available. Load the contact page on the company's own site and compare it to the listing. Look up the registry record for the legal name. If the gap still matters after that, a brief call to the main number can be a fast way to confirm the name the business uses on its own invoices, though speed and reliability depend on reachability and on whether the listed number is accurate. A call is a small cost compared to building a sequence around a lead whose details do not resolve."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Decide: qualify, flag, or discard",
+      "paragraphs": [
+        "End every review with one of three outcomes.",
+        "Qualify means the discrepancies are cosmetic or structural and you can explain them. Flag means the mismatch is unresolved but not disqualifying, so you note the open question in the record and proceed with caution. Discard or deprioritize means the details contradict each other in a way that suggests the lead is not what it appears to be.",
+        "Record the outcome and the reason. The next person to touch that lead should not have to repeat the same research."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Patterns That Cause False Alarms",
+      "paragraphs": [
+        "Some mismatches look alarming and are not. A mid-year rebrand leaves old and new names running in parallel for a while. Franchise systems impose naming rules that make independent locations look inconsistent with each other. Registered agent services place hundreds of businesses at one address. Companies with several locations often route everything through a single call center number. A recent move leaves a trail of old addresses that no one has cleaned up.",
+        "None of these is a reason to disqualify a lead, and none of them is proof that a lead is legitimate either. They are context that tells you how much weight a discrepancy deserves. Treating an unexplained mismatch as evidence of fraud is the same error as treating a clean record as proof of a good fit."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Keeping a Verification Trail",
+      "paragraphs": [
+        "Consistency work only holds up if it is documented. For each field you check, note the source and the date. Mark fields you could not verify as unverified rather than leaving them blank, so the gap is visible. Set a re-check interval for fields that change often, such as phone numbers, addresses, and contact names. Agree on what \"verified\" means across your team, because a field confirmed by the most authoritative available source for that field is not the same as one copied from a directory.",
+        "A short paper trail also makes handoffs cheaper. When someone picks up the lead later, they can see which details were confirmed, which were assumed, and which are still open."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "A Quick First Pass Checklist",
+      "paragraphs": [
+        "For a broader view of how this fits into researching a prospect before contact, see How to Research a Local Business Before Sales Outreach."
+      ],
+      "bullets": [
+        "Compare the legal name, trade name, and any former names",
+        "Check that street number, street name, city, and postal code describe the same place",
+        "Confirm the phone number still belongs to the company",
+        "Compare the domain on the listing with the domain on the company's social profiles",
+        "Check entity status and, where relevant, license status",
+        "Compare at least three identifiers, weighting by field and freshness, before treating two records as the same business",
+        "Log the outcome as qualify, flag, or discard"
+      ]
+    },
+    {
+      "heading": "Consistency Is a Signal, Not a Verdict",
+      "paragraphs": [
+        "Inconsistent business details are a prompt to look closer, not a conclusion. Some mismatches are noise from sources updating at different speeds. Some are structural facts about how a business operates. A few are genuine contradictions that tell you the record in front of you cannot be trusted. Sorting one from the other, using the most authoritative available source for each field as your reference point, and writing down what you found is what keeps lead research accurate enough to act on."
+      ],
+      "bullets": []
+    }
+  ],
+  "seo_title": "How to Spot Inconsistent Business Details During Lead Research",
+  "meta_description": "Learn how to spot inconsistent business details during lead research: name, address, and phone mismatches, source weighting, and when to flag a lead.",
+  "hero_image": {
+    "alt": "Two business listing records showing mismatched address and phone details side by side",
+    "url": "/static/images/resources/imported/spot-inconsistent-business-details-lead-research/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Diagram ranking business data sources from primary records to tertiary aggregators",
+      "placement_after_section": 0,
+      "url": "/static/images/resources/imported/spot-inconsistent-business-details-lead-research/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "Learn how to spot inconsistent business details during lead research: name, address, and phone mismatches, source weighting, and when to flag a lead."
+  }
+}
