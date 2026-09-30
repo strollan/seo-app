@@ -2469,16 +2469,6 @@ async def find_local_leads_page(request: Request):
     )
 
 
-@app.get("/how-to-find-local-business-leads-without-buying-a-lead-list")
-async def find_local_business_leads_without_list_page(request: Request):
-    return render_public_guide(
-        request,
-        "how_to_find_local_business_leads_without_buying_a_lead_list.html",
-        seo_meta.FIND_LOCAL_BUSINESS_LEADS_WITHOUT_LIST_PAGE,
-        [],
-    )
-
-
 @app.get("/how-to-verify-local-business-leads-before-outreach")
 async def verify_local_business_leads_page(request: Request):
     return render_public_guide(

@@ -80,18 +80,6 @@ class PublicPageMetadataTests(unittest.TestCase):
             ),
             "canonical": "https://leadmeleads.com/what-makes-a-good-lead",
         },
-        "/how-to-find-local-business-leads-without-buying-a-lead-list": {
-            "title": "Find Local Business Leads Without Buying a List | LeadMeLeads",
-            "description": (
-                "Learn how to find local business leads without buying a list. "
-                "Search by keyword and location, review public details, and "
-                "verify prospects before outreach."
-            ),
-            "canonical": (
-                "https://leadmeleads.com/"
-                "how-to-find-local-business-leads-without-buying-a-lead-list"
-            ),
-        },
         "/how-to-verify-local-business-leads-before-outreach": {
             "title": "Verify Local Business Leads Before Outreach | LeadMeLeads",
             "description": (

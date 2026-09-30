@@ -61,7 +61,6 @@ class AsgiClient:
 GUIDES = (
     "/what-makes-a-good-lead",
     "/how-to-find-local-leads",
-    "/how-to-find-local-business-leads-without-buying-a-lead-list",
     "/how-to-verify-local-business-leads-before-outreach",
     "/how-to-find-website-seo-opportunities-in-a-lead-list",
     "/check-contactability-local-business-leads",
@@ -70,8 +69,6 @@ GUIDES = (
     "/lead-list-vs-lead-finder",
 )
 
-WITH_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
-HERO_IMAGE_PATH = "/static/images/resources/find-local-business-leads-hero.webp"
 CARD_IMAGES = {
     "/what-makes-a-good-lead": (
         "/static/images/resources/what-makes-a-good-lead-card.webp",
@@ -80,10 +77,6 @@ CARD_IMAGES = {
     "/how-to-find-local-leads": (
         "/static/images/resources/how-to-find-local-leads-card.webp",
         "A map search identifies local storefronts and organizes them into a verified shortlist.",
-    ),
-    "/how-to-find-local-business-leads-without-buying-a-lead-list": (
-        "/static/images/resources/find-local-business-leads-card.webp",
-        "Local storefronts connected to search results, a map pin, and verified contact cards.",
     ),
     "/how-to-verify-local-business-leads-before-outreach": (
         "/static/images/resources/verify-local-business-leads-before-outreach-card.webp",
@@ -137,7 +130,6 @@ GUIDE_HEROES = {
 CARD_TITLES_AND_DESCRIPTIONS = (
     ("What Makes a Good Lead?", "Learn how market fit, contactability, and a specific reason for outreach separate a useful prospect from another name on a list."),
     ("How to Find Local Leads", "Follow a practical process for choosing a market, finding reachable businesses, reviewing websites, and organizing research before outreach."),
-    ("Find Local Business Leads Without Buying a List", "Use a focused search-and-review workflow as an alternative to starting with a purchased lead list."),
     ("Verify Local Business Leads Before Outreach", "Confirm business status, websites, contact details, and location before contacting a prospect."),
     ("Find Website and SEO Opportunities in a Lead List", "Audit a local lead list step by step: check websites, search visibility, service gaps, and technical fundamentals, then prioritize what to verify."),
     ("Check for Contactability in Local Business Leads", "Check websites, phone numbers, email and forms, map presence, and social profiles, then sort leads into confidence tiers before outreach."),
@@ -159,7 +151,6 @@ TOPIC_FILTERS = (
 CARD_TOPICS = {
     "/what-makes-a-good-lead": "finding-leads",
     "/how-to-find-local-leads": "finding-leads",
-    "/how-to-find-local-business-leads-without-buying-a-lead-list": "finding-leads",
     "/how-to-verify-local-business-leads-before-outreach": "verification",
     "/how-to-find-website-seo-opportunities-in-a-lead-list": "website-seo",
     "/check-contactability-local-business-leads": "verification",
@@ -315,7 +306,7 @@ class ResourcesHubTests(unittest.TestCase):
 
     def test_suitable_guide_heroes_map_to_sized_card_images_and_resolve(self):
         cards = re.findall(r'<article[^>]*class="resource-card"[^>]*>(.*?)</article>', self.body, re.DOTALL)
-        self.assertEqual(len(CARD_IMAGES), 9)
+        self.assertEqual(len(CARD_IMAGES), 8)
         for card, guide in zip(cards, GUIDES):
             image_path, alt = CARD_IMAGES.get(guide, (None, None))
             with self.subTest(guide=guide):
@@ -332,23 +323,6 @@ class ResourcesHubTests(unittest.TestCase):
         self.assertEqual(self.body.count('class="resource-card-image"'), len(CARD_IMAGES))
         self.assertIn("aspect-ratio:16 / 9", self.body)
         self.assertIn("object-fit:cover", self.body)
-
-    def test_existing_lead_list_article_hero_remains_sized_and_served(self):
-        article = self.client.get(WITH_LIST_PATH)
-        self.assertEqual(article.status_code, 200)
-        self.assertIn(
-            f'<img src="{HERO_IMAGE_PATH}" width="1280" height="720" '
-            'loading="eager" fetchpriority="high" '
-            'alt="Local storefronts connected to search results, a map pin, and verified contact cards.">',
-            article.text,
-        )
-        self.assertLess(
-            article.text.index(f'<figure class="article-hero">'),
-            article.text.index('<p class="lede">'),
-        )
-        hero_asset = RESOURCE_IMAGES_DIR / Path(HERO_IMAGE_PATH).name
-        self.assertTrue(hero_asset.is_file())
-        self.assertGreater(hero_asset.stat().st_size, 0)
 
     def test_new_guide_heroes_are_sized_served_and_placed_before_the_lede(self):
         for guide, (image_path, alt) in GUIDE_HEROES.items():

@@ -45,7 +45,6 @@ PAGES = {
     },
 }
 
-WITHOUT_LIST_PATH = "/how-to-find-local-business-leads-without-buying-a-lead-list"
 VERIFY_LEADS_PATH = "/how-to-verify-local-business-leads-before-outreach"
 OPPORTUNITIES_PATH = "/how-to-find-website-seo-opportunities-in-a-lead-list"
 CONTACTABILITY_PATH = "/check-contactability-local-business-leads"
@@ -71,7 +70,6 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/what-makes-a-good-lead").status_code, 200)
-        self.assertEqual(self.client.get(WITHOUT_LIST_PATH).status_code, 200)
         self.assertEqual(self.client.get(VERIFY_LEADS_PATH).status_code, 200)
 
     def test_unique_titles_descriptions_canonicals_and_exact_h1s(self):
@@ -144,52 +142,6 @@ class LocalLeadContentClusterTests(unittest.TestCase):
             self.assertIn('href="/lead-bot"', body)
             self.assertIn('href="/compare"', body)
             self.assertIn('href="/what-makes-a-good-lead"', body)
-
-    def test_without_list_article_links_to_five_intended_routes(self):
-        body = self.client.get(WITHOUT_LIST_PATH).text
-        expected = {
-            "/lead-bot": "LeadMeLeads Lead Finder",
-            "/compare": "Website Comparison Tool",
-            "/what-makes-a-good-lead": "what makes a good lead",
-            "/lead-list-vs-lead-finder": "lead lists vs. lead finders",
-            "/how-to-find-local-leads": "how to find local leads",
-        }
-        for route, anchor in expected.items():
-            self.assertIn(f'href="{route}">{anchor}</a>', body)
-
-    def test_without_list_article_schema_and_approved_copy(self):
-        response = self.client.get(WITHOUT_LIST_PATH)
-        self.assertEqual(response.status_code, 200)
-        scripts = re.findall(
-            r'<script type="application/ld\+json">(.*?)</script>',
-            response.text,
-            re.DOTALL,
-        )
-        articles = [json.loads(item) for item in scripts if '"Article"' in item]
-        self.assertEqual(len(articles), 1)
-        self.assertEqual(articles[0]["@type"], "Article")
-        self.assertEqual(
-            articles[0]["mainEntityOfPage"],
-            seo_meta.canonical_url(WITHOUT_LIST_PATH),
-        )
-        self.assertNotIn('"FAQPage"', response.text)
-        approved_copy = (
-            "Why Purchased Lead Lists Become Outdated",
-            "Purchased lead lists can become outdated quickly. Businesses close, move, change ownership, or update their contact information.",
-            "LeadMeLeads finds businesses currently appearing in search results and collects publicly available contact and website information. That gives you a more useful starting point than a static list.",
-            "The results are still prospects to investigate—not guaranteed buyers. Contact details may be incomplete, so each business should be reviewed and verified before outreach.",
-        )
-        for exact_text in approved_copy:
-            self.assertEqual(response.text.count(exact_text), 1)
-
-    def test_without_list_template_has_no_draft_or_placeholder_markup(self):
-        source = (
-            Path(__file__).parent.parent
-            / "app/templates/how_to_find_local_business_leads_without_buying_a_lead_list.html"
-        ).read_text(encoding="utf-8")
-        self.assertTrue(source.startswith('{% extends "public_guide_base.html" %}'))
-        for forbidden in ("<!DOCTYPE html>", "<style>", "draft-banner", "placeholder-", "DRAFT"):
-            self.assertNotIn(forbidden, source)
 
     def test_verify_leads_exact_metadata_and_single_h1(self):
         response = self.client.get(VERIFY_LEADS_PATH)
@@ -275,7 +227,6 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         expected = {
             "/lead-bot": "LeadMeLeads Lead Finder",
             "/compare": "Website Comparison Tool",
-            WITHOUT_LIST_PATH: "how to find local business leads without buying a list",
         }
         for route, anchor in expected.items():
             self.assertIn(f'href="{route}">{anchor}</a>', body)
@@ -850,18 +801,6 @@ class LocalLeadContentClusterTests(unittest.TestCase):
         word_count = len(plain.split())
         self.assertGreaterEqual(word_count, 1450)
         self.assertLessEqual(word_count, 1700)
-
-    def test_articles_link_to_each_other(self):
-        without_list_body = self.client.get(WITHOUT_LIST_PATH).text
-        verify_body = self.client.get(VERIFY_LEADS_PATH).text
-        self.assertIn(
-            f'href="{VERIFY_LEADS_PATH}">how to verify local business leads before outreach</a>',
-            without_list_body,
-        )
-        self.assertIn(
-            f'href="{WITHOUT_LIST_PATH}">how to find local business leads without buying a list</a>',
-            verify_body,
-        )
 
     def test_mobile_safe_markup_and_overflow_guards(self):
         base = (Path(__file__).parent.parent / "app/templates/public_guide_base.html").read_text()
