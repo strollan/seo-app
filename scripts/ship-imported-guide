@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Ship one already-imported Slayer guide through the approved deploy tool.
+
+This is deliberately not a general commit or deployment utility.  It accepts
+one slug and may stage/commit only that guide's registry record and asset
+directory before delegating the real deployment to ``scripts/leadme-deploy``.
+"""
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+REPO_PATH = Path(__file__).resolve().parent.parent
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def run(args, *, cwd=REPO_PATH):
+    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+
+
+def git(*args):
+    return run(["git", *args])
+
+
+def fail(slug, reason, *, commit_sha=None):
+    print(json.dumps({"ok": False, "slug": slug, "commit_sha": commit_sha,
+                      "deployed_sha": None, "deployed": False, "reason": reason}))
+    return 1
+
+
+def allowed_paths(slug):
+    return {
+        f"app/content/imported_guides/{slug}.json",
+        f"app/static/images/resources/imported/{slug}",
+    }
+
+
+def is_allowed(path, slug):
+    content, assets = allowed_paths(slug)
+    return path == content or path == assets or path.startswith(assets + "/")
+
+
+def porcelain_entries(output):
+    entries = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        # Rename/copy porcelain has two paths; both must be within scope.
+        entries.extend((line[:2], part.strip()) for part in line[3:].split(" -> ") if part.strip())
+    return entries
+
+
+def validate_imported_guide(slug):
+    """Use LeadMeLeads' existing registry loader, then verify its assets."""
+    sys.path.insert(0, str(REPO_PATH))
+    from app import imported_guides  # imported from the target checkout
+
+    manifest = REPO_PATH / "app/content/imported_guides" / f"{slug}.json"
+    if not manifest.is_file():
+        raise ValueError("expected imported-guide JSON is missing")
+    guides = imported_guides.load_imported_guides(REPO_PATH / "app/content/imported_guides")
+    guide = guides.get(slug)
+    if guide is None:
+        raise ValueError("imported-guide JSON failed existing LeadMeLeads validation")
+    for image in [guide["hero_image"], *(guide.get("inline_images") or [])]:
+        url = image.get("url") if isinstance(image, dict) else None
+        path = Path(urlparse(url or "").path)
+        prefix = Path("/static/images/resources/imported") / slug
+        if not url or not str(path).startswith(str(prefix) + "/"):
+            raise ValueError("imported guide references an invalid article asset URL")
+        local = REPO_PATH / str(path).lstrip("/")
+        if not local.is_file():
+            raise ValueError(f"referenced imported article asset is missing: {path.name}")
+
+
+def deploy_state():
+    state = Path.home() / ".local/state/leadme-deploy/state.json"
+    try:
+        return json.loads(state.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def ship(slug, *, deploy_runner=None):
+    if not SLUG_RE.fullmatch(slug or ""):
+        return fail(slug, "slug must be one lowercase, hyphenated URL segment")
+    if git("rev-parse", "--is-inside-work-tree").returncode != 0:
+        return fail(slug, "LeadMeLeads repository is unavailable")
+    branch = git("branch", "--show-current").stdout.strip()
+    if branch != "main":
+        return fail(slug, "refusing to ship outside branch main")
+    try:
+        validate_imported_guide(slug)
+    except (OSError, ValueError, KeyError) as exc:
+        return fail(slug, str(exc))
+
+    status = git("status", "--porcelain=v1", "--untracked-files=all")
+    if status.returncode != 0:
+        return fail(slug, "could not determine working-tree state")
+    entries = porcelain_entries(status.stdout)
+    # Any tracked/staged change outside the exact guide scope blocks. Untracked
+    # unrelated files are safe because only explicit paths are staged below.
+    outside = [path for code, path in entries if code != "??" and not is_allowed(path, slug)]
+    if outside:
+        return fail(slug, "unrelated tracked or staged changes: " + ", ".join(outside))
+
+    content, assets = sorted(allowed_paths(slug))
+    staged = git("diff", "--cached", "--name-only")
+    staged_outside = [p for p in staged.stdout.splitlines() if not is_allowed(p, slug)]
+    if staged_outside:
+        return fail(slug, "unrelated staged changes: " + ", ".join(staged_outside))
+
+    guide_changes = [path for _code, path in entries if is_allowed(path, slug)]
+    if guide_changes:
+        print("Staging article files: " + ", ".join(sorted(set(guide_changes))), file=sys.stderr)
+        # Imported guide records may be ignored until deliberately shipped.
+        # Force-add only these two validated, article-scoped paths.
+        staged_result = git("add", "-f", "--", content, assets)
+        if staged_result.returncode != 0:
+            return fail(slug, staged_result.stderr.strip() or "could not stage article files")
+        commit = git("commit", "-m", f"content: publish imported guide {slug}", "--", content, assets)
+        if commit.returncode != 0:
+            return fail(slug, commit.stderr.strip() or commit.stdout.strip() or "article commit failed")
+    sha = git("rev-parse", "HEAD").stdout.strip() or None
+    runner = deploy_runner or (lambda: run([str(REPO_PATH / "scripts/leadme-deploy")]))
+    print("Running approved LeadMeLeads deployment pipeline…", file=sys.stderr)
+    deployed = runner()
+    if deployed.returncode != 0:
+        reason = (deployed.stderr or deployed.stdout or "approved deployment failed").strip()[-1000:]
+        return fail(slug, reason, commit_sha=sha)
+    state = deploy_state()
+    deployed_commit = state.get("deployed_commit")
+    if state.get("result") != "PASS" or deployed_commit != sha:
+        return fail(slug, "deployment did not record a matching successful deployed SHA", commit_sha=sha)
+    print(json.dumps({"ok": True, "slug": slug, "commit_sha": sha,
+                      "deployed_sha": deployed_commit, "deployed": True, "reason": None}))
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit(fail(None, "usage: ship-imported-guide <slug>"))
+    sys.exit(ship(sys.argv[1]))
