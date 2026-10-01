@@ -230,6 +230,42 @@ class ImportedGuideTests(unittest.TestCase):
         record = json.loads((self.content / "research-local-service-pages.json").read_text())
         self.assertEqual(record["body_sections"][0]["paragraphs"], [paragraph])
 
+    def test_list_only_section_from_slayer_imports_and_renders_without_losing_bullets(self):
+        """Regression: LML-A001's third serialized section is list-only."""
+        bullets = [
+            "Mobile experience. Check for controls that are hard to tap.",
+            "Core information findability. Check the phone number and hours.",
+        ]
+        self._manifest(body_sections=[{
+            "heading": "The Website Itself",
+            "paragraphs": [],
+            "bullets": bullets,
+        }])
+
+        self._import()
+        guides = imported_guides.load_imported_guides(self.content)
+        guide = guides["research-local-service-pages"]
+        self.assertEqual(guide["body_sections"][0]["paragraphs"], [])
+        self.assertEqual(guide["body_sections"][0]["bullets"], bullets)
+
+        templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "app" / "templates")
+        request = Request({"type": "http", "method": "GET", "path": "/research-local-service-pages", "headers": []})
+        html = templates.get_template("imported_guide.html").render(
+            request=request, guide=guide, logo_url="", user=None, faq=[],
+            seo_meta_html="", article_jsonld_html="", faq_jsonld_html="",
+        )
+        for bullet in bullets:
+            self.assertIn(bullet, html)
+
+    def test_empty_section_is_rejected_even_when_list_only_sections_are_allowed(self):
+        self._manifest(body_sections=[{
+            "heading": "Empty section",
+            "paragraphs": [],
+            "bullets": [],
+        }])
+        with self.assertRaisesRegex(imported_guides.GuideImportError, "needs paragraphs or bullets"):
+            imported_guides.validate_package(self.package)
+
     def test_long_intro_paragraph_within_limit_imports_successfully(self):
         intro = ("Approved introductory paragraph. " * 35).strip()
         self.assertGreater(len(intro), 500)

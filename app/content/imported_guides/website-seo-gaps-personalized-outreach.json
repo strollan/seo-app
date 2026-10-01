@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "slug": "website-seo-gaps-personalized-outreach",
+  "title": "How to Turn Website and SEO Gaps Into Personalized Outreach",
+  "dek": "Learn how to spot real website and SEO gaps in local-business prospects and use them to write outreach that's specific, credible, and useful.",
+  "intro_paragraphs": [
+    "Generic outreach to local businesses is easy to spot and easy to ignore: it could have been sent to anyone. \"We help businesses grow online\" doesn't tell a plumbing company owner anything they don't already assume you'll say. A stronger approach is a message that shows you actually looked at their business (their site, their listings, their search presence) and found something specific.",
+    "Website and SEO gaps are one practical source of that specificity. They're observable, and they're explainable in plain language. They also relate to outcomes a local business owner already cares about (getting found, getting called, getting booked) without implying that pointing out any one gap will produce those outcomes. This article walks through how to find those gaps, how to separate what you can prove from what you're guessing, and how to turn a finding into a message worth responding to."
+  ],
+  "body_sections": [
+    {
+      "heading": "Why Gaps Make Better Outreach Than Generic Pitches",
+      "paragraphs": [
+        "Generic outreach relies on the prospect trusting your claims about their business. Gap-based outreach relies on them checking your claim against reality, and finding it accurate. That's a stronger foundation for a first message, because it doesn't ask for trust up front; it demonstrates you did the work.",
+        "There's also a practical filtering effect. If you can't find a real gap on a prospect's site or listings, that's useful information too. It may mean they're already well-served, already working with someone, or simply not a good fit for what you're offering right now. Gap research isn't just a messaging tactic; it's a qualification step that happens to produce better copy as a byproduct."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Where to Look for Website and SEO Gaps",
+      "paragraphs": [
+        "A useful gap check doesn't require expensive tools. Many useful preliminary observations about a local business are visible with a browser, a phone, and a search engine, though a fuller picture would also require analytics, Search Console, customer data, or account access that an outside researcher won't have."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "The Website Itself",
+      "paragraphs": [],
+      "bullets": [
+        "Mobile experience. Load the site on a phone. Note anything that's slow, broken, or hard to tap: not \"the design is dated,\" but specific friction like a menu that doesn't collapse or text that requires zooming.",
+        "Core information findability. Can you find the phone number, service area, and hours within a few seconds, without scrolling past unrelated content?",
+        "Calls to action. Is there a clear next step (call, book, request quote), or does the site just describe the business with no path to contact?",
+        "Page load behavior. Note if pages are visibly slow, not from a synthetic score, but from your own experience loading them.",
+        "Broken elements. Dead links, missing images, contact forms that don't submit: these are concrete and easy to describe."
+      ]
+    },
+    {
+      "heading": "Search and Listing Presence",
+      "paragraphs": [],
+      "bullets": [
+        "Google Business Profile. Is the listing complete and consistent with the website (same name, address, phone, hours)? Note whether there are recent posts, updates, or review responses: the absence of recent public activity is an observation, not proof that the profile or business is inactive.",
+        "Search visibility for their own name. Search the business name plus city. Does their own site show up prominently, or do directories and competitors outrank it?",
+        "Search visibility for likely service terms. Search a term a real customer might use, \"[service] + [city],\" and note where the business appears, if at all. This is directional, not a ranking audit; a single search from one location isn't representative of how the business ranks generally.",
+        "Reviews. Are there recent reviews, and is the business responding to them? A long gap since the last review or response is observable and worth noting.",
+        "NAP consistency. Name, address, and phone number matching across the site, Google Business Profile, and any directories you happen to check."
+      ]
+    },
+    {
+      "heading": "What Counts as Evidence vs. What's a Guess",
+      "paragraphs": [
+        "This distinction matters more than any individual finding. An observation is something you can point to directly: \"your contact form didn't submit when I tested it,\" or \"your Google Business Profile hasn't been updated in [visible timeframe].\" An assumption is a conclusion you're drawing about cause or impact: \"this is costing you customers,\" or \"this is why your rankings are low.\"",
+        "You can mention assumptions, but label them as such, and keep them modest. Search rankings, in particular, depend on far more than any one factor you can see from the outside: competition, review volume, backlinks, and factors with no public visibility. Never present a gap and a business outcome as if one caused the other. Say what you saw, and say what it might mean, without collapsing the two into a single confident claim."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Turning a Gap Into an Outreach Message",
+      "paragraphs": [
+        "A good gap-based message has three parts: what you found, why it might matter to them specifically, and a low-friction next step.",
+        "Lead with the specific observation, not a category. \"Your Google Business Profile\" is a category. \"Your Google Business Profile listing shows hours that don't match what's on your website\" is an observation. Specificity is what signals you actually looked.",
+        "Connect it to something the owner already cares about, in their language. A local business owner thinks in terms of phone calls, bookings, and walk-ins, not \"conversion rate\" or \"domain authority.\" Translate the gap into that language: a broken contact form means people trying to reach them can't, not \"a UX issue impacting lead capture.\"",
+        "Keep the causal claim honest. Instead of \"this is why you're not getting calls,\" try \"this could be part of why some people who find you don't end up calling,\" phrasing that acknowledges other factors exist without diluting the point.",
+        "End with a step, not a sales pitch. Offer to send a short note on what you found, or ask if it's a good time to walk through it, not a request for a 30-minute discovery call as the first ask."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "A Simple Structure to Adapt",
+      "paragraphs": [],
+      "bullets": [
+        "Reference something specific and current (a page, a listing, a search result).",
+        "State plainly what you observed.",
+        "Note, cautiously, what it might mean for them.",
+        "Offer a small, specific next step."
+      ]
+    },
+    {
+      "heading": "Example",
+      "paragraphs": [
+        "Based on a broken contact form:",
+        "> Hi [Name], I was looking at [Business Name]'s site to see how you handle new customer inquiries, and the contact form didn't go through when I tried submitting it just now. If that's still happening, it might mean some people trying to reach you online aren't getting through. Happy to send over exactly what I saw, no obligation, just wanted to flag it.",
+        "Notice what this does: it names one concrete finding, ties it to something the owner cares about (inquiries getting through), hedges the causal link with \"might mean,\" and ends with a low-pressure offer rather than a pitch.",
+        "Avoid stacking multiple gaps into one message. One clear, accurate observation is easier for the prospect to verify than five thin ones, which keeps the message credible."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Common Mistakes to Avoid",
+      "paragraphs": [],
+      "bullets": [
+        "Overstating certainty. \"Your site is losing you customers\" is a guess dressed as a fact. Owners who check and find it exaggerated will discount the rest of the message.",
+        "Using invented or generic statistics. Don't cite conversion percentages, ranking positions, or traffic numbers you haven't actually pulled from their data. If you don't have their analytics or search console access, don't imply that you do.",
+        "Confusing correlation with causation. A slow site and low call volume might be related, or the business might just be seasonal, new, or in a saturated market. Present the observation and let the connection speak for itself, softened appropriately.",
+        "Auditing everything, mentioning nothing specific. A long list of generic issues reads like a template. Pick the one or two findings that are most concrete and most relevant to the type of business you're contacting.",
+        "Ignoring what's working. If a business has a strong, active Google Business Profile despite a dated website, that's worth noting too; it shows you looked at the whole picture, not just what supports your pitch."
+      ]
+    },
+    {
+      "heading": "Building This Into a Repeatable Process",
+      "paragraphs": [
+        "For teams doing this across many prospects, the goal isn't a deep technical audit every time; it's a consistent, fast check that reliably surfaces two or three real, verifiable findings per prospect. A short, repeatable checklist (mobile check, GBP check, one relevant search, one contact-path test) is more sustainable than an ad hoc deep dive, and it keeps outreach evidence-based instead of guesswork dressed up as insight.",
+        "The businesses most worth prioritizing are usually the ones where the gap is easy to verify and easy to explain in one sentence, since that combination is what makes a message specific and checkable."
+      ],
+      "bullets": []
+    }
+  ],
+  "seo_title": "How to Turn Website and SEO Gaps Into Personalized Outreach",
+  "meta_description": "Learn how to spot real website and SEO gaps in local-business prospects and use them to write outreach that's specific, credible, and useful.",
+  "hero_image": {
+    "alt": "Outreach research note organized into observation, relevance, and question",
+    "url": "/static/images/resources/imported/website-seo-gaps-personalized-outreach/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Website and business listing showing different opening hours",
+      "placement_after_section": 0,
+      "url": "/static/images/resources/imported/website-seo-gaps-personalized-outreach/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "Learn how to spot real website and SEO gaps in local-business prospects and use them to write outreach that's specific, credible, and useful."
+  },
+  "modified_at": "2026-10-01T17:16:31.819970+00:00"
+}

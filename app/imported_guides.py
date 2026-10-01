@@ -113,10 +113,16 @@ def _sections(value: Any) -> list[dict[str, Any]]:
             raise GuideImportError(f"body_sections[{index}] must be an object.")
         paragraphs = item.get("paragraphs")
         bullets = item.get("bullets", [])
-        if not isinstance(paragraphs, list) or not paragraphs:
-            raise GuideImportError(f"body_sections[{index}].paragraphs is required.")
+        if not isinstance(paragraphs, list):
+            raise GuideImportError(f"body_sections[{index}].paragraphs must be a list.")
         if not isinstance(bullets, list):
             raise GuideImportError(f"body_sections[{index}].bullets must be a list.")
+        # Slayer can faithfully serialize an H2/H3 section that contains only
+        # a Markdown list. A non-empty list is real section content, so accept
+        # it without inventing or duplicating a paragraph. Empty sections are
+        # still rejected after both structured content fields are validated.
+        if not paragraphs and not bullets:
+            raise GuideImportError(f"body_sections[{index}] needs paragraphs or bullets.")
         sections.append({
             "heading": _text(item.get("heading"), f"body_sections[{index}].heading"),
             "paragraphs": [
