@@ -1,11 +1,20 @@
 {% extends "public_guide_base.html" %}
 {% block h1 %}{{ guide.title }}{% endblock %}
 {% block subtitle %}{{ guide.dek }}{% endblock %}
+{% block article_header_in_card %}true{% endblock %}
 {% block content %}
+<header class="imported-guide-article-header">
+  <h1>{{ guide.title }}</h1>
+  {% if guide.dek %}<p>{{ guide.dek }}</p>{% endif %}
+</header>
 <figure class="article-hero imported-guide-hero">
   <img src="{{ guide.hero_image.url }}" loading="eager" fetchpriority="high" alt="{{ guide.hero_image.alt }}">
 </figure>
-{% for paragraph in guide.intro_paragraphs | default([]) %}<p>{{ paragraph }}</p>{% endfor %}
+{% if guide.intro_paragraphs | default([]) %}
+<div class="imported-guide-intro">
+  {% for paragraph in guide.intro_paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+</div>
+{% endif %}
 {% for section in guide.body_sections %}
 {% set section_index = loop.index0 %}
 <section class="section">

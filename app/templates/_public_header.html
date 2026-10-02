@@ -4,10 +4,12 @@
   <div class="header">
     <div class="header-left">
       {% if logo_url %}<a href="/" class="logo-link"><img src="/static/leadmeleads-logo-blue-transparent.png?v=transparent-1" class="logo" width="2090" height="511" alt="LeadMeLeads"></a>{% endif %}
+      {% if not article_header_in_card|trim %}
       <div>
         <h1{% if _title_is_long %} class="long-guide-title"{% endif %}>{{ page_h1 }}</h1>
         <p>{{ page_sub }}</p>
       </div>
+      {% endif %}
     </div>
     {% include "_public_nav.html" %}
   </div>

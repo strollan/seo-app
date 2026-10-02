@@ -137,6 +137,15 @@ class ImportedGuideTests(unittest.TestCase):
         self.assertIn('height:auto', inline_rule)
         self.assertNotIn('object-fit', inline_rule)
 
+    def test_imported_intro_uses_the_body_section_horizontal_inset(self):
+        base = (Path(__file__).resolve().parent.parent / "app" / "templates" / "public_guide_base.html").read_text()
+        imported = (Path(__file__).resolve().parent.parent / "app" / "templates" / "imported_guide.html").read_text()
+
+        self.assertIn('class="imported-guide-intro"', imported)
+        self.assertIn('.public-guide-content .imported-guide-intro { padding:0 34px; }', base)
+        self.assertIn('.public-guide-content .imported-guide-intro { padding:0 18px; }', base)
+        self.assertIn('.public-guide-content .imported-guide-intro { padding:0 14px; }', base)
+
     def test_duplicate_slug_is_rejected_without_partial_writes(self):
         self._manifest()
         self._import()
@@ -187,22 +196,28 @@ class ImportedGuideTests(unittest.TestCase):
             self._import()
         self.assertFalse(self.content.exists())
 
-    def test_optional_intro_paragraphs_validate_render_before_first_h2_and_keep_old_manifests_working(self):
+    def test_imported_article_header_precedes_hero_and_intro_without_duplicate_h1(self):
         intro = ["This is the first paragraph.", "This is the second paragraph."]
         self._manifest(intro_paragraphs=intro)
         self._import()
         guides = imported_guides.load_imported_guides(self.content)
         self.assertEqual(guides["research-local-service-pages"]["intro_paragraphs"], intro)
-        import app.main as appmain
-
-        with (
-            mock.patch.object(imported_guides, "load_imported_guides", return_value=guides),
-            TestClient(appmain.app) as client,
-        ):
-            response = client.get("/research-local-service-pages")
-        self.assertEqual(response.status_code, 200)
-        self.assertLess(response.text.index(intro[0]), response.text.index("Start with the visible page"))
-        self.assertNotIn("Introduction</h2>", response.text)
+        guide = guides["research-local-service-pages"]
+        templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "app" / "templates")
+        request = Request({"type": "http", "method": "GET", "path": "/research-local-service-pages", "headers": []})
+        html = templates.get_template("imported_guide.html").render(
+            request=request, guide=guide, logo_url="", user=None, faq=[],
+            seo_meta_html="", article_jsonld_html="", faq_jsonld_html="",
+        )
+        title = "Research Local Service Pages"
+        hero = 'class="article-hero imported-guide-hero"'
+        self.assertIn(f"<h1>{title}</h1>", html)
+        self.assertIn('src="/static/images/resources/imported/research-local-service-pages/hero.png"', html)
+        self.assertLess(html.index(f"<h1>{title}</h1>"), html.index(hero))
+        self.assertLess(html.index(hero), html.index(intro[0]))
+        self.assertEqual(html.count(f"<h1>{title}</h1>"), 1)
+        self.assertLess(html.index(intro[0]), html.index("Start with the visible page"))
+        self.assertNotIn("Introduction</h2>", html)
 
         self._manifest()
         record, _assets = imported_guides.validate_package(self.package)
