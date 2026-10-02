@@ -73,7 +73,9 @@ def validate_imported_guide(slug):
         prefix = Path("/static/images/resources/imported") / slug
         if not url or not str(path).startswith(str(prefix) + "/"):
             raise ValueError("imported guide references an invalid article asset URL")
-        local = REPO_PATH / str(path).lstrip("/")
+        # Asset URLs are served from Flask's ``/static`` route, whose files
+        # live below the application package rather than the repository root.
+        local = REPO_PATH / "app" / str(path).lstrip("/")
         if not local.is_file():
             raise ValueError(f"referenced imported article asset is missing: {path.name}")
 
