@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "slug": "shortlist-best-prospects-50-lead-search",
+  "title": "How to Shortlist the Best Prospects From a 50-Lead Search",
+  "dek": "A structured, repeatable way to narrow a 50-lead search down to the few prospects worth your outreach time now, using fit, timing, and reachability.",
+  "intro_paragraphs": [
+    "A lead search that returns 50 results looks like a productive afternoon. Then you open the list and realize you have no way to work all 50 with any real care. Shortlisting is the step in between: a quick, structured way to decide where your attention goes. This walks through one example process you can adapt to your own time budget and reuse for every search."
+  ],
+  "body_sections": [
+    {
+      "heading": "A 50-lead list is a starting point, not a to-do list",
+      "paragraphs": [
+        "When a search returns 50 leads, it can feel like the hard part is done. In practice, the list is raw material. Fifty simultaneous outreach threads is more than most individuals can research, personalize, and follow up on without the quality of each touch dropping. Shortlisting is the step where you decide which leads deserve real effort now, which can wait, and which you should drop.",
+        "The aim is not to predict who will buy. You cannot do that from a search result. The aim is to concentrate your limited attention on the leads that best match what you are looking for and are realistically reachable."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Decide what \"best\" means before you rank anything",
+      "paragraphs": [
+        "\"Best\" is only meaningful against a definition. Write down, in one or two sentences, what a strong prospect for this specific search looks like. That definition usually combines three things:",
+        "If you skip this step, you will rank on whatever is easiest to see (company size, a familiar logo) rather than on what matters.",
+        "Keep the definition tied to this search. A list pulled for a new product launch has different criteria than one pulled to expand inside an existing segment. Reusing last quarter's definition without checking it is a common way to build a tidy shortlist of the wrong people."
+      ],
+      "bullets": [
+        "Fit: how closely the lead matches the customer profile you already have evidence for: industry, size, role, region, business model.",
+        "Timing: whether anything suggests the lead is in or near a buying window.",
+        "Reachability: whether you have a credible path to a conversation."
+      ]
+    },
+    {
+      "heading": "Gather the data you will actually score on",
+      "paragraphs": [
+        "Shortlisting is only as good as the fields you are scoring against. Before you start, check that the list has consistent values for each criterion you plan to use. If half the leads are missing the industry field, either fill it for the whole list or do not score on industry: a criterion that is populated for only some leads will quietly favor whichever leads happen to have complete records.",
+        "Decide up front how much enrichment is worth it. For a one-off 50-lead search, deep enrichment of every row can cost more time than the extra precision returns, so weigh that trade-off against your own rates and how often you run this search. A common compromise is to enrich only the fields you need for the disqualification pass across the whole list, then enrich deeper only for the leads that survive to your second tier."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Do a disqualification pass first",
+      "paragraphs": [
+        "Before scoring, remove leads that clearly do not belong. This is faster than ranking and it shrinks the list you have to think hard about.",
+        "Common disqualifiers:",
+        "Move these to a separate list rather than deleting them. A lead that is wrong for this search may be right for another, and you want a record that you reviewed it.",
+        "How much a list shrinks in this pass depends on how tight the original query was, so there is no standard figure to expect. If a large share of the list disqualifies, treat that as a prompt to check whether the search query is too broad; adjusting the query can save you from repeating a heavy manual filter on every run."
+      ],
+      "bullets": [
+        "Wrong role or seniority for the decision you need",
+        "Outside your serviceable region, language, or compliance scope",
+        "Company stage or size well outside your definition",
+        "Obvious data problems: defunct company, duplicate entry, a personal email where a business context is required",
+        "An existing relationship that changes the play: current customer, active opportunity, or a known \"do not contact\""
+      ]
+    },
+    {
+      "heading": "Score the survivors on a few weighted criteria",
+      "paragraphs": [
+        "Use a small, explicit model. In many workflows a set of three to five criteria works well: enough to separate leads, few enough to score quickly. If you find yourself adding more, check whether each one is actually changing the ranking; the right number depends on your data and deal type."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Fit criteria",
+      "paragraphs": [
+        "Score each lead on how well it matches the profile: for example a 0 to 3 scale where 3 is \"matches on every attribute we care about\" and 0 is \"matches on almost none.\" Base this on attributes you can actually observe in the data: sector, headcount band, tools in use, location, business model.",
+        "Be honest about what the data supports. If your list does not include headcount, do not guess it from a company name. Either enrich the field for the whole list or drop that criterion."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Intent and timing signals",
+      "paragraphs": [
+        "Score observable signals that a lead may be more active right now: recent funding, hiring for relevant roles, a leadership change, expansion into a new market, a public statement of a goal your product supports.",
+        "Two cautions. First, these are weak signals individually; treat them as tie-breakers, not as proof. Second, a signal appearing at the same time as a need does not mean it caused the need or predicts a purchase. A company hiring for a role related to your product tells you the topic is live there; it does not tell you they will buy, and reading more into it than that will skew your shortlist."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Reachability",
+      "paragraphs": [
+        "Score how plausible it is that you can start a conversation: a verified contact, a warm introduction, a shared connection, a relevant event or trigger to reference. A perfect-fit lead with no route in is a research project, not a shortlist entry."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Combining the scores",
+      "paragraphs": [
+        "Weight the criteria by how much each has mattered in past deals you can actually point to, then add them up. If you have no reliable history, weight fit highest, reachability second, and timing lowest, then adjust as you learn. Keep the weights written down so the ranking is reproducible and you can critique it later."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Sort into tiers, not a strict 1-to-40 ranking",
+      "paragraphs": [
+        "A precise ordering implies more confidence than the inputs justify. Group instead:",
+        "Size Tier A to your actual capacity for the week. If you can properly work eight leads, Tier A should hold about eight. Putting 20 leads in the \"now\" bucket recreates the original problem."
+      ],
+      "bullets": [
+        "Tier A, work now: strong fit, plus at least one timing signal or a clear route in. Typically a small number of leads, sized to what you can act on this cycle.",
+        "Tier B, work next, or needs one more data point: good fit but missing a contact detail, or fit is uncertain pending enrichment.",
+        "Tier C, nurture or revisit: plausible but not a priority this cycle. Set a date to look again."
+      ]
+    },
+    {
+      "heading": "Sanity-check the shortlist",
+      "paragraphs": [
+        "Before you commit, run three checks:"
+      ],
+      "bullets": [
+        "Concentration check. Is every Tier A lead the same type of company? Some clustering is fine; a shortlist that is entirely one segment may reflect a bias in your search rather than genuine quality. Note it so you can test the assumption later.",
+        "Evidence check. For each Tier A lead, can you state the specific reason it is there in one sentence, citing a field or signal you actually saw? \"Feels promising\" is not a reason.",
+        "Reject-review check. Skim the disqualified list once more. You are looking for anything you cut on a hasty read that deserves a second look."
+      ]
+    },
+    {
+      "heading": "Turn the shortlist into an action plan",
+      "paragraphs": [
+        "A shortlist is only useful if it changes what you do next. For each Tier A lead, record:",
+        "For Tier B, note the one missing piece and who or what will supply it. For Tier C, set a revisit date and move on."
+      ],
+      "bullets": [
+        "The contact and the channel you will use",
+        "The specific reason for reaching out: the fit or signal that put them on the list",
+        "The first message angle",
+        "A follow-up cadence and a stop rule: how many attempts before you move the lead to Tier C"
+      ]
+    },
+    {
+      "heading": "Make it a repeatable routine",
+      "paragraphs": [
+        "Once the criteria and weights exist, shortlisting a fresh 50-lead search gets faster. The steps below carry rough time estimates from one example run; treat them as a starting point to calibrate against your own pace, not as targets:",
+        "Time the steps on your own first few runs so you know what to budget. Keep the scoring sheet as a template. After a few cycles, compare which tiers actually produced useful conversations and adjust the weights. Look at this as a trend across several searches; one search is too small a sample to draw firm conclusions from, and a single good outcome in Tier A does not prove the model works."
+      ],
+      "bullets": [
+        "Disqualification pass: roughly 5 to 10 minutes in that example.",
+        "Score survivors on your criteria: roughly 10 to 15 minutes.",
+        "Assign tiers and size Tier A to capacity: a few minutes.",
+        "Sanity checks: a few minutes."
+      ]
+    },
+    {
+      "heading": "What to avoid",
+      "paragraphs": [],
+      "bullets": [
+        "Scoring on visibility, not fit. Big or familiar names rise to the top because they are easy to recognize, not because they match your criteria.",
+        "Over-trusting timing signals. They indicate activity, not intent, and their timing relative to a need is not evidence of cause.",
+        "Ranking past your data. If a field is missing for most of the list, enrich it or drop the criterion. Do not fill gaps with assumptions.",
+        "An oversized Tier A. The point of shortlisting is a list you can actually work well.",
+        "Silent deletes. Keep disqualified leads on record so the process stays reviewable and reusable."
+      ]
+    }
+  ],
+  "seo_title": "How to Shortlist the Best Prospects From a 50-Lead Search",
+  "meta_description": "A structured, repeatable way to narrow a 50-lead search down to the few prospects worth your outreach time now, using fit, timing, and reachability.",
+  "hero_image": {
+    "alt": "Example shortlist table scoring leads on fit, timing, and reachability, with tier A, B, and C rows and a next action for each lead",
+    "url": "/static/images/resources/imported/shortlist-best-prospects-50-lead-search/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Diagram narrowing 50 leads through disqualification and scoring down to a short shortlist",
+      "placement_after_section": 0,
+      "url": "/static/images/resources/imported/shortlist-best-prospects-50-lead-search/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "A structured, repeatable way to narrow a 50-lead search down to the few prospects worth your outreach time now, using fit, timing, and reachability."
+  },
+  "modified_at": "2026-10-04T19:28:07.954983+00:00"
+}
