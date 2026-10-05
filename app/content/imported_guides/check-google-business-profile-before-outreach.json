@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "slug": "check-google-business-profile-before-outreach",
+  "title": "What to Check on a Google Business Profile Before You Reach Out",
+  "dek": "A practical checklist for what to observe and record on a Google Business Profile before outreach, keeping observation clearly separate from inference.",
+  "intro_paragraphs": [
+    "Before you send a single email or pick up the phone, a Google Business Profile (GBP) gives you a quick, public snapshot of how a local business presents itself. It will not tell you whether that business wants what you sell. It will not tell you the size of its budget or how the week is going for the owner. What it can do is help you confirm you are contacting the right business, with current contact details, and give you specific, factual notes to bring into a conversation.",
+    "This is a checklist for that pass. The goal is to observe and record, not to guess. Every item below is something you can see on the profile and write down. Keeping observation separate from inference matters, because the moment you start reading intent into a photo or a review, your notes stop being reliable."
+  ],
+  "body_sections": [
+    {
+      "heading": "Why run this check before outreach",
+      "paragraphs": [
+        "A pre-outreach GBP review does three practical things. It reduces the chance you contact the wrong location or a closed business. It gives you cross-checked contact details instead of whatever you found first. And it produces a dated record that a teammate can reuse and that you can compare against later if you check the same profile again.",
+        "None of that is a verdict on lead quality. It is groundwork so the outreach itself is accurate and the conversation can do the rest."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Observation vs inference: set the rule first",
+      "paragraphs": [
+        "An observation is what is literally on the screen. An inference is a conclusion you draw from it.",
+        "\"The most recent review is dated two weeks ago\" is an observation. \"This business is actively managing its online presence\" is an inference. \"This business is likely to respond to us\" is a bigger inference still, and not one GBP can support.",
+        "Record observations as close to verbatim as you can. Note the date and time of your check. Take screenshots if your process allows. If you want to capture your read on what something means, put it in a separate column or field that is clearly labeled as opinion. Do not blend the two."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Business name and category",
+      "paragraphs": [
+        "For outreach, this lets you address the business correctly and reference the category it chose for itself."
+      ],
+      "bullets": [
+        "Record the exact business name as shown on the profile.",
+        "Compare it to the name on the website, on invoices or quotes if you have them, and on other listings. Note where it matches and where it does not.",
+        "Record the primary category.",
+        "Record any additional categories.",
+        "Note whether the name includes extra keywords or location terms that do not appear to be part of the trading name. Just note it. Do not assume why it is there."
+      ]
+    },
+    {
+      "heading": "Address and service area",
+      "paragraphs": [],
+      "bullets": [
+        "Record the street address if one is listed.",
+        "Note whether the profile shows a map pin and address, or is set up as a service-area business with no public address.",
+        "Record the service areas listed, if any, such as named cities, regions, or a radius.",
+        "Compare the address to the website's contact page and to other sources. Note any discrepancies.",
+        "Note if the address is a suite, a shared workspace, or a residential-style address. Record the observation, not a conclusion about what it means."
+      ]
+    },
+    {
+      "heading": "Phone number",
+      "paragraphs": [],
+      "bullets": [
+        "Record the phone number shown on the profile.",
+        "Compare it to the number on the website and on other listings.",
+        "Note if different numbers appear across sources.",
+        "Note the number type if it is obvious, such as a local area code, a toll-free prefix, or a mobile number. Record only what you can actually tell."
+      ]
+    },
+    {
+      "heading": "Website link",
+      "paragraphs": [],
+      "bullets": [
+        "Record the exact URL the profile links to.",
+        "Open it. Note whether it loads normally, redirects somewhere else, or returns an error.",
+        "Note whether it points to a full website, a social media page, a booking tool, or a single landing page.",
+        "Compare the domain to the business name and note mismatches.",
+        "Note if there is no website link at all."
+      ]
+    },
+    {
+      "heading": "Hours",
+      "paragraphs": [],
+      "bullets": [
+        "Record the listed hours for each day.",
+        "Note whether special hours or holiday hours are shown.",
+        "Note any prompts Google is displaying about hours, such as a note that hours might differ or an invitation to suggest new hours.",
+        "Compare the listed hours to the hours on the website. Note differences.",
+        "Note if the profile is marked temporarily closed or permanently closed."
+      ]
+    },
+    {
+      "heading": "Recent reviews",
+      "paragraphs": [],
+      "bullets": [
+        "Note whether reviews are present at all.",
+        "Note the date of the most recent review as displayed. Google shows relative timestamps such as \"a week ago,\" so record it as shown along with the date you checked.",
+        "Read the few most recent reviews. Record concrete details that come up more than once, such as staff names, specific services, product lines, or locations.",
+        "Note the languages the reviews are written in and any locations reviewers mention, if visible.",
+        "If you need a review count, read it directly from the profile at the time of your check and note that date. Do not estimate one or carry a number over from memory.",
+        "Do not treat review sentiment as proof of anything about the business's operations, its plans, or its interest in your offer."
+      ]
+    },
+    {
+      "heading": "Owner responses to reviews",
+      "paragraphs": [
+        "This tells you something about how the profile is managed. It does not tell you how responsive the business will be to you."
+      ],
+      "bullets": [
+        "Note whether the business has responded to any reviews as the owner.",
+        "Note the date of the most recent owner response as displayed.",
+        "Note the style: templated, personalized, addresses specifics, or generic.",
+        "Note whether responses appear on both positive and negative reviews or only on some."
+      ]
+    },
+    {
+      "heading": "Photos",
+      "paragraphs": [],
+      "bullets": [
+        "Note whether photos are present.",
+        "Note the source label Google shows, such as \"By owner\" or \"By customer.\"",
+        "Note the date of the most recent owner-added photo if it is shown.",
+        "Note what the photos actually show: storefront, team, work samples, menu, interior.",
+        "Note staleness signals you can verify, such as a photo showing older branding that differs from the current logo. Record the observation."
+      ]
+    },
+    {
+      "heading": "Stale or inconsistent information",
+      "paragraphs": [
+        "Pull your notes together and flag anything that does not line up. Record each inconsistency as a pair: what GBP shows, and what the other source shows, each with the date you checked it."
+      ],
+      "bullets": [
+        "Name, address, or phone that differs between GBP, the website, and other listings.",
+        "Hours on GBP that contradict the website.",
+        "Branding in GBP photos that differs from the current website.",
+        "A linked website that is parked, expired, or under construction.",
+        "A category that does not match what the website says the business does.",
+        "Google prompts asking users to confirm or suggest details."
+      ]
+    },
+    {
+      "heading": "Whether the profile appears active",
+      "paragraphs": [
+        "There is no single \"active\" flag to read. Build a picture from dated signals you can see:",
+        "Record the dates. A profile with recent dated activity is one observation. It is not confirmation that the business is operating, staffed, or open to contact. Treat \"appears active\" as shorthand for \"has recent dated signals,\" and write it that way."
+      ],
+      "bullets": [
+        "Date of the most recent review.",
+        "Date of the most recent owner response.",
+        "Date of the most recent owner-added photo.",
+        "Any Google Posts and their dates.",
+        "Whether \"temporarily closed\" is shown.",
+        "Whether Google is prominently surfacing \"suggest an edit\" or showing that key fields are missing."
+      ]
+    },
+    {
+      "heading": "Turn your check into a record",
+      "paragraphs": [
+        "Use the same fields every time so entries are comparable:",
+        "A consistent record is what lets a teammate reuse your work, and what lets you re-check the same profile later and see what changed."
+      ],
+      "bullets": [
+        "Date and time of check",
+        "Profile URL",
+        "Business name, verbatim",
+        "Primary category and additional categories",
+        "Address or service-area setup",
+        "Service areas listed",
+        "Phone number or numbers, and where each appears",
+        "Website URL and load result",
+        "Hours, plus any closed status or Google prompts",
+        "Most recent review date",
+        "Owner response present, yes or no, and most recent response date",
+        "Photos present, yes or no, and most recent owner photo date",
+        "Inconsistencies found, as GBP value versus other source",
+        "Notes on apparent activity, listed as dated signals",
+        "A separate column for your inferences, labeled as opinion"
+      ]
+    },
+    {
+      "heading": "What a Google Business Profile does not tell you",
+      "paragraphs": [
+        "Keep these limits in front of you:"
+      ],
+      "bullets": [
+        "It does not show need, budget, buying intent, or willingness to hear from a vendor.",
+        "A well-maintained profile is not proof the business is a good lead, and a thin profile is not proof it is a bad one.",
+        "Review sentiment reflects reviewer experiences, not the business's priorities.",
+        "GBP fields can be changed by the business, by Google, or through user suggestions, so a value can shift after you record it. That is why you timestamp every check.",
+        "This is a manual pass. You run it and record it yourself, and the notes are only as current as the last time you checked."
+      ]
+    },
+    {
+      "heading": "Bringing it into outreach",
+      "paragraphs": [
+        "Use the recorded facts, not your guesses, when you make contact. Reference the correct business name and category. Use a phone number and email you have cross-checked. If you found an inconsistency that would genuinely help the recipient, such as hours that disagree between two places, you can mention it plainly as something you noticed. Leave the assumptions about what the business wants for the conversation itself, where the other person can actually tell you."
+      ],
+      "bullets": []
+    }
+  ],
+  "seo_title": "What to Check on a Google Business Profile Before You Reach Out",
+  "meta_description": "A practical checklist for what to observe and record on a Google Business Profile before outreach, keeping observation clearly separate from inference.",
+  "hero_image": {
+    "alt": "Person reviewing a generic local business listing beside a pre-outreach checklist",
+    "url": "/static/images/resources/imported/check-google-business-profile-before-outreach/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Two generic business contact records compared side by side with mismatches highlighted",
+      "placement_after_section": 0,
+      "url": "/static/images/resources/imported/check-google-business-profile-before-outreach/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "A practical checklist for what to observe and record on a Google Business Profile before outreach, keeping observation clearly separate from inference."
+  },
+  "modified_at": "2026-10-05T20:33:49.653345+00:00"
+}
