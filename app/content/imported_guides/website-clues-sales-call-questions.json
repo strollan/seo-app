@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "slug": "website-clues-sales-call-questions",
+  "title": "How to Use Website Clues to Prepare Sales Call Questions",
+  "dek": "A practical guide to mining a prospect's website for details that turn generic sales calls into specific, relevant conversations.",
+  "intro_paragraphs": [
+    "Generic questions get generic answers. \"Tell me about your business\" isn't really a question: it's an admission that no preparation happened before the call. A prospect's own website is a practical place to prepare from: it's free, takes about ten to fifteen minutes to skim, and gives you enough specific detail to ask sharper questions instead of running through a script.",
+    "This isn't about turning research into a guessing game or treating website copy as gospel. It's about using visible clues to form informed hypotheses, then using the call itself to confirm or correct them."
+  ],
+  "body_sections": [
+    {
+      "heading": "Why Website Research Changes the Quality of a Call",
+      "paragraphs": [
+        "A generic call asks the prospect to do the work of explaining their business from scratch. A prepared call asks the prospect to confirm, correct, or expand on something you've already noticed. That shift changes the tone of the conversation from \"sales pitch\" to \"conversation with someone who did their homework.\"",
+        "Be clear about the limits, though: a website tells you what a company chooses to publish, not necessarily what's true today, what's changing internally, or what actually matters to the person you're calling. Treat every clue as a starting hypothesis, not a confirmed fact. The goal of research isn't to arrive with a script of assumptions; it's to arrive with better questions."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Where to Look on a Prospect's Site",
+      "paragraphs": [
+        "You don't need a deep audit. A focused pass through a handful of pages is usually enough to generate several solid discovery questions."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Homepage and Value Proposition",
+      "paragraphs": [
+        "The homepage usually reflects how a company wants to be perceived right now. Look at the language they use to describe what they do and who they do it for. If the messaging is heavy on a specific outcome (speed, compliance, cost savings, scale), that's a clue about what they think their buyers care about most.",
+        "Useful question to prepare: \"Your homepage leads with [specific claim or outcome], is that the priority across the business, or mainly for a specific team?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "About and Leadership Pages",
+      "paragraphs": [
+        "Company size, funding stage, leadership backgrounds, and how long the company has existed can all be factors that suggest what problems are likely on a company's radar; a five-person startup and a 40-year-old regional company will often care about different things, even within the same industry. None of these attributes determine priorities on their own; they're context to hold loosely until the call confirms or contradicts them.",
+        "Leadership bios can also be a useful clue. A newly hired VP of Operations or Head of Customer Success may point to where the company is putting attention, though a new title doesn't always mean a new strategy; sometimes it's a backfill or a lateral move.",
+        "Useful question to prepare: \"I noticed you brought on a [specific role] recently, is that connected to a broader initiative, or filling an existing need?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Careers Page and Job Postings",
+      "paragraphs": [
+        "Open roles can be a useful signal, but they're an imperfect one. A listing shows what a company was hiring for as of whenever the page was last updated: the role could already be filled, paused, exploratory, or simply left posted out of habit rather than active need. With that caveat in mind, a cluster of open sales roles can suggest a growth push, several engineering openings might point to a product buildout, and a role that names a specific tool or platform can hint at what systems the company already uses or is evaluating.",
+        "Useful question to prepare: \"I saw you're hiring for [role], is that still active, and is it tied to something specific you're trying to solve for right now?\"",
+        "If a listing mentions particular software, certifications, or platforms as requirements, that's a rough clue about the company's current tech stack or process maturity, worth noting if what you sell integrates with or replaces something specific. The mention alone doesn't confirm active use, so it's a lead to check on the call, not a fact to state.",
+        "Useful question to prepare: \"I noticed a posting mentioning [tool/platform], is that something your team is actively using, or something you're evaluating?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Case Studies and Customer Logos",
+      "paragraphs": [
+        "The customers a company chooses to showcase say something about who they consider their ideal buyer, or at least who they want to be associated with. Pay attention to the industries, company sizes, and use cases featured most prominently.",
+        "If case studies emphasize a particular result (faster onboarding, reduced churn, fewer support tickets), that's a strong hint at what they believe their product proves, and possibly what your prospect cares about internally.",
+        "Useful question to prepare: \"Your case studies focus a lot on [specific result], is that the outcome your team is being measured on too?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Product or Solutions Pages",
+      "paragraphs": [
+        "If the company sells software or services, their product pages often reveal what they consider their core value versus secondary features. Notice what's listed first, what has the most detail, and what looks like a newer addition: different design, more recent tone, or placement lower in the navigation can all be tells.",
+        "Useful question to prepare: \"Your site puts the most detail into [feature/product], is that where most of your team's attention is right now, or is there something newer you're building toward?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Blog, Press, and News",
+      "paragraphs": [
+        "Recent posts or press mentions can point to timely context: a product launch, a leadership change, an acquisition, a new market entry, or an award. These are useful not because they guarantee relevance to your call, but because they give you a legitimate, specific reason to ask about what changed.",
+        "Useful question to prepare: \"I saw the recent [post/announcement] about [X], has that shifted priorities for your team, or is it mostly separate from what you're working on day to day?\""
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Turning Clues Into Questions, Not Assumptions",
+      "paragraphs": [
+        "The most common mistake in this process is treating a website clue as a confirmed fact instead of a hypothesis to test. A homepage that says \"trusted by enterprise teams\" doesn't mean every prospect from that company works with enterprise clients directly, and a case study about reducing costs doesn't mean cost is this specific buyer's priority.",
+        "Frame your prepared questions so they invite correction, not agreement.",
+        "Weak (assumes the clue is true): \"Since you're focused on reducing costs, I assume budget is the main driver here.\"",
+        "Stronger (uses the clue but stays open): \"I saw your case studies emphasize cost reduction, is that the main lens your team is looking through, or is there something else driving this?\"",
+        "The second version does the same preparation work but leaves room for the prospect to tell you you're wrong, which is often more valuable than being right; a correction reveals what actually matters to them."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Building a Simple Pre-Call Research Routine",
+      "paragraphs": [
+        "A repeatable routine keeps research from becoming an open-ended rabbit hole. A workable version looks like this:",
+        "From those five stops, aim to draft two or three specific questions before the call, not a script, just enough to steer the conversation toward what's likely relevant."
+      ],
+      "bullets": [
+        "Homepage: note the primary value proposition and who it seems targeted at.",
+        "About/leadership: note company size signals, tenure, and any recent leadership additions.",
+        "Careers page: note open roles, whether they look current, and any tools or platforms mentioned.",
+        "Case studies or customers: note recurring industries, company sizes, or outcomes.",
+        "News or blog: note anything published in roughly the last few months."
+      ]
+    },
+    {
+      "heading": "What Website Clues Can't Tell You",
+      "paragraphs": [
+        "Be direct about the limits of this approach before the call, not after. A website reflects marketing decisions, not necessarily internal reality. It won't tell you about budget constraints, internal politics, competing priorities, or what changed last week that hasn't been published anywhere. Website research isn't a substitute for asking direct discovery questions on the call; it's preparation, not a replacement for listening.",
+        "The value of this research isn't certainty. It's specificity. A question grounded in something real about the prospect's business, asked with genuine curiosity rather than false confidence, is what separates a prepared call from a scripted one."
+      ],
+      "bullets": []
+    },
+    {
+      "heading": "Before You Dial",
+      "paragraphs": [
+        "Preparing for a sales call doesn't require deep intelligence gathering or expensive tools. A focused read of a prospect's homepage, about page, careers page, and case studies is usually enough to generate a handful of specific, relevant questions. The goal isn't to walk in knowing everything; it's to walk in having asked yourself what's worth asking them."
+      ],
+      "bullets": []
+    }
+  ],
+  "seo_title": "How to Use Website Clues to Prepare Sales Call Questions",
+  "meta_description": "A practical guide to mining a prospect's website for details that turn generic sales calls into specific, relevant conversations.",
+  "hero_image": {
+    "alt": "Sales rep turning website research into prepared call questions",
+    "url": "/static/images/resources/imported/website-clues-sales-call-questions/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Five-step pre-call website research checklist",
+      "placement_after_section": 0,
+      "url": "/static/images/resources/imported/website-clues-sales-call-questions/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "A practical guide to mining a prospect's website for details that turn generic sales calls into specific, relevant conversations."
+  },
+  "modified_at": "2026-10-05T20:34:29.720056+00:00"
+}
