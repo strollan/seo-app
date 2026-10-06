@@ -95,6 +95,7 @@ const KNOWN_IDS = [
     "found", "cached", "enriched", "needs", "liveConsoleLine1",
     "liveConsoleLine2", "liveConsoleLine3", "leads", "exportWrap",
     "exportLink", "exportWrapBottom", "exportLinkBottom",
+    "liveScanActions",
 ];
 
 const elements = new Map();
@@ -187,8 +188,7 @@ async function main() {
         leads: [], counts: {}, params: {},
     });
     await sandbox.poll();
-    results.finalNote = elementFor("cancelNote").textContent;
-    results.finalBtnText = elementFor("cancelScanBtn").textContent;
+    results.finalActionsDisplay = elementFor("liveScanActions").style.display;
     results.finalBtnDisabled = elementFor("cancelScanBtn").disabled;
     results.finalStatusBoxClass = statusBox.classListItems.has("leadbot-cancelled-state");
     results.finalScheduledNextPoll = scheduledPolls > 0;
@@ -320,10 +320,10 @@ class LeadFinderCancelUiTests(unittest.TestCase):
         self.assertEqual(r["stillCancellingNote"], "Cancelling scan...")
         self.assertTrue(r["stillCancellingScheduledNextPoll"])
 
-        # Once the backend reports "cancelled", the note, button, and
-        # status box must all reach a final state, and polling must stop.
-        self.assertEqual(r["finalNote"], "Scan cancelled.")
-        self.assertEqual(r["finalBtnText"], "Scan Cancelled")
+        # Once the backend reports "cancelled", the whole cancel action row
+        # (button + note) is hidden, the button is disabled, the status box
+        # reaches its final state, and polling must stop.
+        self.assertEqual(r["finalActionsDisplay"], "none")
         self.assertTrue(r["finalBtnDisabled"])
         self.assertTrue(r["finalStatusBoxClass"])
         self.assertFalse(r["finalScheduledNextPoll"])

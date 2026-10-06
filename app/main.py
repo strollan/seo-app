@@ -14079,11 +14079,12 @@ body.leadbot-live-final .live-progress-bar {{
         </p>
 
         <div id="guestSavePrompt" style="display:none; margin:18px 0 0; padding:18px 20px; background:#fff7ed; border:1px solid #fed7aa; border-radius:16px; text-align:center;">
-            <h3 style="margin:0 0 8px; font-size:19px; color:#0f172a;">Want to save this report?</h3>
-            <p style="margin:0 0 14px; color:#475569;">Create an account to keep your results, access them later, and manage future scans.</p>
+            <h3 style="margin:0 0 8px; font-size:19px; color:#0f172a;">Your results are ready to review below.</h3>
+            <p style="margin:0 0 14px; color:#475569;">CSV export requires a free account. Sign in or create one to export and save these results.</p>
             <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
                 <a href="/create-account?next=/lead-bot" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:12px;background:#1e3a8a;color:#fff!important;font-weight:900;text-decoration:none;">Create Account</a>
-                <button type="button" id="guestContinueBtn" style="padding:11px 18px;border-radius:12px;background:#e2e8f0;color:#0f172a;font-weight:900;border:0;cursor:pointer;">Continue Without Saving</button>
+                <a href="/login?next=/lead-bot" style="display:inline-flex;align-items:center;justify-content:center;padding:11px 18px;border-radius:12px;background:#e2e8f0;color:#0f172a;font-weight:900;text-decoration:none;">Sign In</a>
+                <button type="button" id="guestContinueBtn" style="padding:11px 18px;border-radius:12px;background:#e2e8f0;color:#0f172a;font-weight:900;border:0;cursor:pointer;">Keep Viewing Results</button>
             </div>
         </div>
     </section>
@@ -14105,6 +14106,15 @@ function showGuestSavePrompt() {{
 
 const cancelScanBtn = document.getElementById("cancelScanBtn");
 const cancelNote = document.getElementById("cancelNote");
+const liveScanActions = document.getElementById("liveScanActions");
+
+// A completed, failed, or cancelled job cannot be cancelled again. Hide the
+// control rather than leaving a stale action in the finished scan UI.
+function finalizeLiveScanTerminal() {{
+    document.body.classList.add("leadbot-live-final");
+    if (cancelScanBtn) cancelScanBtn.disabled = true;
+    if (liveScanActions) liveScanActions.style.display = "none";
+}}
 
 // Makes the whole live-scan page look terminal once status="cancelled":
 // stops the pulse/progress/console-sweep animations (body.leadbot-live-final
@@ -14114,17 +14124,10 @@ const cancelNote = document.getElementById("cancelNote");
 // since the backend can flip a job to "cancelled" out from under a slow or
 // failed cancel request too.
 function finalizeLiveScanCancelled(message) {{
-    document.body.classList.add("leadbot-live-final");
+    finalizeLiveScanTerminal();
 
     const statusBox = document.querySelector(".status");
     if (statusBox) statusBox.classList.add("leadbot-cancelled-state");
-
-    if (cancelScanBtn) {{
-        cancelScanBtn.disabled = true;
-        cancelScanBtn.textContent = "Scan Cancelled";
-    }}
-
-    if (cancelNote) cancelNote.textContent = message || "Scan cancelled.";
 
     const liveLine1 = document.getElementById("liveConsoleLine1");
     const liveLine2 = document.getElementById("liveConsoleLine2");
@@ -14170,12 +14173,16 @@ async function cancelScan() {{
                 msg.textContent = data.message || "Scan cancelled.";
             }}
             finalizeLiveScanCancelled(data.message);
+        }} else if (data.status === "done" || data.status === "error") {{
+            // The job finished before the cancel landed; cancel_job()
+            // returns it unchanged. Hide the stale control now instead of
+            // waiting on the next poll.
+            finalizeLiveScanTerminal();
         }} else {{
             // Includes "cancelling" (the normal case -- the worker process
             // is being stopped) as well as any other non-final status.
-            // Stays disabled either way: this button never re-arms itself,
-            // and poll() below flips it to "Scan Cancelled" once the
-            // status poll observes the final CANCELLED state.
+            // Stays disabled either way; the terminal handler hides the
+            // action row once a final status is observed.
             //
             // Deliberately never shows data.message here: for a job that
             // was already terminal (e.g. status "error") before Cancel was
@@ -14426,26 +14433,7 @@ async function poll() {{
         const isFinalLiveStatus = (job.status === "done" || job.status === "cancelled" || job.status === "error");
         const hasLeadCards = (job.leads || []).length > 0;
 
-        // Status polling is what ultimately confirms CANCELLED (the
-        // cancel POST response above only ever says "cancelling" -- the
-        // worker process is still being stopped at that point). Finalize
-        // the button AND the "Cancelling scan..." note here too, since
-        // this poll is very often what observes the terminal state --
-        // the POST's own response handler almost always fires first,
-        // while the worker is still being torn down, and never runs
-        // again afterward to update either element itself.
-        if (job.status === "cancelled") {{
-            if (cancelScanBtn) {{
-                cancelScanBtn.disabled = true;
-                cancelScanBtn.textContent = "Scan Cancelled";
-            }}
-            if (cancelNote) {{
-                cancelNote.style.display = "block";
-                cancelNote.textContent = "Scan cancelled.";
-            }}
-            const statusBox = document.querySelector(".status");
-            if (statusBox) statusBox.classList.add("leadbot-cancelled-state");
-        }}
+        if (isFinalLiveStatus) finalizeLiveScanTerminal();
 
         const messageEl = document.getElementById("message");
         if (messageEl) {{
@@ -14514,11 +14502,11 @@ async function poll() {{
                 if (job.partial === true) {{
                     if (liveLine1) liveLine1.textContent = "Partial results are ready.";
                     if (liveLine2) liveLine2.textContent = "Some searches could not be completed, but the leads found so far are available.";
-                    if (liveLine3) liveLine3.textContent = "Your partial export is ready.";
+                    if (liveLine3) liveLine3.textContent = IS_GUEST ? "Review the results below. CSV export requires a free account." : "Your partial export is ready.";
                 }} else {{
-                    if (liveLine1) liveLine1.textContent = "Scan complete. Your export is ready.";
-                    if (liveLine2) liveLine2.textContent = "Search complete.";
-                    if (liveLine3) liveLine3.textContent = "Dashboard is ready.";
+                    if (liveLine1) liveLine1.textContent = IS_GUEST ? "Scan complete. Your results are ready to review below." : "Scan complete. Your export is ready.";
+                    if (liveLine2) liveLine2.textContent = IS_GUEST ? "CSV export requires signing in or creating a free account." : "Search complete.";
+                    if (liveLine3) liveLine3.textContent = IS_GUEST ? "Lead cards are available below." : "Dashboard is ready.";
                 }}
 
                 if (IS_GUEST) showGuestSavePrompt();

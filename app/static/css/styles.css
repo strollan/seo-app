@@ -1155,13 +1155,14 @@ label {
         width: min(78vw, 300px) !important;
         max-width: none !important;
         height: 100vh !important;
+        box-sizing: border-box !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: stretch !important;
         justify-content: flex-start !important;
         gap: 2px !important;
         padding: 84px 20px 24px !important;
-        background: rgba(7, 21, 47, .98) !important;
+        background: #07152f !important;
         box-shadow: -18px 0 50px rgba(0,0,0,.35) !important;
         transform: translateX(100%) !important;
         transition: transform .2s ease !important;
