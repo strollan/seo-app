@@ -102,7 +102,7 @@
   "inline_images": [
     {
       "alt": "Browser inspector view highlighting a page's title tag and H1 heading",
-      "placement_after_section": 0,
+      "placement_after_section": 2,
       "url": "/static/images/resources/imported/spot-weak-local-service-pages/inline-1.png"
     }
   ],

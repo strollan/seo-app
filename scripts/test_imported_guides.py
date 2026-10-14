@@ -223,6 +223,23 @@ class ImportedGuideTests(unittest.TestCase):
         record, _assets = imported_guides.validate_package(self.package)
         self.assertEqual(record["intro_paragraphs"], [])
 
+    def test_spot_weak_local_service_pages_inline_image_follows_on_page_targeting(self):
+        """Regression: this guide's inspector image belongs after its third section."""
+        guide = imported_guides.load_imported_guides()["spot-weak-local-service-pages"]
+        templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "app" / "templates")
+        request = Request({"type": "http", "method": "GET", "path": "/spot-weak-local-service-pages", "headers": []})
+        html = templates.get_template("imported_guide.html").render(
+            request=request, guide=guide, logo_url="", user=None, faq=[],
+            seo_meta_html="", article_jsonld_html="", faq_jsonld_html="",
+        )
+
+        title_tags = "Check Title Tags, Headers, and On-Page Targeting"
+        next_section = "Look at NAP Consistency and Google Business Profile Alignment"
+        image = 'src="/static/images/resources/imported/spot-weak-local-service-pages/inline-1.png"'
+        self.assertEqual(guide["inline_images"][0]["placement_after_section"], 2)
+        self.assertLess(html.index(title_tags), html.index(image))
+        self.assertLess(html.index(image), html.index(next_section))
+
     def test_intro_paragraphs_must_be_plain_text_list(self):
         self._manifest(intro_paragraphs="not a list")
         with self.assertRaisesRegex(imported_guides.GuideImportError, "intro_paragraphs must be a list"):
