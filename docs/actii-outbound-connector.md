@@ -121,8 +121,9 @@ PYTHONDONTWRITEBYTECODE=1 /path/to/venv/bin/python scripts/actii_pull_connector.
 ```
 
 Do not run this against production or install a scheduler during implementation.
-The CLI provides no continuous mode. Each invocation first recovers receipts,
-then claims at most one job. A singleton file lock rejects overlapping invocations.
+The CLI requires either `--recover-only` (saved receipts only, no claim/import)
+or `--once` (recover, then explicitly claim at most one job). Neither is selected
+by default; no continuous mode exists. Uncertain/review journals block normal claims. A singleton file lock rejects overlapping invocations.
 The existing workstation environment needs Python, requests and access to ACT II
 in the same loopback network namespace. This implementation targets POSIX/WSL.
 
@@ -156,7 +157,10 @@ Recovery procedure:
 1. Stop future companion invocations; preserve production queue and workstation
    journal backups. Do not remove `.lock`, clear journals or reset Processing.
 2. For a saved receipt, repair the production connection/configuration and invoke
-   `--once` after approval. It resends the receipt without another CRM import.
+   `--recover-only` after approval. It sends saved results only, never claims a
+   new job or contacts ACT II. Uncertain outcomes remain held for operator review.
+   Production disabled mode also rejects acknowledgments; see the operations
+   runbook for the separately authorized receipt-reconciliation window.
 3. For dispatch uncertainty or 409, inspect ACT II in the verified workspace using
    the original source reference/domain. Review the actual contact and its import
    note. No automatic merge, workspace reassignment or ownership repair exists.

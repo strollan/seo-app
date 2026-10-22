@@ -10,13 +10,16 @@ from agents.actii_file_store import StorageError
 from agents.actii_pull_connector import ConnectorError, PullConnector, load_config
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Owner-only connector JSON configuration")
-    parser.add_argument("--once", action="store_true", required=True, help="Explicitly perform at most one import")
-    args = parser.parse_args()
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--once", action="store_true", help="Explicitly claim at most one new import")
+    operation.add_argument("--recover-only", action="store_true", help="Acknowledge saved receipts; never claim or import")
+    args = parser.parse_args(argv)
     try:
-        print(PullConnector(load_config(args.config)).run_once())
+        connector = PullConnector(load_config(args.config))
+        print(connector.recover_only() if args.recover_only else connector.run_once())
     except (ConnectorError, StorageError, OSError, ValueError, KeyError, TypeError):
         # Never dump an exception, response, configuration, credential or prospect.
         print("Connector stopped. Check private configuration, journal, and server status; do not clear recovery records.", file=sys.stderr)

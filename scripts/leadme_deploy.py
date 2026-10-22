@@ -1356,6 +1356,109 @@ def cmd_dry_run(args):
 # Mode: --rollback-info
 # ---------------------------------------------------------------------------
 
+class CodeRollbackError(RuntimeError):
+    """A rollback guard failed; callers must not restart or repair automatically."""
+
+
+def code_only_rollback(repo, expected_release, previous_commit, *, apply=False):
+    """Local, explicit Git-tree rollback. Never SSH, restart, restore data or clean."""
+    repo = Path(repo).absolute()
+    if repo.is_symlink() or repo.resolve() != repo:
+        raise CodeRollbackError("Rollback requires a native, non-symlink repository path.")
+    if (not is_valid_sha(expected_release) or not is_valid_sha(previous_commit)
+            or expected_release == previous_commit):
+        raise CodeRollbackError("Two distinct full commit SHAs are required.")
+
+    def git(*args, input_text=None):
+        result = run_local(["git", *args], cwd=repo, input_text=input_text)
+        if not result.ok:
+            raise CodeRollbackError("Git rollback check or operation failed; preserve evidence and do not restart.")
+        return result.stdout
+
+    if Path(git("rev-parse", "--show-toplevel").strip()).resolve() != repo:
+        raise CodeRollbackError("Rollback must run at the repository root.")
+    if git("rev-parse", "HEAD").strip() != expected_release:
+        raise CodeRollbackError("HEAD differs from the reviewed release; unrelated commits must be preserved.")
+    for commit in (expected_release, previous_commit):
+        if git("rev-parse", "--verify", commit + "^{commit}").strip() != commit:
+            raise CodeRollbackError("Rollback revisions must be exact commits.")
+    git("merge-base", "--is-ancestor", previous_commit, expected_release)
+    if git("status", "--porcelain=v1", "-z", "--untracked-files=no"):
+        raise CodeRollbackError("Tracked or staged changes exist; refusing to overwrite production work.")
+    for marker in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"):
+        path = Path(git("rev-parse", "--git-path", marker).strip())
+        if not path.is_absolute():
+            path = repo / path
+        if path.exists():
+            raise CodeRollbackError("An existing Git operation requires review.")
+    paths = git("diff", "--name-only", "--no-renames", "-z", previous_commit, expected_release).split("\0")[:-1]
+    if not paths:
+        raise CodeRollbackError("The reviewed revisions have no code differences.")
+    protected = {"data", "exports", "reports", "settings_data", "backups", "audits", "logs", "private", "config", "journals"}
+    for name in paths:
+        parts = Path(name).parts
+        if (not re.fullmatch(r"[A-Za-z0-9_./-]+", name) or ".." in parts
+                or parts[0] in protected or name.startswith("/")
+                or (Path(name).name.startswith(".env") and name != ".env.example")
+                or Path(name).suffix in {".db", ".sqlite", ".sqlite3", ".journal", ".log"}):
+            raise CodeRollbackError("Release delta includes protected data or configuration; code-only rollback refused.")
+
+    def tree(commit):
+        entries = {}
+        for entry in git("ls-tree", "-r", "-z", commit).split("\0"):
+            if entry:
+                metadata, name = entry.split("\t", 1)
+                if name in paths:
+                    entries[name] = metadata.split()
+        return entries
+
+    released, previous = tree(expected_release), tree(previous_commit)
+    for name in paths:
+        path = repo / name
+        if any(parent.is_symlink() for parent in path.parents):
+            raise CodeRollbackError("A rollback path contains a symlink.")
+        for entry in (released.get(name), previous.get(name)):
+            if entry and (entry[0] not in {"100644", "100755"} or entry[1] != "blob"):
+                raise CodeRollbackError("Rollback supports regular code files only.")
+        if name not in released:
+            if path.exists() or path.is_symlink():
+                raise CodeRollbackError("An untracked or ignored path would be replaced; refusing rollback.")
+        else:
+            if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+                raise CodeRollbackError("A released code file is missing or is not a standalone regular file.")
+            # Detect changes hidden by assume-unchanged/skip-worktree flags as well.
+            if (git("hash-object", "--", name).strip() != released[name][2]
+                    or bool(path.stat().st_mode & 0o111) != (released[name][0] == "100755")):
+                raise CodeRollbackError("Released code bytes or modes changed; refusing rollback.")
+    plan = {"expected_release": expected_release, "previous_commit": previous_commit,
+            "files": paths, "applied": False}
+    if not apply:
+        return plan
+    # Exclusive maintenance is required: no other Git operators or code writers.
+    # Restore only the enumerated release paths; no-overlay removes release-only files.
+    git("restore", "--source=" + previous_commit, "--staged", "--worktree", "--no-overlay",
+        "--pathspec-from-file=-", "--pathspec-file-nul", input_text="\0".join(paths) + "\0")
+    if git("write-tree").strip() != git("rev-parse", previous_commit + "^{tree}").strip():
+        raise CodeRollbackError("Rollback index is incomplete; preserve evidence and do not restart.")
+    git("diff", "--quiet")
+    git("update-ref", "HEAD", previous_commit, expected_release)
+    if git("rev-parse", "HEAD").strip() != previous_commit or git("status", "--porcelain=v1", "-z", "--untracked-files=no"):
+        raise CodeRollbackError("Rollback verification failed; preserve evidence and do not restart.")
+    plan["applied"] = True
+    return plan
+
+
+def cmd_rollback_code(args):
+    try:
+        result = code_only_rollback(REPO_PATH, args.expected_release, args.previous_commit, apply=args.apply)
+    except CodeRollbackError as error:
+        print("STOPPED: " + str(error))
+        return 1
+    print(json.dumps(result, indent=2))
+    print("Code only; no data restored or service restarted. Complete the runbook health checks before reopening traffic.")
+    return 0
+
+
 def cmd_rollback_info(args):
     r = Reporter()
     r.title("LeadMeLeads Rollback Info (informational only — nothing executed)")
@@ -1388,19 +1491,19 @@ def cmd_rollback_info(args):
     r.section("rollback plan (not executed)")
     r.note("  1. ssh -i " + SSH_KEY + f" {PROD_USER}@{PROD_HOST}")
     r.note(f"  2. cd {PROD_APP_PATH} && git fetch origin")
-    r.note(f"  3. git checkout {target_commit} -- .   # or: git reset --hard {target_commit}")
-    if recorded_backup:
-        r.note(f"  4. inspect {recorded_backup}/backup-manifest.json")
-        r.note(f"  5. restore app_auth.db from {recorded_backup}/data/app_auth.db if data rollback is required")
-    else:
-        r.note(f"  4. inspect {PROD_BACKUPS_DIR}/<timestamp>/backup-manifest.json")
-        r.note(f"  5. restore app_auth.db from the chosen directory if data rollback is required")
-    r.note(f"  6. systemctl restart {PROD_SERVICE}")
-    r.note(f"  7. systemctl is-active {PROD_SERVICE}")
-    r.note(f"  8. curl -I {LIVE_SITE}/")
+    r.note("  3. hold imports/invocations, drain traffic and arrange exclusive approved maintenance")
+    r.note(f"  4. run the reviewed helper from the release checkout: --rollback-code --expected-release {current_commit or '<reviewed release SHA>'} --previous-commit {target_commit}")
+    r.note("     inspect the preview, then repeat with --apply only after separate approval")
+    r.note("     exact HEAD, clean tracked/index state and protected-path checks must pass")
+    backup_reference = recorded_backup or f"{PROD_BACKUPS_DIR}/<timestamp>"
+    r.note(f"  5. inspect {backup_reference}/backup-manifest.json")
+    r.note(f"     data evidence: {backup_reference}/data/app_auth.db; do not restore for code-only rollback")
+    r.note(f"  6. after code verification and separate approval, restart {PROD_SERVICE} and verify it is active")
+    r.note(f"  7. verify disabled imports, unchanged protected data/config and GET health at {LIVE_SITE}")
 
     r.note()
-    r.note("This mode never executes the rollback. Run the commands above manually if needed.")
+    r.note("Follow docs/actii-operations.md: preserve live configuration/runtime data, verify exact code revision, disabled imports and HTTP health.")
+    r.note("Do not restore a database for a code-only rollback. This mode never executes rollback or restart.")
     print(r.render())
     return 0
 
@@ -1701,12 +1804,21 @@ def build_parser():
     mode.add_argument("--doctor", action="store_true", help="diagnose the local/remote/live environment")
     mode.add_argument("--dry-run", action="store_true", help="print the deploy plan without executing it")
     mode.add_argument("--rollback-info", action="store_true", help="show rollback plan, nothing executed")
+    mode.add_argument("--rollback-code", action="store_true", help="local guarded code-only rollback; preview unless --apply")
+    parser.add_argument("--expected-release", help="Exact currently deployed full commit SHA")
+    parser.add_argument("--previous-commit", help="Exact verified pre-deployment full commit SHA")
+    parser.add_argument("--apply", action="store_true", help="Apply the explicit local --rollback-code plan")
     return parser
 
 
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.rollback_code:
+        if not args.expected_release or not args.previous_commit:
+            parser.error("--rollback-code requires --expected-release and --previous-commit")
+    elif args.apply or args.expected_release or args.previous_commit:
+        parser.error("rollback arguments require --rollback-code")
 
     identity_ok, identity_detail = validate_repo_identity()
     if not identity_ok:
@@ -1716,6 +1828,8 @@ def main(argv=None):
         print("STOPPED: refusing to contact or modify production from the wrong repository")
         return 1
 
+    if args.rollback_code:
+        return cmd_rollback_code(args)
     if args.check:
         return cmd_check(args)
     if args.status:

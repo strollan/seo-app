@@ -299,6 +299,150 @@ class QueueTests(QueueFixture):
             connection.close()
 
 
+class RecoveryOnlyTests(QueueFixture):
+    """No ACT II dependency: all HTTP terminates in the disposable queue harness."""
+
+    def setUp(self):
+        super().setUp()
+        self.calls = []
+        self.config = {**self.binding, "production_origin": "https://production.example", "token": TOKEN,
+                       "workspace": "Synthetic", "actii_secret_file": "/unused/signing.json",
+                       "state_dir": str(Path.cwd() / "recovery-state")}
+        self.session = Mock()
+        self.session.post.side_effect = self.transport_request
+        self.worker = PullConnector(self.config, clock=lambda: self.now[0], session=self.session)
+        self.submit = self.enterContext(patch.object(self.worker, "_submit", side_effect=AssertionError("no import allowed")))
+        self.signing = self.enterContext(patch.object(self.worker, "_local_secret", side_effect=AssertionError("no signing access allowed")))
+
+    def transport_request(self, url, **kwargs):
+        self.calls.append(url)
+        response = self.status_client.post(url.replace("https://production.example", ""),
+                                           json=kwargs["json"], headers=kwargs["headers"])
+        result = requests.Response()
+        result.status_code = response.status_code
+        result.raw = io.BytesIO(response.content)
+        return result
+
+    def pending_receipt(self, phase="receipt", outcome="created"):
+        self.enqueue()
+        job = self.claim()
+        record = {key: job[key] for key in ("id", "connector_id", "binding_version", "user_id", "username", "lease_id", "payload_hash")}
+        record["phase"] = phase
+        if phase != "dispatching":
+            record["receipt"] = {"id": job["id"], "lease_id": job["lease_id"], "outcome": outcome, "contact_id": 7}
+        path = self.worker.root / (job["id"] + ".json")
+        atomic_json(path, record)
+        return job, path
+
+    def second_job(self):
+        Path("exports/second.csv").write_bytes(Path("exports", self.file).read_bytes())
+        Path("data/leadbot_export_owners.json").write_text(json.dumps({
+            self.file: {"owner_username": "owner"}, "second.csv": {"owner_username": "owner"}}))
+        return self.queue.enqueue(self.user, "second.csv", "business.example",
+                                  {"company_name": "Second synthetic business", "website": "https://business.example"})
+
+    def assert_recovery_transport_only(self):
+        self.assertTrue(all(url == "https://production.example/integrations/actii/result" for url in self.calls))
+        self.submit.assert_not_called()
+        self.signing.assert_not_called()
+
+    def test_empty_recovery_never_claims_or_imports(self):
+        self.enqueue()
+        self.assertEqual(self.worker.recover_only(), "No receipts pending; no jobs claimed.")
+        self.assertEqual(self.calls, [])
+        self.assert_recovery_transport_only()
+
+    def test_saved_receipt_does_not_claim_waiting_second_job(self):
+        job, path = self.pending_receipt()
+        second = self.second_job()
+        self.assertEqual(self.worker.recover_only(), "Receipts recovered; no jobs claimed.")
+        self.assertEqual(self.state(job["id"]), "added")
+        self.assertEqual(self.state(second["id"]), "queued")
+        self.assertEqual(read_json(path)["phase"], "acknowledged")
+        self.worker.recover_only()
+        self.assertEqual(len(self.calls), 1)
+        self.assert_recovery_transport_only()
+
+    def test_failed_ack_keeps_receipt_for_retry_and_lease_requires_review(self):
+        job, path = self.pending_receipt()
+        self.session.post.side_effect = requests.ReadTimeout()
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
+        self.assertEqual(read_json(path)["phase"], "receipt")
+        self.now[0] += 121
+        self.assertEqual(self.state(job["id"]), "needs_review")
+        self.session.post.side_effect = self.transport_request
+        self.worker.recover_only()
+        self.assertEqual(self.state(job["id"]), "added")
+        self.assert_recovery_transport_only()
+
+    def test_crashed_dispatch_is_durably_uncertain_and_stops(self):
+        job, path = self.pending_receipt(phase="dispatching")
+        second = self.second_job()
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
+        record = read_json(path)
+        self.assertEqual(record["receipt"]["outcome"], "uncertain")
+        self.assertEqual(record["phase"], "acknowledged")
+        self.assertEqual(self.state(job["id"]), "needs_review")
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
+        with self.assertRaises(ConnectorError):
+            with patch.object(self.worker, "_local_secret", return_value="synthetic"):
+                self.worker.run_once()
+        self.assertEqual(self.state(second["id"]), "queued")
+        self.assert_recovery_transport_only()
+
+    def test_failed_uncertain_ack_keeps_review_evidence(self):
+        job, path = self.pending_receipt(phase="dispatching")
+        self.session.post.side_effect = requests.ReadTimeout()
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
+        self.assertEqual(read_json(path)["phase"], "receipt")
+        self.assertEqual(read_json(path)["receipt"]["outcome"], "uncertain")
+        self.now[0] += 121
+        self.assertEqual(self.state(job["id"]), "needs_review")
+        self.session.post.side_effect = self.transport_request
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
+        self.assertEqual(self.state(job["id"]), "needs_review")
+        self.assert_recovery_transport_only()
+
+    def test_crash_after_remote_ack_preserves_idempotent_receipt(self):
+        job, path = self.pending_receipt()
+        from agents import actii_pull_connector as companion
+        with patch.object(companion, "atomic_json", side_effect=OSError("synthetic crash")):
+            with self.assertRaises(OSError):
+                self.worker.recover_only()
+        self.assertEqual(read_json(path)["phase"], "receipt")
+        self.assertEqual(self.state(job["id"]), "added")
+        self.worker.recover_only()
+        self.assertEqual(read_json(path)["phase"], "acknowledged")
+        self.assert_recovery_transport_only()
+
+    def test_normal_once_claims_only_one_new_job(self):
+        first = self.enqueue()
+        second = self.second_job()
+        with patch.object(self.worker, "_local_secret", return_value="synthetic"), \
+             patch.object(self.worker, "_submit", return_value={"outcome": "created", "contact_id": 7}) as submit:
+            self.assertEqual(self.worker.run_once(), "Added.")
+        self.assertEqual(sum(url.endswith("/claim") for url in self.calls), 1)
+        submit.assert_called_once()
+        states = [self.state(item["id"]) for item in (first, second)]
+        self.assertEqual(sorted(states), ["added", "queued"])
+
+    def test_cli_requires_explicit_mutually_exclusive_operation(self):
+        import actii_pull_connector as cli
+        with patch.object(cli, "load_config", return_value=self.config), \
+             patch.object(cli, "PullConnector", return_value=self.worker), patch("builtins.print"):
+            self.assertEqual(cli.main(["--config", "synthetic.json", "--recover-only"]), 0)
+            for flags in ([], ["--once", "--recover-only"]):
+                with self.assertRaises(SystemExit) as error:
+                    cli.main(["--config", "synthetic.json", *flags])
+                self.assertEqual(error.exception.code, 2)
+        self.assert_recovery_transport_only()
+
+
 @unittest.skipUnless(os.getenv("ACTII_TEST_ROOT"), "ACT II checkout not supplied")
 class CompanionTests(QueueFixture):
     def setUp(self):
@@ -371,7 +515,7 @@ class CompanionTests(QueueFixture):
         self.assertEqual(self.crm.state.store.delete_contact("Workspace", contact["id"], contact["updated_at"]), "deleted")
         self.now[0] += 121
         self.session.post.side_effect = original
-        self.worker.run_once()
+        self.worker.recover_only()
         self.assertEqual(self.crm.state.store.contacts("Workspace"), [])
         self.assertEqual(self.state(item["id"]), "added")
         self.assertEqual(sum(url.startswith("http:") for url, _ in self.calls), 1)
@@ -388,7 +532,8 @@ class CompanionTests(QueueFixture):
             with self.assertRaises(OSError):
                 self.worker.run_once()
         self.assertEqual(len(self.crm.state.store.contacts("Workspace")), 1)
-        self.worker.run_once()
+        with self.assertRaises(ConnectorError):
+            self.worker.recover_only()
         self.assertEqual(self.state(item["id"]), "needs_review")
         self.assertEqual(sum(url.startswith("http:") for url, _ in self.calls), 1)
 
@@ -402,7 +547,8 @@ class CompanionTests(QueueFixture):
         self.session.post.side_effect = timeout
         self.worker.run_once()
         self.assertEqual(self.state(item["id"]), "needs_review")
-        self.worker.run_once()
+        with self.assertRaises(ConnectorError):
+            self.worker.run_once()
         self.assertEqual(self.crm.state.store.contacts("Workspace"), [])
 
     def test_token_config_mapping_and_singleton_fail_before_network(self):

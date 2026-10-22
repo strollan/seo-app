@@ -671,5 +671,185 @@ class GitBinaryRoutingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 124)
 
 
+class CodeOnlyRollbackTests(unittest.TestCase):
+    """Real Git operations exclusively in disposable repos; synthetic data only."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / "repo"
+        self.root.mkdir()
+        self.git("init", "-b", "main")
+        for name in ld.REPO_IDENTITY_FILES:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("baseline " + name + "\n")
+        (self.root / ".gitignore").write_text("data/\nexports/\nsettings_data/\nprivate/\nworkstation/\n.env\n")
+        (self.root / "agents/legacy.py").write_text("baseline legacy\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "baseline")
+        self.previous = self.git("rev-parse", "HEAD").strip()
+        (self.root / "app/main.py").write_text("release code\n")
+        self.introduced = ["agents/actii_pull_connector.py", "scripts/actii_pull_connector.py", "docs/actii-operations.md"]
+        for name in self.introduced:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("release-only code\n")
+        (self.root / "agents/legacy.py").unlink()
+        self.git("add", "-A")
+        self.git("commit", "-m", "release")
+        self.release = self.git("rev-parse", "HEAD").strip()
+        self.protected = {}
+        for name in ("data/app_auth.db", "data/actii_import_queue/receipt.json", "exports/leads.csv",
+                     "settings_data/options.json", ".env", "private/bindings.json",
+                     "workstation/connector.json", "workstation/journal/dispatch.json", "workstation/journal/receipt.json"):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(("synthetic runtime: " + name).encode())
+            path.chmod(0o600)
+            self.protected[name] = (path.read_bytes(), path.stat().st_mode, path.stat().st_mtime_ns, path.stat().st_ino)
+
+    def git(self, *args):
+        result = subprocess.run(["git", "-c", "user.name=Rollback Test", "-c", "user.email=test@example.invalid", *args],
+                                cwd=self.root, check=True, capture_output=True, text=True)
+        return result.stdout
+
+    def rollback(self, apply=False):
+        return ld.code_only_rollback(self.root, self.release, self.previous, apply=apply)
+
+    def assert_protected_unchanged(self):
+        for name, expected in self.protected.items():
+            path = self.root / name
+            self.assertEqual((path.read_bytes(), path.stat().st_mode, path.stat().st_mtime_ns, path.stat().st_ino), expected)
+
+    def test_preview_changes_no_code_refs_or_runtime_data(self):
+        plan = self.rollback()
+        self.assertFalse(plan["applied"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+        self.assertIn("agents/legacy.py", plan["files"])
+        self.assertTrue(all((self.root / p).exists() for p in self.introduced))
+        self.assert_protected_unchanged()
+
+    def test_apply_restores_exact_revision_and_removes_only_release_files(self):
+        with mock.patch.object(ld, "run_remote", side_effect=AssertionError("no SSH")):
+            plan = self.rollback(apply=True)
+        self.assertTrue(plan["applied"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.previous)
+        self.assertEqual(self.git("write-tree").strip(), self.git("rev-parse", self.previous + "^{tree}").strip())
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=no"), "")
+        self.assertTrue(all(not (self.root / p).exists() for p in self.introduced))
+        self.assertEqual((self.root / "app/main.py").read_text(), "baseline app/main.py\n")
+        self.assertEqual((self.root / "agents/legacy.py").read_text(), "baseline legacy\n")
+        self.assert_protected_unchanged()
+
+    def test_unrelated_tracked_or_staged_changes_abort(self):
+        path = self.root / "docs/leadme-deploy.md"
+        path.write_text("unrelated operator work\n")
+        for staged in (False, True):
+            if staged:
+                self.git("add", "docs/leadme-deploy.md")
+            with self.assertRaises(ld.CodeRollbackError):
+                self.rollback(apply=True)
+            self.assertEqual(path.read_text(), "unrelated operator work\n")
+            self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+            self.assert_protected_unchanged()
+
+    def test_later_unrelated_commit_aborts(self):
+        (self.root / "notes.md").write_text("later production change\n")
+        self.git("add", "notes.md")
+        self.git("commit", "-m", "unrelated")
+        later = self.git("rev-parse", "HEAD")
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assertEqual(self.git("rev-parse", "HEAD"), later)
+        self.assert_protected_unchanged()
+
+    def test_untracked_and_ignored_collision_abort_without_overwrite(self):
+        path = self.root / "agents/legacy.py"
+        path.write_text("untracked production work\n")
+        for ignored in (False, True):
+            if ignored:
+                (self.root / ".git/info/exclude").write_text("agents/legacy.py\n")
+            with self.assertRaises(ld.CodeRollbackError):
+                self.rollback(apply=True)
+            self.assertEqual(path.read_text(), "untracked production work\n")
+            self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+            self.assert_protected_unchanged()
+
+    def test_hidden_related_work_aborts(self):
+        self.git("update-index", "--assume-unchanged", "app/main.py")
+        (self.root / "app/main.py").write_text("hidden operator work\n")
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assertEqual((self.root / "app/main.py").read_text(), "hidden operator work\n")
+        self.assert_protected_unchanged()
+
+    def test_hard_linked_code_aborts(self):
+        import os
+        os.link(self.root / "app/main.py", Path(self.temp.name) / "linked-code")
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assert_protected_unchanged()
+
+    def test_protected_tracked_delta_aborts(self):
+        self.git("add", "-f", "data/app_auth.db")
+        self.git("commit", "-m", "unsafe tracked runtime fixture")
+        self.release = self.git("rev-parse", "HEAD").strip()
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assert_protected_unchanged()
+
+    def test_symlinked_code_aborts_without_following(self):
+        path = self.root / "app/main.py"
+        outside = Path(self.temp.name) / "outside-code"
+        outside.write_text("release code\n")
+        path.unlink()
+        path.symlink_to(outside)
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assertEqual(outside.read_text(), "release code\n")
+        self.assert_protected_unchanged()
+
+    def test_untracked_sibling_in_connector_directory_is_preserved(self):
+        path = self.root / "agents/operator-journal.json"
+        path.write_text("untracked operator evidence\n")
+        self.rollback(apply=True)
+        self.assertEqual(path.read_text(), "untracked operator evidence\n")
+        self.assert_protected_unchanged()
+
+    def test_existing_git_operation_aborts(self):
+        (self.root / ".git/CHERRY_PICK_HEAD").write_text(self.previous + "\n")
+        with self.assertRaises(ld.CodeRollbackError):
+            self.rollback(apply=True)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+        self.assert_protected_unchanged()
+
+    def test_ref_update_failure_stops_without_cleanup_or_data_restore(self):
+        original = ld.run_local
+        commands = []
+        def fail_ref(args, **kwargs):
+            commands.append(args[1])
+            if args[1] == "update-ref":
+                return ld.CmdResult(1, "", "synthetic ref lock failure")
+            return original(args, **kwargs)
+        with mock.patch.object(ld, "run_local", side_effect=fail_ref):
+            with self.assertRaises(ld.CodeRollbackError):
+                self.rollback(apply=True)
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+        self.assertTrue((self.root / ".git").is_dir())
+        self.assertFalse(set(commands) & {"reset", "clean", "checkout", "push", "pull"})
+        self.assert_protected_unchanged()
+
+    def test_cli_preview_never_contacts_production_and_requires_explicit_apply(self):
+        with mock.patch.object(ld, "REPO_PATH", self.root), \
+             mock.patch.object(ld, "run_remote", side_effect=AssertionError("no SSH")), redirect_stdout(io.StringIO()):
+            self.assertEqual(ld.main(["--rollback-code", "--expected-release", self.release,
+                                      "--previous-commit", self.previous]), 0)
+            with self.assertRaises(SystemExit):
+                ld.main(["--apply"])
+        self.assertEqual(self.git("rev-parse", "HEAD").strip(), self.release)
+        self.assert_protected_unchanged()
+
+
 if __name__ == "__main__":
     unittest.main()

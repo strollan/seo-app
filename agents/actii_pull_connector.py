@@ -156,26 +156,49 @@ class PullConnector:
         record["phase"] = "acknowledged"
         atomic_json(path, record)
 
-    def run_once(self):
-        """One recovery pass and at most one claim/import. No daemon or scheduler."""
+    def _check_expiry(self):
+        if timestamp(self.config["expires_at"]) <= self.clock():
+            raise ConnectorError("Connector credential has expired; operator rotation is required.")
+
+    def _recover_receipts(self):
+        """Called under the singleton lock. Only sends saved results to production."""
+        recovered = False
+        for path in sorted(self.root.glob("*.json")):
+            record = read_json(path)
+            if (not isinstance(record, dict) or not ID.fullmatch(path.stem) or record.get("id") != path.stem
+                    or any(record.get(key) != self.config[key] for key in ("connector_id", "binding_version", "user_id", "username"))
+                    or not isinstance(record.get("lease_id"), str) or not ID.fullmatch(record["lease_id"])):
+                raise ConnectorError("Local journal binding requires operator review.")
+            if record.get("phase") == "dispatching":
+                # Persist uncertainty before attempting an acknowledgment. Never retry a dispatch.
+                record.update(phase="receipt", receipt={"id": record["id"], "lease_id": record["lease_id"], "outcome": "uncertain"})
+                atomic_json(path, record)
+            receipt = record.get("receipt")
+            if (record.get("phase") not in {"receipt", "acknowledged"} or not isinstance(receipt, dict)
+                    or receipt.get("id") != record["id"] or receipt.get("lease_id") != record["lease_id"]
+                    or receipt.get("outcome") not in {"created", "existing", "review", "failed", "not_sent", "uncertain"}):
+                raise ConnectorError("Local journal state requires operator review.")
+            if record["phase"] == "receipt":
+                self._ack(path, record)  # A failed acknowledgment leaves the durable receipt intact.
+                recovered = True
+            if receipt["outcome"] in {"uncertain", "review"}:
+                # Keep this durable stop even after acknowledgment and across later invocations.
+                raise ConnectorError("Local journal outcome requires operator review; no job claimed.")
+        return recovered
+
+    def recover_only(self):
+        """Reconcile saved receipts only. No claim, ACT II access, dispatch or polling."""
         with file_lock(self.root, blocking=False):
-            if timestamp(self.config["expires_at"]) <= self.clock():
-                raise ConnectorError("Connector credential has expired; operator rotation is required.")
+            self._check_expiry()
+            recovered = self._recover_receipts()
+            return "Receipts recovered; no jobs claimed." if recovered else "No receipts pending; no jobs claimed."
+
+    def run_once(self):
+        """Explicit normal operation: recover, then claim at most one new job."""
+        with file_lock(self.root, blocking=False):
+            self._check_expiry()
             secret = self._local_secret()  # Validate before claiming any work.
-            recovered = False
-            for path in sorted(self.root.glob("*.json")):
-                record = read_json(path)
-                if (not isinstance(record, dict) or not ID.fullmatch(path.stem) or record.get("id") != path.stem
-                        or any(record.get(key) != self.config[key] for key in ("connector_id", "binding_version", "user_id", "username"))):
-                    raise ConnectorError("Local journal binding requires operator review.")
-                if record["phase"] == "dispatching":
-                    record.update(phase="receipt", receipt={"id": record["id"], "lease_id": record["lease_id"], "outcome": "uncertain"})
-                    atomic_json(path, record)
-                if record["phase"] == "receipt":
-                    self._ack(path, record)
-                    recovered = True
-                elif record["phase"] != "acknowledged":
-                    raise ConnectorError("Local journal state requires operator review.")
+            recovered = self._recover_receipts()
             result = self._remote("/integrations/actii/claim", {})
             job = result.get("job")
             if job is None:

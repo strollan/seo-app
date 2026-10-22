@@ -131,33 +131,145 @@ username, binding version, payload hash and lease ID:
 - Only a durable `not_sent` result is eligible for the bounded retry path. All other
   missing, conflicting or unprovable outcomes stay held for operator review.
 
-The current CLI has only `--once`: it recovers pending receipts **and may claim a
-new job**. It is not a receipt-only/offline recovery command. Do not run it while
-performing disabled restoration or while any stale/uncertain queue copy remains.
-Only after reconciliation proves the whole queue safe and activation is separately
-approved may an explicit invocation resend pending receipts and claim at most one
-job. Cases requiring manual resolution, requeue or receipt-only transport need a
-separately reviewed procedure; no force/replay tool is provided. Disabling the
-mode also disables acknowledgments, so re-enabling solely to try recovery is unsafe
-without that review.
+Use the explicit recovery-only operation for saved receipts, after backup
+comparison and separate authorization of receipt reconciliation:
 
-## Rollback
+```sh
+PYTHONDONTWRITEBYTECODE=1 /path/to/venv/bin/python scripts/actii_pull_connector.py --config /absolute/private/connector.json --recover-only
+```
 
-Before any later deployment, preserve the verified pre-deploy code SHA and a
-coherent backup set. For this candidate the observed production baseline is
-`0dce6486aa5ccb48e7359088a6fc3f45e87a5b49`; reverify it at deploy time.
+`--recover-only` takes the singleton journal lock, validates credential expiry and
+journal identity, and sends only existing receipts to the production result
+endpoint. It never calls the claim endpoint, loads the ACT II signing file,
+contacts ACT II, or starts polling. An interrupted `dispatching` record is first
+persisted as an uncertain receipt. After acknowledging that uncertainty it exits
+with a review-required error, and future recovery/normal invocations remain held
+by the same journal record. A failed acknowledgment leaves the durable receipt
+available for an idempotent retry; a crash after remote acknowledgment is also
+safe to retry. Neither success nor failure transitions into normal importing.
+Do not delete or edit journals to bypass a review-required outcome.
 
-For a code-only rollback, first hold invocations and disable imports through the
-approved maintenance mechanism, preserve the current spool/journal, and restore
-the pre-deploy code artifact using the normal reviewed deployment procedure.
-Retain all queue/journal files outside code replacement. No schema migration or
-reverse migration is involved. A code rollback does not undo an ACT II import.
-Do not restore old data merely to roll back code.
+Production disabled mode rejects acknowledgments as well as claims. The helper
+does not enable production: during disabled restoration leave it disabled and
+perform the offline evidence comparison first. Network receipt reconciliation
+requires a separately approved recovery window with a valid existing binding and
+production queue access; hold all other invocations and enqueueing. Run only
+`--recover-only` in that window, then return production to disabled mode and verify
+it. Do not enable the queue just to experiment with recovery. Conflicting leases,
+missing journals or already-acknowledged records against an older production copy
+still need manual review; this command does not repair them or force replay.
 
-If data recovery is also required, follow the matched disabled-restore procedure
-above, then reconcile every receipt before any activation. Never roll back ACT II,
-Oracle or Slayer as part of this operation. Any later production restart/deployment
-needs its own authorization.
+Normal operation requires the mutually exclusive `--once` option. It explicitly
+allows one new claim after successful receipt reconciliation, and at most one
+local submission. Any retained uncertain/review receipt blocks that claim.
+Neither option is selected by default; no daemon, scheduler or automatic refresh
+is provided. Existing `not_sent` retries still need a later explicit `--once`.
+
+## Exact code-only rollback
+
+The candidate helper now provides a local `--rollback-code` operation. It never
+uses SSH, fetches, pushes, restarts, restores a database, changes configuration,
+or cleans untracked files. Preview is the default; `--apply` is required to alter
+code. Do not use the installed user-local wrapper if it resolves to another
+checkout. Run the reviewed release's `scripts/leadme-deploy` at the production
+repository only during a separately approved rollback window. Its implementation
+must be available in the deployed release; preserve that reviewed helper outside
+the live code tree as protected evidence if the rollout can fail partway.
+
+Prerequisites and preflight:
+
+1. Record the exact deployed release SHA and the verified pre-deploy SHA. For this
+   release the baseline is `0dce6486aa5ccb48e7359088a6fc3f45e87a5b49`. Recheck the
+   actual current SHA; never substitute moving branch names. Retain both commit
+   objects and an off-host code artifact/manifest through rollback retention.
+2. Hold companions, disable imports in the effective service/application
+   configuration, drain in-flight application requests, and arrange exclusive
+   maintenance with no other Git operators, code writers or requests until health
+   checks complete. Any service stop/restart is separately authorized. The helper
+   does not quiesce services or set environment variables for you.
+3. Preserve and verify the current protected backup set described below. Record
+   hashes, modes and owners for live configuration and runtime paths before code
+   rollback; do not restore old data to roll back code.
+4. Preview with the exact SHAs (placeholders below are not runnable revisions):
+
+```sh
+scripts/leadme-deploy --rollback-code --expected-release RELEASE_FULL_SHA --previous-commit PREVIOUS_FULL_SHA
+```
+
+The helper verifies repository root, exact current HEAD, commit ancestry, no
+tracked/staged changes or unfinished Git operation, and an enumerated code delta
+containing no protected data/configuration paths. It checks actual code bytes and
+executable modes even when Git flags hide modifications. Symlinked/hard-linked
+code, unsupported tree entries and untracked/ignored collisions cause an abort.
+An unrelated new production commit or dirty file also causes an abort; preserve
+it and obtain a newly reviewed rollback plan rather than overriding the guard.
+Inspect every preview path against the approved release manifest.
+
+Only after reviewing the preview and separately authorizing rollback:
+
+```sh
+scripts/leadme-deploy --rollback-code --expected-release RELEASE_FULL_SHA --previous-commit PREVIOUS_FULL_SHA --apply
+```
+
+The helper restores only enumerated release paths using Git restore with
+`--no-overlay`, which removes release-only connector files and restores any files
+deleted by the release. It verifies the complete index tree equals the previous
+revision, then compare-and-swap updates HEAD from the exact release SHA to the
+previous SHA. It verifies clean tracked state and exact HEAD afterward. There is
+no blanket cleanup or hard reset. Ignored databases, exports, settings, private
+configuration, queue records, receipts and journals are neither read nor replaced.
+A code rollback cannot undo an ACT II import.
+
+Failure handling and post-rollback checks:
+
+- A guard failure before restore leaves code and refs unchanged. A failure after
+  restore begins may leave a partial code/index state; keep traffic and companions
+  held, preserve evidence and obtain operator review. Do not restart, retry blindly,
+  clean, reset, or restore databases. Exclusive maintenance is essential: this is
+  not an atomic transaction against concurrent Git operators or code writers.
+- Confirm `git rev-parse HEAD` equals the recorded previous SHA, `git write-tree`
+  equals that commit's tree, and tracked/index diffs are empty. Confirm all
+  release-only paths in the preview are absent. Compare protected runtime/config
+  hashes, modes and owners against the pre-rollback manifest.
+- Confirm the effective mode remains disabled, no binding was enabled, and no
+  companion or scheduler is running. Restart LeadMeLeads only under separate
+  approval after code/config verification. Require an active service, no new
+  startup/import errors in its journal, and successful GET health checks for `/`,
+  `/login`, and authenticated Lead Finder; anonymous `/history` must redirect to
+  `/login`. The original baseline has no connector routes; verify those remain
+  absent. No import or paid scan is a health check.
+- Reopen traffic only after these checks pass. Keep all connector evidence for
+  future reconciliation. If data recovery is independently required, use the
+  matched disabled-restore procedure; do not roll back ACT II, Oracle or Slayer.
+
+## Protected backup and restoration inventory
+
+These are documentation requirements, not backups created by this mission. The
+ordinary deployment helper is a data snapshot tool, not complete machine/config
+recovery. Its manifest does not back up the external/private items below. A code
+pull normally leaves them in place, but preserve them separately before any
+maintenance that could replace configuration. Backups and manifests containing
+secrets must be encrypted off-host with tightly restricted operator access.
+Never attach them to a PR, logs or this Git repository.
+
+| Protected item | Exact source / inventory rule | Restoration requirement |
+| --- | --- | --- |
+| Production application configuration | `/var/www/leadmeleads/.env` plus every additional application config file actually used | Restore contents and original UID/GID/mode from protected evidence, then explicitly force CRM disabled and binding unset before startup; never let an old enabled value return silently |
+| Service environment and definition | `/etc/systemd/system/leadmeleads.service`, all effective systemd drop-ins, and every `EnvironmentFile` named by the effective unit, including paths outside the app; record unit enablement and service UID/working directory | Restore only during approved maintenance; review inline environment as secret-bearing; verify effective environment, service UID and working directory before an approved daemon reload/restart |
+| Production connector bindings | Actual `ACTII_CONNECTOR_BINDINGS_FILE`; planned `/etc/leadmeleads/actii/connector-bindings.json` | Preserve digest/identity/version/expiry; restore 0600 under the service UID and a 0700 parent; disable every binding and leave path unset until reconciliation is approved |
+| Production queue | Entire `/var/www/leadmeleads/data/actii_import_queue/`, including receipts, tombstones, audit records and lock evidence | Restore matched queue/auth/export/ownership snapshot with original UID/GID and 0700/0600 modes; exclude nonauthoritative `.write-*` leftovers; never reset Processing or delete terminal tombstones |
+| Workstation connector configuration | Actual `--config` file, planned `/home/OWNER/.config/leadme-actii/connector.json`, and referenced `actii_secret_file` | Keep raw token and existing signing material encrypted and separate from production; restore original UID/GID, 0700 parent and 0600 files; expiry/revocation must still be checked; never change ACT II's own files |
+| Dispatch journals and receipts | Entire configured `state_dir`, planned `/home/OWNER/.local/state/leadme-actii/`, including acknowledged receipts and dispatching records | Restore matching full history and private modes before any invocation; compare binding/payload/lease identities offline; use only explicit recovery-only reconciliation after separate approval |
+
+Include related application auth, ownership metadata, exports and settings in the
+same quiesced backup set using the existing helper inventory. Verify the encrypted
+copies by protected hashes and restore them to a disconnected POSIX staging area
+before declaring readiness. Directory backup manifest counts alone are not a
+per-file integrity proof; keep an additional protected file-hash/mode/owner
+manifest. Record missing optional paths explicitly. Retain receipt/tombstone
+history beyond the helper's ten-snapshot rotation. Configuration restoration is a
+reviewed operation, not an automatic step in code rollback; never copy restored
+credentials into code or create new credentials as a recovery shortcut.
 
 ## Remaining activation gates
 
