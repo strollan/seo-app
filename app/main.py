@@ -12929,6 +12929,7 @@ from fastapi.responses import RedirectResponse as LeadBotRedirectResponse
 from fastapi.responses import FileResponse as LeadBotFileResponse
 from agents.lead_dashboard_agent import (
     render_lead_dashboard,
+    _actii_crm_modal,
     safe_export_file,
     _leadbot_export_visible_to_user,
     _leadbot_exact_export_owned_by_user,
@@ -13026,7 +13027,7 @@ def leadbot_user_can_access_export(filename, request):
         return False
 # === LEADBOT EXPORT ACCESS WRAPPER END ===
 
-from pathlib import Path as LeadBotPath
+from pathlib import Path, Path as LeadBotPath
 
 
 @app.get("/lead-bot", response_class=LeadBotHTMLResponse)
@@ -13058,6 +13059,115 @@ def lead_bot_dashboard(request: AuthRequest, file: str = ""):
     return response
 
 
+@app.post("/lead-bot/add-to-crm")
+async def leadbot_add_to_crm(request: AuthRequest):
+    """Authenticated review form: disabled, explicit local bridge, or bound queue."""
+    user = auth_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Sign in to add a lead to ACT II."}, status_code=401)
+    from agents.actii_queue_routes import limited_json
+    from agents.actii_queue_agent import QueueError
+    try:
+        payload = await limited_json(request, 64 * 1024)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
+    if not isinstance(payload, dict) or not _csrf_token_valid(request, str(payload.get("csrf_token") or "")):
+        return JSONResponse({"ok": False, "error": "Your session has expired. Refresh and try again."}, status_code=403)
+    import os
+    mode = os.getenv("ACTII_CRM_MODE", "disabled")
+    if mode not in {"local", "queue"}:
+        return JSONResponse({"ok": False, "error": "CRM imports are disabled until a secure ACT II connection is configured."}, status_code=503)
+    if mode == "queue":
+        from urllib.parse import urlsplit
+        origin = request.headers.get("origin")
+        expected = urlsplit(os.getenv("APP_BASE_URL", "https://leadmeleads.com"))
+        if origin and origin != f"{expected.scheme}://{expected.netloc}":
+            return JSONResponse({"ok": False, "error": "Refresh this page before queuing an import."}, status_code=403)
+    source_file = str(payload.get("source_file") or "").strip()
+    source_domain = str(payload.get("source_domain") or "").strip()
+    if (not source_file or source_file != Path(source_file).name or "\\" in source_file
+            or not source_domain or not leadbot_user_can_access_export(source_file, request)):
+        return JSONResponse({"ok": False, "error": "This lead is not available from one of your exports."}, status_code=403)
+    from agents.lead_dashboard_agent import safe_export_file
+    from agents.leadbot_block_gate import normalize_domain
+    source_path = safe_export_file(source_file)
+    source_domain_normalized = normalize_domain(source_domain)
+    from agents.actii_search_metadata_agent import from_export
+    search_metadata = from_export(source_path, source_domain_normalized, Path("data/leadbot_live_jobs")) if source_path else None
+    if search_metadata is None:
+        return JSONResponse({"ok": False, "error": "The original lead could not be verified in this export."}, status_code=422)
+    lead = payload.get("lead")
+    if not isinstance(lead, dict) or not str(lead.get("company_name") or "").strip():
+        return JSONResponse({"ok": False, "error": "Business name is required."}, status_code=422)
+    owner_id = str((user.get("username") if isinstance(user, dict) else getattr(user, "username", "")) or "").strip()
+    if not owner_id:
+        return JSONResponse({"ok": False, "error": "Your LeadMeLeads account has no CRM owner identifier."}, status_code=403)
+    # Keep editable contact fields, but provenance/ranks only come from the export.
+    from agents.actii_integration_agent import lead_payload
+    from agents.actii_search_metadata_agent import domain as crm_domain, first as crm_first
+    import csv
+    with source_path.open(encoding="utf-8-sig", newline="") as stream:
+        row = next((row for row in csv.DictReader(stream)
+                    if crm_domain(crm_first(row, "domain", "website", "url")) == crm_domain(source_domain)), None)
+    if row is None:
+        return JSONResponse({"ok": False, "error": "The original lead is no longer available."}, status_code=422)
+    canonical = lead_payload(row, source_path.name)
+    # Only contact details are editable. Ignore browser-supplied owners, ranks and provenance.
+    for key in ("company_name", "person_name", "email", "phone", "website", "address"):
+        if key in lead:
+            if not isinstance(lead[key], str) or len(lead[key]) > 2000:
+                return JSONResponse({"ok": False, "error": "A contact field is invalid or too long."}, status_code=422)
+            canonical[key] = lead[key].strip()
+    lead = canonical
+    lead["search_metadata"] = search_metadata
+    from agents.actii_integration_agent import import_lead
+    source_ref = f"leadmeleads:{Path(source_file).name}:{normalize_domain(source_domain)}"
+    if mode == "queue":
+        from agents.actii_queue_routes import respond
+        return respond(lambda queue: queue.enqueue(user, source_path.name, crm_domain(source_domain), lead), accepted=True)
+    from agents.actii_queue_routes import respond
+    authorization = respond(lambda queue: {"ok": bool(queue.authorize_owner(user, source_path.name, crm_domain(source_domain)))}, local=True)
+    if authorization.status_code != 200:
+        return authorization
+    result = import_lead(owner_id, source_ref, lead)
+    return JSONResponse(result, status_code=int(result.pop("status_code", 200)), headers={"Cache-Control": "no-store, private"})
+
+
+@app.get("/lead-bot/crm-jobs")
+@app.get("/lead-bot/crm-jobs/{job_id}")
+def leadbot_crm_job_status(request: AuthRequest, job_id: str = None):
+    from agents.actii_queue_routes import respond
+    user = auth_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Sign in to view CRM imports."}, status_code=401,
+                            headers={"Cache-Control": "no-store, private"})
+    return respond(lambda queue: queue.status(user, job_id))
+
+
+@app.post("/integrations/actii/claim")
+async def actii_connector_claim(request: AuthRequest):
+    from agents.actii_queue_routes import limited_json, respond
+    from agents.actii_queue_agent import QueueError
+    try:
+        body = await limited_json(request, 1024)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
+    if body != {}:
+        return JSONResponse({"ok": False, "error": "Invalid claim request."}, status_code=422)
+    return respond(lambda queue: queue.claim(request.headers.get("authorization", "")))
+
+
+@app.post("/integrations/actii/result")
+async def actii_connector_result(request: AuthRequest):
+    from agents.actii_queue_routes import limited_json, respond
+    from agents.actii_queue_agent import QueueError
+    try:
+        body = await limited_json(request, 2048)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
+    return respond(lambda queue: queue.acknowledge(request.headers.get("authorization", ""), body))
+
+
 @app.get("/lead-bot/run")
 def lead_bot_run(
     request: AuthRequest,
@@ -13083,6 +13193,7 @@ def lead_bot_run(
     from agents.lead_query_agent import build_lead_queries
     from agents.seen_leads_agent import mark_seen
 
+    scan_started_at = datetime.now().astimezone().isoformat(timespec="seconds")
     queries = build_lead_queries(industry, market, keyword)[:max_queries]
 
     all_leads = []
@@ -13130,6 +13241,8 @@ def lead_bot_run(
             "industry": industry,
             "market": market,
             "count": len(usable),
+            "base_keyword": keyword,
+            "scan_date": scan_started_at,
             "leads": usable,
         },
         industry=industry,
@@ -13194,7 +13307,7 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
             )
 
         rows = read_csv_rows(path, limit=100)
-        return AuthHTMLResponse(lead_cards(rows, selected_name=path.name))
+        return AuthHTMLResponse(lead_cards(rows, selected_name=path.name, csrf_token=_get_or_create_csrf_token(request)))
 
     except Exception as exc:
         print(f"LEADBOT SELECTED CSV CARD FALLBACK ERROR: {exc}", flush=True)
@@ -13520,6 +13633,12 @@ def leadbot_live_dashboard(job_id: str, request: AuthRequest):
             out_path = Path("exports") / out_name
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # Recovery exports retain the original scan context as well.
+            leads = [dict(row,
+                          base_keyword=row.get("base_keyword") or params.get("keyword") or "",
+                          search_location=row.get("search_location") or params.get("market") or "",
+                          scan_date=row.get("scan_date") or job.get("created_at") or "")
+                     for row in leads if isinstance(row, dict)]
             preferred = [
                 "title", "business", "domain", "url", "website",
                 "best_phone", "phone", "emails", "email",
@@ -14358,6 +14477,7 @@ function renderLead(lead, jobParams) {{
 
     const div = document.createElement("article");
     div.className = "card";
+    div.dataset.crmDomain = String(lead.domain || "").trim().toLowerCase();
     div.innerHTML = `
         <h3>${{esc(lead.title || "Untitled Lead")}}</h3>
         <div class="domain">${{esc(lead.domain || "")}}</div>
@@ -14407,6 +14527,32 @@ function renderLead(lead, jobParams) {{
     ) {{
         liveConsoleFirstLine.textContent = "Lead cards are appearing.";
     }}
+}}
+
+// Reuse only actions rendered from the saved, ownership-checked CSV.
+// Running/failed/cancelled scans and guest previews never offer CRM import.
+async function addCompletedLiveCrmActions(job) {{
+    if (IS_GUEST || job.status !== "done" || !job.export_file) return;
+
+    const filename = String(job.export_file).split(/[\\/]/).pop();
+    const response = await fetch("/lead-bot/cards/" + encodeURIComponent(filename), {{
+        cache: "no-store", credentials: "same-origin"
+    }});
+    if (!response.ok || response.redirected) return;
+
+    const savedCards = document.createElement("template");
+    savedCards.innerHTML = await response.text();
+    const liveCards = Array.from(document.querySelectorAll("#leads .card[data-crm-domain]"));
+    savedCards.content.querySelectorAll(".lead-add-crm").forEach(function (button) {{
+        const domain = String(button.dataset.sourceDomain || "").trim().toLowerCase();
+        if (!domain || button.dataset.sourceFile !== filename) return;
+        const card = liveCards.find(function (item) {{ return item.dataset.crmDomain === domain; }});
+        if (!card || card.querySelector(".lead-add-crm")) return;
+        const action = document.createElement("div");
+        action.className = "lead-crm-action";
+        action.appendChild(button.cloneNode(true));
+        card.appendChild(action);
+    }});
 }}
 
 // Builds the SCAN console line from the job's actual submitted keyword/
@@ -14547,6 +14693,7 @@ async function poll() {{
         }}
 
         (job.leads || []).forEach(function (lead) {{ renderLead(lead, params); }});
+        await addCompletedLiveCrmActions(job);
 
         const exportFileRaw =
             job.export_file ||
@@ -14605,6 +14752,7 @@ async function poll() {{
 
 poll();
 </script>
+{_actii_crm_modal(live_csrf_token) if user else ""}
 </body>
 </html>
 """)

@@ -1,0 +1,12 @@
+{
+  "production_origin": "https://leadmeleads.com",
+  "connector_id": "owner-workstation",
+  "user_id": 1,
+  "username": "scot.trollan@gmail.com",
+  "binding_version": "v1",
+  "workspace": "Born On High",
+  "token": "",
+  "expires_at": "",
+  "state_dir": "/home/OWNER/.local/state/leadme-actii",
+  "actii_secret_file": "/home/OWNER/.config/leadme-actii/local-signing.json"
+}

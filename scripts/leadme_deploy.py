@@ -138,6 +138,7 @@ BACKUP_DIR_PATTERN = re.compile(r"^\d{8}-\d{6}$")
 # optional source exists, any failure to snapshot or validate it is fatal.
 BACKUP_ITEMS = (
     {"path": "data/app_auth.db", "type": "sqlite", "required": True},
+    {"path": "data/actii_import_queue", "type": "directory", "required": False, "reject_symlinks": True},
     {"path": "reports/history.json", "type": "file", "required": False},
     {"path": "reports/saved", "type": "directory", "required": False, "reject_symlinks": True},
     {"path": "data/leadbot_export_owners.json", "type": "file", "required": False},

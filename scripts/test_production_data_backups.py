@@ -125,6 +125,37 @@ class ProductionDataBackupTests(unittest.TestCase):
             self.snapshot()
         self.assertFalse((self.backups / "20260725-120000/exports/escape.csv").exists())
 
+    def test_actii_queue_snapshot_retains_receipts_tombstones_and_private_modes(self):
+        self.add_required_db()
+        queue = self.app / "data/actii_import_queue"
+        queue.mkdir(mode=0o700)
+        records = {
+            "a" * 32 + ".json": {"state": "added", "contact_id": 7},
+            "b" * 32 + ".json": {"state": "failed", "payload_retired": True},
+        }
+        for name, value in records.items():
+            path = queue / name
+            path.write_text(json.dumps(value))
+            path.chmod(0o600)
+        result = self.snapshot()
+        copied = Path(result["backup_dir"]) / "data/actii_import_queue"
+        self.assertEqual(copied.stat().st_mode & 0o777, 0o700)
+        for name, value in records.items():
+            self.assertEqual(json.loads((copied / name).read_text()), value)
+            self.assertEqual((copied / name).stat().st_mode & 0o777, 0o600)
+        manifest = json.loads(Path(result["manifest"]).read_text())
+        self.assertIn("data/actii_import_queue", {item["path"] for item in manifest["items"]})
+
+    def test_actii_queue_symlink_aborts_snapshot(self):
+        self.add_required_db()
+        queue = self.app / "data/actii_import_queue"
+        queue.mkdir(mode=0o700)
+        outside = self.root / "outside.json"
+        outside.write_text("{}")
+        (queue / ("a" * 32 + ".json")).symlink_to(outside)
+        with self.assertRaisesRegex(ld.BackupError, "symlink"):
+            self.snapshot()
+
     def test_manifest_has_expected_entries_and_no_source_secrets(self):
         self.add_required_db((("password=super-secret-token",),))
         result = self.snapshot()

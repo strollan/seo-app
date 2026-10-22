@@ -1,6 +1,7 @@
 from pathlib import Path
 import csv
 import sys
+import json
 
 # Allow LeadBot to read newer exports with very large scraped fields.
 # Without this, CSV reads can fail with: field larger than field limit (131072).
@@ -816,6 +817,17 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         else:
             seo_snapshot_html = ""
 
+        from agents.actii_integration_agent import lead_payload
+        crm_payload = lead_payload(row, selected_name)
+        crm_data = html.escape(json.dumps(crm_payload), quote=True)
+        crm_button = ""
+        if selected_name and domain:
+            crm_button = (
+                f'<button type="button" class="lead-add-crm" data-lead="{crm_data}" '
+                f'data-source-file="{html.escape(selected_name, quote=True)}" '
+                f'data-source-domain="{html.escape(domain, quote=True)}">Add to CRM</button>'
+            )
+
         delete_html = ""
         if selected_name and selected_name != "leadbot_master.csv" and domain:
             safe_file = html.escape(selected_name)
@@ -872,7 +884,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                     </div>
                 </div>
 
-                <button class="lead-contact-save" type="submit">Save Details</button>
+                <div class="leadbot-save-details-row"><button class="lead-contact-save" type="submit">Save Details</button>{crm_button}</div>
             </form>
 
             <div class="lead-address-box">
@@ -4546,7 +4558,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const saveButton = contactForm.querySelector(".lead-contact-save, button[type='submit']");
                 if (saveButton) {
-                    contactForm.insertBefore(newBox, saveButton);
+                    contactForm.insertBefore(newBox, saveButton.closest(".leadbot-save-details-row") || saveButton);
                 } else {
                     contactForm.appendChild(newBox);
                 }
@@ -9256,7 +9268,7 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace("__SELECTED__", html.escape(selected_name))
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)
-    page = page.replace("__CARDS__", lead_cards(rows, selected_name=file, csrf_token=csrf_token))
+    page = page.replace("__CARDS__", lead_cards(rows, selected_name=selected.name if selected else "", csrf_token=csrf_token))
     page = page.replace(
         "__HISTORY_NAV_LINK__",
         '<a href="/history">History</a>\n                ' if current_user else "",
@@ -9283,7 +9295,60 @@ body.leadbot-live-page button[data-action="block"] {
 
     page = _leadbot_remove_dataforseo_ui_for_non_admin(page, current_user=current_user)
     page = _leadbot_remove_advanced_scan_controls_for_non_admin(page, current_user=current_user)
+    if current_user:
+        page = page.replace("</body>", _actii_crm_modal(csrf_token) + "</body>")
     return page
+
+
+def _actii_crm_modal(csrf_token=""):
+    """Small review form; source information stays with the server-side import."""
+    token = json.dumps(csrf_token or "")
+    return f"""
+<style>
+.lead-crm-action,.leadbot-save-details-row {{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }}
+.leadbot-save-details-row > button,.lead-crm-action > button {{ margin-top:0 !important; }}
+.lead-add-crm:disabled {{ opacity:.65; cursor:default; }}
+.lead-add-crm:focus-visible,.crm-actions button:focus-visible {{ outline:3px solid #2563eb; outline-offset:3px; }}
+.lead-crm-result {{ overflow-wrap:anywhere; }}
+@media(max-width:700px) {{ .leadbot-save-details-row > .lead-add-crm {{ min-height:44px; font-size:12px; flex:1 1 auto; }} }}
+.lead-add-crm {{ background:#123d8b; color:#fff; border:0; border-radius:999px; padding:7px 12px; min-height:28px; font:inherit; font-size:10px; line-height:1; font-weight:700; cursor:pointer; }}
+.lead-add-crm:hover,.lead-add-crm:focus-visible {{ background:#0d2f6d; }}
+.crm-dialog {{ width:min(680px, calc(100vw - 28px)); box-sizing:border-box; max-height:calc(100dvh - 28px); overflow:auto; border:0; border-radius:14px; padding:0; box-shadow:0 22px 70px rgba(15,23,42,.35); }}
+.crm-dialog::backdrop {{ background:rgba(15,23,42,.58); }}
+.crm-dialog form {{ padding:22px; }}
+.crm-dialog h2 {{ margin:0 0 6px; color:#0f2f7f; }}
+.crm-dialog p {{ margin:0 0 16px; color:#475569; }}
+.crm-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }}
+.crm-grid label {{ display:grid; gap:5px; color:#334155; font-weight:700; font-size:14px; }}
+.crm-grid input,.crm-grid textarea {{ box-sizing:border-box; min-width:0; width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:9px; font:inherit; font-size:16px; color:#0f172a; background:#fff; }}
+.crm-grid .wide {{ grid-column:1 / -1; }} .crm-grid textarea {{ min-height:92px; resize:vertical; }}
+.crm-actions {{ display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }}
+.crm-actions button {{ padding:10px 14px; border-radius:8px; border:1px solid #94a3b8; font:inherit; font-weight:700; cursor:pointer; }}
+.crm-actions .crm-save {{ background:#123d8b; color:#fff; border-color:#123d8b; }}
+.crm-message {{ margin-top:12px !important; font-weight:700; }}
+@media (max-width:560px) {{ .crm-grid {{ grid-template-columns:1fr; }} .crm-grid .wide {{ grid-column:auto; }} .crm-dialog form {{ padding:18px; }} }}
+</style>
+<dialog class="crm-dialog" id="actiiCrmDialog" aria-labelledby="actiiCrmTitle">
+  <form id="actiiCrmForm">
+    <h2 id="actiiCrmTitle">Add lead to ACT II</h2><p>Review the available details before saving. Blank fields remain blank.</p>
+    <div class="crm-grid">
+      <label>Business name<input name="company_name" required></label>
+      <label>Contact name<input name="person_name"></label>
+      <label>Website / domain<input name="website"></label>
+      <label>Phone number<input name="phone"></label>
+      <label>Email address<input name="email" inputmode="email"></label>
+      <label>Business address<input name="address"></label>
+      <label>Original search<input name="crm_industry" readonly></label>
+      <label>Lead score<input name="lead_score" readonly></label>
+      <label class="wide">SEO findings / original reference<textarea name="source_note" readonly></textarea></label>
+    </div>
+    <p class="crm-message" id="actiiCrmMessage" aria-live="polite"></p>
+    <div class="crm-actions"><button type="button" id="actiiCrmCancel">Cancel</button><button class="crm-save" type="submit">Save to ACT II</button></div>
+  </form>
+</dialog>
+<script type="application/json" id="actiiCrmConfig">{token}</script>
+<script src="/static/actii-crm.js" defer></script>
+"""
 
 # === LEADBOT CSV SIZE CAP START ===
 # Safety guard:

@@ -56,6 +56,12 @@ EXPORT_FIELDS = [
     "final_lead_score",
     "contact_confidence",
     "contact_flags",
+    "base_keyword",
+    "search_location",
+    "scan_date",
+    "query_used",
+    "source",
+    "lead_source_label",
 ]
 
 
@@ -148,6 +154,12 @@ def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True
                 "final_lead_score": lead.get("final_lead_score", ""),
                 "contact_confidence": calculate_contact_confidence(lead),
                 "contact_flags": ", ".join(lead.get("contact_flags", []) or []),
+                "base_keyword": lead.get("base_keyword") or keyword or result.get("base_keyword") or "",
+                "search_location": lead.get("search_location") or market or result.get("market") or lead.get("market") or "",
+                "scan_date": lead.get("scan_date") or result.get("scan_date") or "",
+                "query_used": lead.get("query_used") or "",
+                "source": lead.get("source") or "",
+                "lead_source_label": lead.get("lead_source_label") or "",
             })
 
     return {

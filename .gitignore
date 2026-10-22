@@ -212,3 +212,7 @@ test_*.py
 !scripts/test_lead_finder_cancel_hang.py
 !scripts/test_lead_finder_live_scan_query.py
 !scripts/test_contact_report_form.py
+!scripts/test_leadbot_crm_import.py
+
+!scripts/test_actii_outbound_connector.py
+!scripts/test_actii_crm_ui.py

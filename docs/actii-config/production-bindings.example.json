@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "connectors": [
+    {
+      "connector_id": "owner-workstation",
+      "user_id": 1,
+      "username": "scot.trollan@gmail.com",
+      "binding_version": "v1",
+      "enabled": false,
+      "token_sha256": "",
+      "expires_at": ""
+    }
+  ]
+}
