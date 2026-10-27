@@ -7,6 +7,7 @@
       {% if not article_header_in_card|trim %}
       <div>
         <h1{% if _title_is_long %} class="long-guide-title"{% endif %}>{{ page_h1 }}</h1>
+        {% include "_article_published.html" %}
         <p>{{ page_sub }}</p>
       </div>
       {% endif %}

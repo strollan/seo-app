@@ -406,8 +406,8 @@ class ProductPageJsonLdTests(unittest.TestCase):
 
 
 class ArticleJsonLdTests(unittest.TestCase):
-    """The four guide pages each get one Article JSON-LD block with no
-    fabricated dates, alongside their existing FAQPage block."""
+    """The guide pages each get one Article JSON-LD block whose only date
+    is the verified publication date, alongside their existing FAQPage block."""
 
     @classmethod
     def setUpClass(cls):
@@ -446,12 +446,30 @@ class ArticleJsonLdTests(unittest.TestCase):
                 self.assertEqual(data["mainEntityOfPage"], seo_meta.canonical_url(page.canonical_path))
                 self.assertEqual(data["publisher"]["name"], "LeadMeLeads")
 
-    def test_article_jsonld_has_no_fabricated_dates(self):
+    def test_article_dates_are_verified_and_match_the_visible_line(self):
+        import json
+
         for path in self.ARTICLE_PAGES:
             with self.subTest(path=path):
                 body = self.client.get(path).text
-                self.assertNotIn("datePublished", body)
-                self.assertNotIn("dateModified", body)
+                data = next(
+                    json.loads(raw)
+                    for raw in re.findall(
+                        r'<script type="application/ld\+json">(.*?)</script>', body, re.DOTALL
+                    )
+                    if json.loads(raw).get("@type") == "Article"
+                )
+                self.assertEqual(data["datePublished"], seo_meta.GUIDE_PUBLISHED_AT[path])
+                self.assertNotIn("dateModified", data)
+                published = seo_meta.article_published(path)
+                self.assertEqual(published["iso"], data["datePublished"][:10])
+                self.assertEqual(body.count('class="article-published"'), 1)
+                self.assertIn(
+                    f'Published <time datetime="{published["iso"]}">{published["display"]}</time>',
+                    body,
+                )
+                # The line sits directly beneath the page's only H1.
+                self.assertRegex(body, r'</h1>\s*<p class="article-published">')
 
     def test_resources_hub_has_no_article_jsonld(self):
         body = self.client.get("/resources").text

@@ -15,6 +15,7 @@ from __future__ import annotations
 import html
 import json
 from dataclasses import dataclass
+from datetime import datetime
 
 SITE_NAME = "LeadMeLeads"
 SITE_BASE_URL = "https://leadmeleads.com"
@@ -453,6 +454,47 @@ def render_webapplication_jsonld(name: str, description: str, canonical_path: st
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web",
     })
+
+
+# Verified first public publication of each guide: the production checkout's
+# reflog time for the first `git pull --ff-only origin main` that contained
+# the guide's public route (hand-built) or imported record. A guide missing
+# from this map shows no visible date and gets no datePublished.
+GUIDE_PUBLISHED_AT = {
+    "/what-makes-a-good-lead": "2026-07-24T18:25:19+00:00",
+    "/how-to-find-local-leads": "2026-07-25T15:52:37+00:00",
+    "/local-lead-generation": "2026-07-25T15:52:37+00:00",
+    "/lead-list-vs-lead-finder": "2026-07-25T15:52:37+00:00",
+    "/how-to-verify-local-business-leads-before-outreach": "2026-08-03T20:04:49+00:00",
+    "/how-to-find-website-seo-opportunities-in-a-lead-list": "2026-08-29T22:40:23+00:00",
+    "/check-contactability-local-business-leads": "2026-09-03T21:06:30+00:00",
+    "/compare-prospect-website-to-outranking-competitor": "2026-09-03T21:11:31+00:00",
+    "/spot-inconsistent-business-details-lead-research": "2026-10-01T17:47:05+00:00",
+    "/website-seo-gaps-personalized-outreach": "2026-10-01T17:47:05+00:00",
+    "/organizing-lead-research-notes-faster-outreach": "2026-10-02T17:48:17+00:00",
+    "/shortlist-best-prospects-50-lead-search": "2026-10-04T19:37:41+00:00",
+    "/check-google-business-profile-before-outreach": "2026-10-05T20:50:52+00:00",
+    "/website-clues-sales-call-questions": "2026-10-05T20:55:12+00:00",
+    "/spot-weak-local-service-pages": "2026-10-14T19:18:46+00:00",
+    "/identifying-website-maintenance-clues-during-prospecting": "2026-10-27T17:09:11+00:00",
+}
+
+
+def guide_published_at(path: str) -> str | None:
+    return GUIDE_PUBLISHED_AT.get(path)
+
+
+def article_published(path: str) -> dict[str, str] | None:
+    """Visible "Published" line data, derived from the same timestamp as
+    the Article schema's datePublished so the two cannot disagree."""
+    published_at = guide_published_at(path)
+    if not published_at:
+        return None
+    published = datetime.fromisoformat(published_at)
+    return {
+        "iso": published.date().isoformat(),
+        "display": f"{published:%B} {published.day}, {published.year}",
+    }
 
 
 def render_article_jsonld(

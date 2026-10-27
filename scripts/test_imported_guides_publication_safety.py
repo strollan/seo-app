@@ -64,6 +64,30 @@ class ImportedGuidePublicationSafetyTests(unittest.TestCase):
         self.assertEqual(schema["publisher"]["logo"]["url"], seo_meta.PUBLISHER_LOGO_URL)
         self.assertEqual(schema["dateModified"], GUIDE["modified_at"])
         self.assertNotIn("datePublished", schema)
+        self.assertNotIn('<p class="article-published">', html)
+
+    def test_every_public_guide_has_a_verified_publication_date(self):
+        guide_paths = {
+            path for path in seo_meta.public_indexable_paths()
+            if path not in {"/", "/lead-bot", "/compare", "/resources", "/privacy-policy"}
+        }
+        self.assertEqual(len(guide_paths), 16)
+        self.assertEqual(set(seo_meta.GUIDE_PUBLISHED_AT), guide_paths)
+
+    def test_published_imported_guide_shows_date_matching_schema(self):
+        from fastapi.testclient import TestClient
+
+        path = "/identifying-website-maintenance-clues-during-prospecting"
+        body = TestClient(main.app).get(path).text
+        schema = json.loads(re.search(
+            r'<script type="application/ld\+json">(.*?)</script>', body, re.S
+        ).group(1))
+        self.assertEqual(schema["datePublished"], "2026-10-27T17:09:11+00:00")
+        self.assertRegex(
+            body,
+            r'<h1>Identifying Website Maintenance Clues During Prospecting</h1>\s*'
+            r'<p class="article-published">Published <time datetime="2026-10-27">October 27, 2026</time></p>',
+        )
 
     def test_resources_card_links_to_the_imported_route_without_changing_hand_built_links(self):
         html = main.templates.get_template("resources.html").render(

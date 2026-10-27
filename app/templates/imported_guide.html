@@ -5,6 +5,7 @@
 {% block content %}
 <header class="imported-guide-article-header">
   <h1>{{ guide.title }}</h1>
+  {% include "_article_published.html" %}
   {% if guide.dek %}<p>{{ guide.dek }}</p>{% endif %}
 </header>
 <figure class="article-hero imported-guide-hero">

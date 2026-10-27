@@ -2420,7 +2420,11 @@ async def good_lead_page(request: Request):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.GOOD_LEAD_PAGE),
-            "article_jsonld_html": seo_meta.render_article_jsonld(seo_meta.GOOD_LEAD_PAGE),
+            "article_jsonld_html": seo_meta.render_article_jsonld(
+                seo_meta.GOOD_LEAD_PAGE,
+                published_at=seo_meta.guide_published_at(seo_meta.GOOD_LEAD_PAGE.canonical_path),
+            ),
+            "article_published": seo_meta.article_published(seo_meta.GOOD_LEAD_PAGE.canonical_path),
             "faq_jsonld_html": seo_meta.render_faq_jsonld(seo_meta.GOOD_LEAD_FAQ),
             "faq": seo_meta.GOOD_LEAD_FAQ,
         },
@@ -2452,7 +2456,10 @@ def render_public_guide(request: Request, template_name, page, faq):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(page),
-            "article_jsonld_html": seo_meta.render_article_jsonld(page),
+            "article_jsonld_html": seo_meta.render_article_jsonld(
+                page, published_at=seo_meta.guide_published_at(page.canonical_path)
+            ),
+            "article_published": seo_meta.article_published(page.canonical_path),
             "faq_jsonld_html": seo_meta.render_faq_jsonld(faq) if faq else "",
             "faq": faq,
         },
@@ -17057,8 +17064,10 @@ async def imported_guide_page(slug: str, request: Request):
             "article_jsonld_html": seo_meta.render_article_jsonld(
                 page,
                 modified_at=guide["modified_at"],
+                published_at=seo_meta.guide_published_at(page.canonical_path),
                 image_url=seo_meta.canonical_url(guide["hero_image"]["url"]),
             ),
+            "article_published": seo_meta.article_published(page.canonical_path),
             "faq_jsonld_html": "",
         },
     )
