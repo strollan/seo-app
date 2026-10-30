@@ -323,6 +323,155 @@ class ImportedGuideTests(unittest.TestCase):
         with self.assertRaisesRegex(imported_guides.GuideImportError, "intro_paragraphs\\[0\\] exceeds"):
             imported_guides.validate_package(self.package)
 
+    # --- Structured body blocks ---------------------------------------------
+
+    def _rendered(self, **overrides):
+        """Import through the real validator, then render the real template."""
+        self._manifest(**overrides)
+        self._import()
+        guide = imported_guides.load_imported_guides(self.content)[self._slug()]
+        templates = Jinja2Templates(directory=Path(__file__).resolve().parent.parent / "app" / "templates")
+        request = Request({"type": "http", "method": "GET", "path": "/x", "headers": []})
+        return guide, templates.get_template("imported_guide.html").render(
+            request=request, guide=guide, logo_url="", user=None, faq=[],
+            seo_meta_html="", article_jsonld_html="", faq_jsonld_html="",
+        )
+
+    def _slug(self):
+        return json.loads((self.package / imported_guides.MANIFEST_NAME).read_text(encoding="utf-8"))["slug"]
+
+    def _body(self, blocks, **overrides):
+        section = {"heading": "Section", "paragraphs": ["Plain fallback."], "bullets": [], "blocks": blocks}
+        return self._rendered(body_sections=[section], **overrides)
+
+    @staticmethod
+    def _html(rendered):
+        return rendered
+
+    def test_blocks_render_in_source_order_with_separate_lists(self):
+        _guide, html = self._body([
+            {"type": "paragraph", "spans": [{"text": "Before."}]},
+            {"type": "list", "items": [[{"text": "one"}]]},
+            {"type": "paragraph", "spans": [{"text": "Between."}]},
+            {"type": "list", "ordered": True, "start": 4, "items": [[{"text": "two"}]]},
+            {"type": "paragraph", "spans": [{"text": "After."}]},
+        ])
+        html = self._html(html)
+        order = [html.index(text) for text in ("Before.", "<li>one<", "Between.", 'start="4"', "After.")]
+        self.assertEqual(order, sorted(order))
+        self.assertNotIn("Plain fallback.", html)
+
+    def test_table_block_renders_a_real_accessible_table(self):
+        _guide, html = self._body([{"type": "table",
+                                    "header": [[{"text": "Signal"}], [{"text": "Meaning"}]],
+                                    "rows": [[[{"text": "New site"}], []]]}])
+        html = self._html(html)
+        self.assertIn('<th scope="col">Signal</th>', html)
+        self.assertIn("<td>New site</td><td></td>", html)
+        self.assertIn('class="guide-table"', html)
+        self.assertNotIn("---", html)
+
+    def test_text_is_escaped_in_every_block_position(self):
+        hostile = '<script>alert(1)</script>"\'&'
+        _guide, html = self._body([
+            {"type": "paragraph", "spans": [{"text": hostile, "bold": True}]},
+            {"type": "list", "items": [[{"text": hostile}]]},
+            {"type": "table", "header": [[{"text": hostile}], [{"text": "B"}]],
+             "rows": [[[{"text": hostile}], [{"text": hostile, "href": "/shortlist-best-prospects-50-lead-search"}]]]},
+        ])
+        html = self._html(html)
+        self.assertNotIn("<script>", html)
+        self.assertEqual(html.count("&lt;script&gt;"), 5)
+
+    def test_internal_link_is_normalized_to_a_site_path(self):
+        _guide, html = self._body([{"type": "paragraph", "spans": [
+            {"text": "Shortlist", "href": "https://www.leadmeleads.com/shortlist-best-prospects-50-lead-search"},
+        ]}])
+        self.assertIn('<a href="/shortlist-best-prospects-50-lead-search">Shortlist</a>', self._html(html))
+
+    def test_external_link_gets_rel_and_keeps_its_query(self):
+        _guide, html = self._body([{"type": "paragraph", "spans": [
+            {"text": "Docs", "href": "https://example.com/a?x=1&y=2"},
+        ]}])
+        self.assertIn('<a href="https://example.com/a?x=1&amp;y=2" rel="nofollow noopener noreferrer">Docs</a>',
+                      self._html(html))
+
+    def test_unknown_internal_link_keeps_its_words_and_is_reported(self):
+        self._manifest(body_sections=[{"heading": "S", "paragraphs": ["p"], "blocks": [
+            {"type": "paragraph", "spans": [{"text": "Soon", "href": "/not-published-yet"}]},
+        ]}])
+        result = self._import()
+        self.assertEqual(result["unlinked_links"], [{"text": "Soon", "href": "/not-published-yet"}])
+        record = json.loads(Path(result["record"]).read_text(encoding="utf-8"))
+        self.assertEqual(record["body_sections"][0]["blocks"][0]["spans"], [{"text": "Soon"}])
+        self.assertEqual(record["unlinked_links"], result["unlinked_links"])
+
+    def test_unsafe_links_are_refused_before_any_write(self):
+        for href in ("javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,x", "//evil.example/x",
+                     "/\\evil.example", "/a/../b", "https://user:pw@example.com/", "ftp://example.com/",
+                     "/a b", "/a\nb", " javascript:alert(1)", "mailto:a@example.com", "relative"):
+            self._manifest(body_sections=[{"heading": "S", "paragraphs": ["p"], "blocks": [
+                {"type": "paragraph", "spans": [{"text": "x", "href": href}]},
+            ]}])
+            with self.subTest(href=href), self.assertRaises(imported_guides.GuideImportError):
+                self._import()
+            self.assertEqual(list(self.content.glob("*.json")) if self.content.exists() else [], [])
+
+    def test_malformed_blocks_are_refused(self):
+        bad = [
+            {"type": "html", "spans": [{"text": "x"}]},
+            {"type": "paragraph", "spans": []},
+            {"type": "paragraph", "spans": [{"text": "x", "html": "<b>"}]},
+            {"type": "paragraph", "spans": [{"text": "x", "bold": "yes"}]},
+            {"type": "list", "items": []},
+            {"type": "table", "header": [[{"text": "only"}]], "rows": [[[{"text": "x"}]]]},
+            {"type": "table", "header": [[{"text": "a"}], [{"text": "b"}]], "rows": [[[{"text": "x"}]]]},
+            {"type": "table", "header": [[{"text": "a"}], [{"text": "b"}]], "rows": []},
+        ]
+        for block in bad:
+            self._manifest(body_sections=[{"heading": "S", "paragraphs": ["p"], "blocks": [block]}])
+            with self.subTest(block=block), self.assertRaises(imported_guides.GuideImportError):
+                self._import()
+
+    def test_tampered_stored_record_is_not_served(self):
+        self._manifest(body_sections=[{"heading": "S", "paragraphs": ["p"], "blocks": [
+            {"type": "paragraph", "spans": [{"text": "ok"}]},
+        ]}])
+        result = self._import()
+        path = Path(result["record"])
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["body_sections"][0]["blocks"][0]["spans"][0]["href"] = "javascript:alert(1)"
+        path.write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(imported_guides.load_imported_guides(self.content), {})
+
+    def test_intro_blocks_render_links_and_older_records_are_unchanged(self):
+        _guide, html = self._rendered(
+            intro_paragraphs=["Plain intro."],
+            intro_blocks=[{"type": "paragraph", "spans": [
+                {"text": "Linked", "href": "/shortlist-best-prospects-50-lead-search"},
+            ]}],
+        )
+        html = self._html(html)
+        self.assertIn('<a href="/shortlist-best-prospects-50-lead-search">Linked</a>', html)
+        self.assertNotIn("Plain intro.", html)
+
+    def test_record_without_blocks_renders_the_legacy_fields(self):
+        guide, html = self._rendered()
+        self.assertNotIn("body_format", guide)
+        self.assertNotIn("unlinked_links", guide)
+        self.assertIn("<p>", self._html(html))
+
+    def test_h3_section_renders_as_h3(self):
+        guide, html = self._rendered(body_sections=[
+            {"heading": "Main", "paragraphs": ["p"]},
+            {"heading": "Sub", "paragraphs": ["q"], "level": 3, "blocks": [
+                {"type": "paragraph", "spans": [{"text": "q"}]}]},
+        ])
+        html = self._html(html)
+        self.assertIn("<h2>Main</h2>", html)
+        self.assertIn("<h3>Sub</h3>", html)
+        self.assertEqual(guide["body_sections"][1]["level"], 3)
+
     def test_imported_guide_integrates_with_route_seo_sitemap_and_resources(self):
         self._manifest()
         self._import()

@@ -1,4 +1,14 @@
 {% extends "public_guide_base.html" %}
+{# Body blocks are data, never stored HTML: every value below goes through
+   autoescaping, and imported_guides validates each href before it is saved. #}
+{% macro spans(items) %}{% for span in items %}{% if span.href %}<a href="{{ span.href }}"{% if span.href.startswith('http') %} rel="nofollow noopener noreferrer"{% endif %}>{% endif %}{% if span.bold %}<strong>{% endif %}{% if span.italic %}<em>{% endif %}{% if span.code %}<code>{% endif %}{{ span.text }}{% if span.code %}</code>{% endif %}{% if span.italic %}</em>{% endif %}{% if span.bold %}</strong>{% endif %}{% if span.href %}</a>{% endif %}{% endfor %}{% endmacro %}
+{% macro body_blocks(blocks) %}{% for block in blocks %}
+  {% if block.type == 'paragraph' %}<p>{{ spans(block.spans) }}</p>
+  {% elif block.type == 'list' and block.ordered %}<ol{% if block.start != 1 %} start="{{ block.start }}"{% endif %}>{% for item in block['items'] %}<li>{{ spans(item) }}</li>{% endfor %}</ol>
+  {% elif block.type == 'list' %}<ul>{% for item in block['items'] %}<li>{{ spans(item) }}</li>{% endfor %}</ul>
+  {% elif block.type == 'table' %}<div class="guide-table" role="region" aria-label="Scrollable table" tabindex="0"><table><thead><tr>{% for cell in block.header %}<th scope="col">{{ spans(cell) }}</th>{% endfor %}</tr></thead><tbody>{% for row in block.rows %}<tr>{% for cell in row %}<td>{{ spans(cell) }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+  {% endif %}
+{% endfor %}{% endmacro %}
 {% block h1 %}{{ guide.title }}{% endblock %}
 {% block subtitle %}{{ guide.dek }}{% endblock %}
 {% block article_header_in_card %}true{% endblock %}
@@ -11,17 +21,19 @@
 <figure class="article-hero imported-guide-hero">
   <img src="{{ guide.hero_image.url }}" loading="eager" fetchpriority="high" alt="{{ guide.hero_image.alt }}">
 </figure>
-{% if guide.intro_paragraphs | default([]) %}
+{% if guide.intro_blocks | default([]) %}
+<div class="imported-guide-intro guide-blocks">{{ body_blocks(guide.intro_blocks) }}</div>
+{% elif guide.intro_paragraphs | default([]) %}
 <div class="imported-guide-intro">
   {% for paragraph in guide.intro_paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
 </div>
 {% endif %}
 {% for section in guide.body_sections %}
 {% set section_index = loop.index0 %}
-<section class="section">
-  <h2>{{ section.heading }}</h2>
-  {% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
-  {% if section.bullets %}<ul>{% for bullet in section.bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endif %}
+<section class="section{% if section.blocks %} guide-blocks{% endif %}">
+  {% if section.level == 3 %}<h3>{{ section.heading }}</h3>{% else %}<h2>{{ section.heading }}</h2>{% endif %}
+  {% if section.blocks %}{{ body_blocks(section.blocks) }}{% else %}{% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+  {% if section.bullets %}<ul>{% for bullet in section.bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endif %}{% endif %}
   {% for image in guide.inline_images if image.placement_after_section == section_index %}
   <figure class="article-figure"><img src="{{ image.url }}" loading="lazy" alt="{{ image.alt }}"></figure>
   {% endfor %}

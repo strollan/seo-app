@@ -46,6 +46,36 @@ be PNG, JPEG, GIF, or WebP files whose bytes match the declared image type.
 }
 ```
 
+## Structured body
+
+`paragraphs` and `bullets` are plain text and render paragraphs first, then one
+list. To keep reviewed order, a section may also carry `blocks`, and the guide
+may carry `intro_blocks`. When present they replace the plain fields on the page.
+
+```json
+"blocks": [
+  {"type": "paragraph", "spans": [
+    {"text": "See "},
+    {"text": "the guide", "href": "/some-guide"},
+    {"text": "bold", "bold": true}
+  ]},
+  {"type": "list", "items": [[{"text": "one"}]]},
+  {"type": "list", "ordered": true, "start": 3, "items": [[{"text": "three"}]]},
+  {"type": "table",
+   "header": [[{"text": "Signal"}], [{"text": "Meaning"}]],
+   "rows": [[[{"text": "New site"}], []]]}
+]
+```
+
+Blocks are data, never HTML, and the template escapes every value. A span's
+`href` must be a site path or an http(s) URL, and anything else is refused.
+Links to `leadmeleads.com` are stored as site paths. A site link whose target is
+not a public page in this checkout loses its target, keeps its words, and is
+listed in the record's `unlinked_links`, so a guide can be scheduled ahead of a
+guide it cites. External links get `rel="nofollow noopener noreferrer"`.
+
+Records without blocks render exactly as before, so published guides do not change.
+
 On success, the importer writes:
 
 - `app/content/imported_guides/<slug>.json`

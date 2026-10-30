@@ -15,6 +15,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -28,6 +29,13 @@ RESOURCE_TOPICS = frozenset({"finding-leads", "verification", "website-seo", "ou
 # Article paragraphs can legitimately be much longer than short metadata and
 # labels. Keep them bounded while allowing approved long-form copy through.
 PARAGRAPH_MAXIMUM = 4_000
+# Structured body format. Records without ``blocks`` keep rendering from the
+# legacy ``paragraphs``/``bullets`` fields, so published guides do not change.
+BODY_FORMAT = 2
+SITE_HOSTS = frozenset({"leadmeleads.com", "www.leadmeleads.com"})
+SAFE_PATH_RE = re.compile(r"^/[A-Za-z0-9._~%!$'()*+,;=:@/-]*(?:\?[^\s#]*)?(?:#\S*)?$")
+SPAN_FLAGS = ("bold", "italic", "code")
+MAX_TABLE_COLUMNS = 8
 
 # Root routes owned by the app that are not part of the public SEO list. This
 # keeps an import from shadowing an application route once the generic route
@@ -104,6 +112,152 @@ def _image(value: Any, package_dir: Path, name: str) -> tuple[Path, str]:
     )
 
 
+def _safe_href(value: Any, name: str) -> str:
+    """Return a site-relative path or absolute http(s) URL, or refuse it.
+
+    Links to our own site are stored site-relative so that a guide never
+    points at the wrong host. Nothing else (javascript:, data:, //host,
+    backslash tricks, embedded credentials) can reach the template.
+    """
+    href = _text(value, name, maximum=500)
+    if any(ord(char) <= 32 or ord(char) == 127 or char == "\\" for char in href):
+        raise GuideImportError(f"{name} contains characters that are not allowed in a link.")
+    try:
+        parts = urlsplit(href)
+        hostname = parts.hostname
+    except ValueError as exc:
+        raise GuideImportError(f"{name} is not a valid link.") from exc
+    if parts.scheme in {"http", "https"} and hostname:
+        if parts.username or parts.password:
+            raise GuideImportError(f"{name} must not contain credentials.")
+        if hostname.lower() not in SITE_HOSTS:
+            return href
+        href = parts.path or "/"
+        href += f"?{parts.query}" if parts.query else ""
+        href += f"#{parts.fragment}" if parts.fragment else ""
+    elif parts.scheme or parts.netloc:
+        raise GuideImportError(f"{name} must be a site path or an http(s) URL.")
+    if not SAFE_PATH_RE.fullmatch(href) or href.startswith("//") or ".." in href.split("/"):
+        raise GuideImportError(f"{name} is not a safe site path.")
+    return href
+
+
+def _spans(value: Any, name: str) -> list[dict[str, Any]]:
+    """Validate inline text runs. Stored as data; the template escapes them."""
+    if not isinstance(value, list) or not value:
+        raise GuideImportError(f"{name} must be a non-empty list of text runs.")
+    spans = []
+    for index, item in enumerate(value):
+        label = f"{name}[{index}]"
+        if not isinstance(item, dict) or set(item) - {"text", "href", *SPAN_FLAGS}:
+            raise GuideImportError(f"{label} is not a supported text run.")
+        text = item.get("text")
+        if not isinstance(text, str) or not text or len(text) > PARAGRAPH_MAXIMUM:
+            raise GuideImportError(f"{label}.text is required.")
+        span: dict[str, Any] = {"text": text}
+        if "href" in item:
+            span["href"] = _safe_href(item["href"], f"{label}.href")
+        for flag in SPAN_FLAGS:
+            if flag in item:
+                if item[flag] is not True:
+                    raise GuideImportError(f"{label}.{flag} must be true when present.")
+                span[flag] = True
+        spans.append(span)
+    if not "".join(span["text"] for span in spans).strip():
+        raise GuideImportError(f"{name} has no visible text.")
+    return spans
+
+
+def _table(value: dict[str, Any], name: str) -> dict[str, Any]:
+    header, rows = value.get("header"), value.get("rows")
+    if not isinstance(header, list) or not 2 <= len(header) <= MAX_TABLE_COLUMNS:
+        raise GuideImportError(f"{name}.header must have 2 to {MAX_TABLE_COLUMNS} columns.")
+    if not isinstance(rows, list) or not rows:
+        raise GuideImportError(f"{name}.rows must contain at least one row.")
+    cleaned = []
+    for row_index, row in enumerate(rows):
+        if not isinstance(row, list) or len(row) != len(header):
+            raise GuideImportError(f"{name}.rows[{row_index}] must match the header's column count.")
+        # An empty cell is legitimate table content; every other run is checked.
+        cleaned.append([
+            _spans(cell, f"{name}.rows[{row_index}][{cell_index}]") if cell else []
+            for cell_index, cell in enumerate(row)
+        ])
+    return {
+        "type": "table",
+        "header": [_spans(cell, f"{name}.header[{index}]") for index, cell in enumerate(header)],
+        "rows": cleaned,
+    }
+
+
+def _blocks(value: Any, name: str) -> list[dict[str, Any]]:
+    """Validate an ordered body: paragraphs, lists and tables, in source order."""
+    if not isinstance(value, list) or not value:
+        raise GuideImportError(f"{name} must be a non-empty list.")
+    blocks: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        label = f"{name}[{index}]"
+        kind = item.get("type") if isinstance(item, dict) else None
+        if kind == "paragraph":
+            blocks.append({"type": "paragraph", "spans": _spans(item.get("spans"), f"{label}.spans")})
+        elif kind == "list":
+            items = item.get("items")
+            if not isinstance(items, list) or not items:
+                raise GuideImportError(f"{label}.items must be a non-empty list.")
+            block: dict[str, Any] = {
+                "type": "list",
+                "items": [_spans(entry, f"{label}.items[{i}]") for i, entry in enumerate(items)],
+            }
+            if item.get("ordered") is True:
+                block["ordered"] = True
+                start = item.get("start", 1)
+                if not isinstance(start, int) or isinstance(start, bool) or not 0 <= start <= 9999:
+                    raise GuideImportError(f"{label}.start must be a list number.")
+                block["start"] = start
+            blocks.append(block)
+        elif kind == "table":
+            blocks.append(_table(item, label))
+        else:
+            raise GuideImportError(f"{label}.type is not a supported body block.")
+    return blocks
+
+
+def _iter_spans(blocks: list[dict[str, Any]]):
+    for block in blocks:
+        if block["type"] == "paragraph":
+            yield block["spans"]
+        elif block["type"] == "list":
+            yield from block["items"]
+        else:
+            yield from block["header"]
+            for row in block["rows"]:
+                yield from row
+
+
+def _resolve_internal_links(record: dict[str, Any], public_paths: set[str]) -> list[dict[str, str]]:
+    """Unlink site links whose target is not a public page in this checkout.
+
+    An approved article may be scheduled ahead of a guide it cites. Publishing
+    the sentence as plain text is the safe result; a 404 in the body is not,
+    and neither is failing an approved article on its slot. Each one is
+    reported in the record so the gap stays visible and auditable.
+    """
+    unlinked: list[dict[str, str]] = []
+    groups = [record.get("intro_blocks") or [],
+              *(section.get("blocks") or [] for section in record["body_sections"])]
+    for blocks in groups:
+        for spans in _iter_spans(blocks):
+            for span in spans:
+                href = span.get("href")
+                if not href or not href.startswith("/"):
+                    continue
+                path = re.split(r"[?#]", href, maxsplit=1)[0].rstrip("/") or "/"
+                if path != f"/{record['slug']}" and path not in public_paths:
+                    unlinked.append({"text": span["text"], "href": href})
+                    del span["href"]
+    return unlinked
+
+
 def _sections(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value:
         raise GuideImportError("body_sections must contain at least one section.")
@@ -123,14 +277,19 @@ def _sections(value: Any) -> list[dict[str, Any]]:
         # still rejected after both structured content fields are validated.
         if not paragraphs and not bullets:
             raise GuideImportError(f"body_sections[{index}] needs paragraphs or bullets.")
-        sections.append({
+        section: dict[str, Any] = {
             "heading": _text(item.get("heading"), f"body_sections[{index}].heading"),
             "paragraphs": [
                 _text(p, f"body_sections[{index}].paragraphs", maximum=PARAGRAPH_MAXIMUM)
                 for p in paragraphs
             ],
             "bullets": [_text(b, f"body_sections[{index}].bullets") for b in bullets],
-        })
+        }
+        if item.get("level") == 3:
+            section["level"] = 3
+        if "blocks" in item:
+            section["blocks"] = _blocks(item["blocks"], f"body_sections[{index}].blocks")
+        sections.append(section)
     return sections
 
 
@@ -160,6 +319,7 @@ def validate_package(package_dir: str | Path) -> tuple[dict[str, Any], list[tupl
     slug = _safe_slug(raw.get("slug"))
     intro_paragraphs = _intro_paragraphs(raw.get("intro_paragraphs", []))
     sections = _sections(raw.get("body_sections"))
+    intro_blocks = _blocks(raw["intro_blocks"], "intro_blocks") if raw.get("intro_blocks") else []
     hero_source, hero_alt = _image(raw.get("hero_image"), base, "hero_image")
     inline_raw = raw.get("inline_images", [])
     if not isinstance(inline_raw, list):
@@ -198,6 +358,12 @@ def validate_package(package_dir: str | Path) -> tuple[dict[str, Any], list[tupl
             "summary": _text(card.get("summary"), "resource_card.summary", maximum=350),
         },
     }
+    if intro_blocks:
+        record["intro_blocks"] = intro_blocks
+    if intro_blocks or any("blocks" in section for section in sections):
+        record["body_format"] = BODY_FORMAT
+        from app import seo_meta
+        record["unlinked_links"] = _resolve_internal_links(record, set(seo_meta.public_indexable_paths()))
     return record, copied
 
 
@@ -252,7 +418,10 @@ def import_guide_package(
             if asset_dir.exists() and not record_path.exists():
                 shutil.rmtree(asset_dir)
             raise
-    return {"slug": slug, "local_url": f"{local_base_url.rstrip('/')}/{slug}", "record": str(record_path)}
+    result = {"slug": slug, "local_url": f"{local_base_url.rstrip('/')}/{slug}", "record": str(record_path)}
+    if record.get("unlinked_links"):
+        result["unlinked_links"] = record["unlinked_links"]
+    return result
 
 
 def load_imported_guides(content_dir: Path = CONTENT_DIR) -> dict[str, dict[str, Any]]:
@@ -272,6 +441,8 @@ def load_imported_guides(content_dir: Path = CONTENT_DIR) -> dict[str, dict[str,
             _text(data.get("meta_description"), "meta_description")
             _intro_paragraphs(data.get("intro_paragraphs", []))
             _sections(data.get("body_sections"))
+            if data.get("intro_blocks"):
+                _blocks(data["intro_blocks"], "intro_blocks")
             card = data.get("resource_card")
             if not isinstance(card, dict):
                 continue
