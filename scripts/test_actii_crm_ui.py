@@ -41,7 +41,7 @@ class CrmUiTests(unittest.TestCase):
 
     def route(self, route):
         path = route.request.url.split("ui.example", 1)[-1]
-        if path == "/static/actii-crm.js":
+        if path.split("?", 1)[0] == "/static/actii-crm.js":
             route.fulfill(content_type="text/javascript", body=(ROOT / "app/static/actii-crm.js").read_text())
         elif path == "/lead-bot/crm-jobs":
             self.status_checks += 1
