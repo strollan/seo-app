@@ -9343,7 +9343,7 @@ def _actii_crm_modal(csrf_token=""):
       <label class="wide">SEO findings / original reference<textarea name="source_note" readonly></textarea></label>
     </div>
     <p class="crm-message" id="actiiCrmMessage" aria-live="polite"></p>
-    <div class="crm-actions"><button type="button" id="actiiCrmCancel">Cancel</button><button class="crm-save" type="submit">Save to ACT II</button></div>
+    <div class="crm-actions"><button type="button" id="actiiCrmCancel">Cancel</button><button class="crm-save" type="submit">Add Contact</button></div>
   </form>
 </dialog>
 <script type="application/json" id="actiiCrmConfig">{token}</script>

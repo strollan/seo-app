@@ -9,12 +9,18 @@
   const message = document.getElementById('actiiCrmMessage');
   const save = form.querySelector('.crm-save');
   const cancel = document.getElementById('actiiCrmCancel');
-  const labels = {queued: 'Queued', processing: 'Processing', added: 'Added',
-    already_present: 'Already Present', needs_review: 'Needs Review', failed: 'Failed'};
+  const labels = {queued: 'Adding to ACT II\u2026', processing: 'Adding to ACT II\u2026', added: 'Added to ACT II',
+    already_present: 'Already in ACT II', needs_review: 'Needs Review', failed: 'Failed'};
+  // Plain-language status beside the button; review/failure keep the server's guidance.
+  const notes = {queued: 'This usually takes a couple of minutes.', processing: 'This usually takes a couple of minutes.',
+    added: 'Added to ACT II.', already_present: 'Already in ACT II. No duplicate was created.'};
+  const pending = state => state === 'queued' || state === 'processing';
+  const POLL_MS = 15000, POLL_LIMIT = 80;  // read-only status checks for at most ~20 minutes
   const jobs = new Map();
   let source = null;
   let busy = false;
   let checking = false;
+  let pollTimer = null, polls = 0;
 
   function key(file, domain) { return JSON.stringify([file, domain]); }
 
@@ -43,12 +49,13 @@
       result.setAttribute('role', 'status');
       button.insertAdjacentElement('afterend', result);
     }
-    result.textContent = data.message || labels[data.state];
+    const note = notes[data.state] || data.message || labels[data.state];
+    result.textContent = note;
     if (data.state === 'added' || data.state === 'already_present') {
       result.append(' ', localLink(data));
     }
     if (source && source.button === button && !busy) {
-      message.textContent = data.message || labels[data.state];
+      message.textContent = note;
       save.disabled = true;
       save.textContent = labels[data.state];
       cancel.textContent = 'Close';
@@ -72,6 +79,7 @@
       if (data.ok !== true || !Array.isArray(data.jobs)) return;
       data.jobs.forEach(job => jobs.set(key(job.source_file, job.source_domain), job));
       applyJobs();
+      schedulePoll();
     } catch (_) {
       // Keep the last confirmed state; a status outage must never resubmit an import.
       document.querySelectorAll('[data-crm-state="queued"], [data-crm-state="processing"]').forEach(button => {
@@ -82,6 +90,16 @@
       checking = false;
     }
   }
+
+  // While an import is still pending, re-read the existing status endpoint (GET only; it never
+  // resubmits) so the button turns into "Added to ACT II" without a manual refresh. Bounded.
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    if (polls >= POLL_LIMIT || ![...jobs.values()].some(job => pending(job.state))) return;
+    pollTimer = setTimeout(() => { pollTimer = null; polls += 1; checkJobs(); }, POLL_MS);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !pollTimer) schedulePoll(); });
 
   document.addEventListener('click', event => {
     const button = event.target.closest('.lead-add-crm');
@@ -101,7 +119,7 @@
       });
       message.textContent = '';
       save.disabled = false;
-      save.textContent = 'Add to ACT II';
+      save.textContent = 'Add Contact';
       cancel.textContent = 'Cancel';
       dialog.showModal();
     } catch (_) {
@@ -116,9 +134,9 @@
     const current = source;
     busy = true;
     save.disabled = cancel.disabled = current.button.disabled = true;
-    save.textContent = current.button.textContent = 'Submitting…';
+    save.textContent = current.button.textContent = 'Adding to ACT II\u2026';
     form.setAttribute('aria-busy', 'true');
-    message.textContent = 'Submitting your CRM request…';
+    message.textContent = 'Adding to ACT II\u2026';
     let confirmed = false;
     try {
       const response = await fetch('/lead-bot/add-to-crm', {
@@ -141,7 +159,7 @@
         jobs.set(key(current.file, current.domain), data);
       }
       paint(current.button, data);
-      message.textContent = data.message;
+      message.textContent = notes[data.state] || data.message;
       if (data.state === 'added' || data.state === 'already_present') message.append(' ', localLink(data));
       save.textContent = labels[data.state];
       cancel.textContent = 'Close';
@@ -162,6 +180,6 @@
     if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 &&
         (node.matches('.lead-add-crm') || node.querySelector('.lead-add-crm'))))) applyJobs();
   }).observe(document.body, {childList: true, subtree: true});
-  // Check once on page load and after submission. Refresh for later status; no polling.
+  // Check on page load and after submission; pending imports are re-checked by schedulePoll().
   checkJobs();
 })();

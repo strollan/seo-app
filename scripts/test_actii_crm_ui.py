@@ -70,35 +70,47 @@ class CrmUiTests(unittest.TestCase):
                 self.assertEqual(self.page.locator('input[name="website"]').input_value(), "https://business.example")
                 self.page.screenshot(path=f"/tmp/actii-crm-{width}.png")
                 self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
-                self.page.get_by_role("button", name="Add to ACT II", exact=True).click()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Queued'")
+                self.page.get_by_role("button", name="Add Contact", exact=True).click()
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
+                self.assertTrue(self.page.locator('.lead-add-crm').is_disabled())
+                self.assertTrue(self.page.locator('.crm-save').is_disabled())
+                self.page.locator('.lead-add-crm').click(force=True)  # a second click must not resubmit
+                self.page.locator('.crm-save').click(force=True)
                 self.assertEqual(self.posts, 1)
                 self.assertEqual(self.page.locator('.lead-crm-result a').count(), 0)
                 self.page.reload()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Queued'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
                 self.assertEqual(self.posts, 1)
                 self.jobs[0].update(state="processing", message="Processing in ACT II.")
                 self.page.reload()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Processing'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
                 self.jobs[0].update(state="added", message="Added to CRM.", open_url="http://127.0.0.1:8842/crm/contacts/7")
                 self.page.reload()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Added'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Added to ACT II'")
                 self.assertEqual(self.page.locator('.lead-crm-result a').get_attribute("href"), "http://127.0.0.1:8842/crm/contacts/7")
                 self.assertEqual(self.posts, 1)
         self.assertEqual(self.errors, [])
 
-    def test_queued_status_does_not_start_background_polling(self):
+    def test_pending_status_polls_until_added_then_stops(self):
         self.jobs = [self.reply.copy()]
         self.page.clock.install()
         self.page.goto("https://ui.example/")
-        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Queued'")
-        self.page.clock.fast_forward(30000)
+        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
         self.assertEqual(self.status_checks, 1)
+        self.page.clock.fast_forward(15000)
+        self.page.wait_for_function("() => true")
+        self.assertEqual(self.status_checks, 2)
+        self.jobs[0].update(state="added", message="Added to CRM.", open_url="http://127.0.0.1:8842/crm/contacts/7")
+        self.page.clock.fast_forward(15000)
+        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Added to ACT II'")
+        self.assertEqual(self.status_checks, 3)
+        self.page.clock.fast_forward(120000)  # completed: no further status checks
+        self.assertEqual(self.status_checks, 3)
         self.assertEqual(self.posts, 0)
         self.assertEqual(self.errors, [])
 
     def test_review_failed_and_existing_states(self):
-        for state, label in (("needs_review", "Needs Review"), ("failed", "Failed"), ("already_present", "Already Present")):
+        for state, label in (("needs_review", "Needs Review"), ("failed", "Failed"), ("already_present", "Already in ACT II")):
             self.jobs = [{**self.reply, "state": state, "open_url": "http://127.0.0.1:8842/crm/contacts/7"}]
             self.page.goto("https://ui.example/")
             self.page.wait_for_function("label => document.querySelector('.lead-add-crm').textContent === label", arg=label)
@@ -109,7 +121,7 @@ class CrmUiTests(unittest.TestCase):
         self.status = 422; self.reply = {"ok": False, "error": "Website must retain the original prospect's hostname."}
         self.open_form()
         self.page.locator('input[name="website"]').fill("https://wrong.example")
-        self.page.get_by_role("button", name="Add to ACT II", exact=True).click()
+        self.page.get_by_role("button", name="Add Contact", exact=True).click()
         self.page.wait_for_function("document.getElementById('actiiCrmMessage').textContent.includes('original prospect')")
         self.assertEqual(self.page.locator('input[name="website"]').input_value(), "https://wrong.example")
         self.assertFalse(self.page.get_by_role("button", name="Retry request", exact=True).is_disabled())
