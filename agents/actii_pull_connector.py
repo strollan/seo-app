@@ -11,7 +11,8 @@ from urllib.parse import urlsplit
 import requests
 
 from agents.actii_file_store import atomic_json, file_lock, private_directory, read_json
-from agents.actii_queue_agent import ID, MAX_PAYLOAD, QueueError, payload_hash, timestamp, verify_website
+from agents.actii_queue_agent import (COMPARE_REPORT, ID, LEAD_IMPORT, MAX_PAYLOAD, OUTCOMES, REPORT_TIMESTAMP, QueueError,
+                                     payload_hash, timestamp, verify_website)
 
 LOCAL_ORIGIN = "http://127.0.0.1:8842"
 
@@ -91,15 +92,26 @@ class PullConnector:
             if not self.clock() < job["lease_until"] <= self.clock() + 125 or not self.clock() < job["expires_at"]:
                 raise ValueError
             payload = job["payload"]
-            if set(payload) != {"owner_id", "source_ref", "lead"} or payload["owner_id"] != self.config["username"]:
+            if payload_hash(payload) != job["payload_hash"] or len(json.dumps(payload, ensure_ascii=True).encode()) > MAX_PAYLOAD:
                 raise ValueError
-            reference = payload["source_ref"].split(":")
-            if (len(reference) != 3 or reference[0] != "leadmeleads" or not reference[1].endswith(".csv")
-                    or any(c in reference[1] for c in ("/", "\\")) or reference[2] != job["source_domain"]
-                    or payload_hash(payload) != job["payload_hash"]
-                    or len(json.dumps(payload, ensure_ascii=True).encode()) > MAX_PAYLOAD):
+            if job.get("kind", LEAD_IMPORT) == COMPARE_REPORT:
+                from agents.actii_search_metadata_agent import domain
+                prefix, _, stamp = str(payload.get("source_ref", "")).partition(":")
+                if (set(payload) != {"owner_id", "source_ref", "report"} or payload["owner_id"] != self.config["username"]
+                        or prefix != "leadmeleads-compare" or not REPORT_TIMESTAMP.fullmatch(stamp)
+                        or not isinstance(payload["report"], dict)
+                        or domain(payload["report"].get("site_url", "")) != job["source_domain"] or not job["source_domain"]):
+                    raise ValueError
+            elif job.get("kind", LEAD_IMPORT) == LEAD_IMPORT:
+                if set(payload) != {"owner_id", "source_ref", "lead"} or payload["owner_id"] != self.config["username"]:
+                    raise ValueError
+                reference = payload["source_ref"].split(":")
+                if (len(reference) != 3 or reference[0] != "leadmeleads" or not reference[1].endswith(".csv")
+                        or any(c in reference[1] for c in ("/", "\\")) or reference[2] != job["source_domain"]):
+                    raise ValueError
+                verify_website(payload["lead"], job["source_domain"])
+            else:
                 raise ValueError
-            verify_website(payload["lead"], job["source_domain"])
         except (KeyError, TypeError, ValueError, QueueError):
             raise ConnectorError("Job identity or payload failed validation; no import submitted.") from None
 
@@ -121,13 +133,14 @@ class PullConnector:
         except (OSError, ValueError, KeyError, TypeError):
             raise ConnectorError("Local signing configuration or verified workspace mapping is invalid.") from None
 
-    def _submit(self, payload, secret):
+    def _submit(self, payload, secret, kind=LEAD_IMPORT):
+        report = kind == COMPARE_REPORT
         raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         stamp = str(int(self.clock()))
         signature = hmac.new(secret.encode(), stamp.encode() + b"." + raw, hashlib.sha256).hexdigest()
         try:
             response = self.session.post(
-                LOCAL_ORIGIN + "/internal/leadme/import", data=raw,
+                LOCAL_ORIGIN + ("/internal/leadme/attach-report" if report else "/internal/leadme/import"), data=raw,
                 headers={"Content-Type": "application/json", "X-ACTII-Timestamp": stamp, "X-ACTII-Signature": signature},
                 timeout=(3, 5), allow_redirects=False, stream=True)
             with response:
@@ -136,10 +149,15 @@ class PullConnector:
                     return {"outcome": "uncertain"}
                 if response.status_code == 200 and body.get("ok") is True:
                     contact = body.get("contact_id")
-                    if (body.get("status") in {"created", "existing"} and type(contact) is int and contact > 0
+                    if (body.get("status") in ({"attached", "already_attached"} if report else {"created", "existing"})
+                            and type(contact) is int and contact > 0
                             and body.get("open_url") == f"{LOCAL_ORIGIN}/crm/contacts/{contact}"):
                         return {"outcome": body["status"], "contact_id": contact}
-                if response.status_code == 409 and body.get("ok") is False:
+                if report and response.status_code == 404 and body.get("ok") is False and body.get("status") == "no_contact":
+                    return {"outcome": "no_contact"}  # nothing was written
+                if report and response.status_code == 409 and body.get("ok") is False and body.get("status") == "ambiguous":
+                    return {"outcome": "ambiguous"}  # nothing was written; never a durable stop
+                if not report and response.status_code == 409 and body.get("ok") is False:
                     return {"outcome": "review"}
                 if response.status_code in {401, 403, 422, 503} and body.get("ok") is False:
                     return {"outcome": "failed"}
@@ -176,7 +194,7 @@ class PullConnector:
             receipt = record.get("receipt")
             if (record.get("phase") not in {"receipt", "acknowledged"} or not isinstance(receipt, dict)
                     or receipt.get("id") != record["id"] or receipt.get("lease_id") != record["lease_id"]
-                    or receipt.get("outcome") not in {"created", "existing", "review", "failed", "not_sent", "uncertain"}):
+                    or receipt.get("outcome") not in OUTCOMES[LEAD_IMPORT] | OUTCOMES[COMPARE_REPORT]):
                 raise ConnectorError("Local journal state requires operator review.")
             if record["phase"] == "receipt":
                 self._ack(path, record)  # A failed acknowledgment leaves the durable receipt intact.
@@ -217,10 +235,12 @@ class PullConnector:
             record.update(phase="dispatching", dispatched_at=self.clock())
             atomic_json(path, record)
             # No retry after any exception from this point without a saved not_sent result.
-            receipt = {"id": job["id"], "lease_id": job["lease_id"], **self._submit(job["payload"], secret)}
+            receipt = {"id": job["id"], "lease_id": job["lease_id"], **self._submit(job["payload"], secret, job.get("kind", LEAD_IMPORT))}
             record.update(phase="receipt", receipt=receipt)
             atomic_json(path, record)
             self._ack(path, record)
             return {"created": "Added.", "existing": "Already present.", "review": "Needs review.",
+                    "attached": "Report attached.", "already_attached": "Already added.", "no_contact": "No matching contact.",
+                    "ambiguous": "Needs review: more than one matching contact.",
                     "uncertain": "Needs review; import outcome is uncertain.", "not_sent": "Not submitted; retry queued.",
                     "failed": "Failed; review configuration."}[receipt["outcome"]]

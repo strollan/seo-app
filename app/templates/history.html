@@ -428,6 +428,11 @@
 
                 <a href="/history/rerun?saved_report={{ item.saved_report }}" class="btn">Run Again</a>
 
+                {% if actii_attach_enabled and item.owner_id == current_user_id %}
+                <button type="button" class="btn actii-attach" data-saved-report="{{ item.saved_report }}">Attach to ACT II</button>
+                <span class="actii-attach-status" role="status" aria-live="polite"></span>
+                {% endif %}
+
                 <form method="post" action="/history/delete">
                     <input type="hidden" name="saved_report" value="{{ item.saved_report }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -445,5 +450,53 @@
 
 </div>
 <script src="/static/js/mobile-nav.js" defer></script>
+{% if actii_attach_enabled %}
+<style>.actii-attach-status{display:block;flex-basis:100%;font-size:14px;color:#475569;overflow-wrap:anywhere}</style>
+<script>
+(function () {
+    const CSRF = {{ csrf_token | tojson }};
+    const ACTIVE = new Set(["queued", "processing"]);
+    async function poll(jobId, status, button, tries) {
+        try {
+            const response = await fetch("/lead-bot/crm-jobs/" + encodeURIComponent(jobId), {headers: {"Accept": "application/json"}});
+            const body = await response.json();
+            status.textContent = body.message || body.error || "Status unavailable.";
+            if (response.ok && ACTIVE.has(body.state) && tries < 40) {
+                setTimeout(function () { poll(jobId, status, button, tries + 1); }, 3000);
+            } else {
+                button.disabled = body.state !== "failed";
+            }
+        } catch (error) {
+            status.textContent = "Status unavailable. Refresh to check again.";
+            button.disabled = false;
+        }
+    }
+    document.querySelectorAll("button.actii-attach").forEach(function (button) {
+        button.addEventListener("click", async function () {
+            const status = button.nextElementSibling;
+            button.disabled = true;
+            status.textContent = "Queuing for ACT II…";
+            try {
+                const response = await fetch("/history/attach-to-crm", {
+                    method: "POST", headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                    body: JSON.stringify({csrf_token: CSRF, saved_report: button.dataset.savedReport})
+                });
+                const body = await response.json();
+                status.textContent = body.message || body.error || "Request failed.";
+                if (response.ok && body.id) {
+                    if (ACTIVE.has(body.state)) poll(body.id, status, button, 0);
+                    else button.disabled = body.state !== "failed";
+                } else {
+                    button.disabled = false;
+                }
+            } catch (error) {
+                status.textContent = "Request failed. Try again.";
+                button.disabled = false;
+            }
+        });
+    });
+})();
+</script>
+{% endif %}
 </body>
 </html>

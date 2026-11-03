@@ -3,7 +3,7 @@ URL Compare scoring: Your Site and Competitor use one rule set.
 
 Offline. Synthetic scan fixtures only; saved reports and history are never
 read or written. The pre-fix ("before") scoring is executed from the git
-HEAD copy of strict_final_score_cap, reproducing the old per-slot chains.
+pre-fix commit (e683513) copy of strict_final_score_cap, reproducing the old per-slot chains.
 Route tests stub every network/OpenAI/file-writing step and block sockets.
 """
 
@@ -50,12 +50,15 @@ FIXTURES = {
 }
 
 
+PRE_FIX_COMMIT = "e6835135e0769effed5cd5b2085377b18bca4f90"  # production before the scoring fix
+
+
 def old_scores(site, competitor):
-    """The pre-fix /analyze chains, using HEAD's strict_final_score_cap."""
-    source = subprocess.run(["git", "show", "HEAD:app/main.py"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    """The pre-fix /analyze chains, using the last pre-fix production commit's strict_final_score_cap."""
+    source = subprocess.run(["git", "show", PRE_FIX_COMMIT + ":app/main.py"], cwd=ROOT, capture_output=True, text=True, check=True).stdout
     strict_src = re.search(r"^def strict_final_score_cap\(page, score\):.*?(?=^\S)", source, re.S | re.M).group(0)
     ns = {}
-    exec(compile(strict_src, "HEAD:strict_final_score_cap", "exec"), ns)
+    exec(compile(strict_src, "pre-fix:strict_final_score_cap", "exec"), ns)
     strict, caps, nope = ns["strict_final_score_cap"], appmain.apply_score_caps, appmain.no_perfect_display_score
     site, competitor = dict(site), dict(competitor)
     s = nope(site, nope(site, caps(site, appmain.score_page(site)[0])))

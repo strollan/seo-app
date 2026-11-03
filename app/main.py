@@ -1478,7 +1478,7 @@ def save_report_history_item(item: dict):
     _write_history_atomic(history)
 
 
-def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list, owner_id=None):
+def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, volume_data: list, owner_id=None, recommendations=None):
     now = datetime.now()
     timestamp_base = now.strftime("%Y-%m-%d_%H-%M-%S-%f")
     site_slug = slugify_report_part(site.get("clean_domain", "site"))
@@ -1557,6 +1557,8 @@ def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, vol
         "saved_report": f"/reports/saved/{filename}",
         "saved_path": file_path,
         "owner_id": owner_id,
+        # Additive: the report's own quick-win recommendations (for CRM attachment).
+        "recommendations": [str(item).strip()[:400] for item in (recommendations or []) if str(item).strip()][:5],
     }
 
     save_report_history_item(history_item)
@@ -2341,8 +2343,45 @@ async def report_history(request: Request):
             "history": history,
             "logo_url": safe_logo_url(),
             "csrf_token": _get_or_create_csrf_token(request),
+            "actii_attach_enabled": compare_attach_enabled(),
+            "current_user_id": user["id"],
         },
     )
+
+
+def compare_attach_enabled() -> bool:
+    """URL Compare -> ACT II attachment: needs queue mode AND its own explicit switch (default off)."""
+    return (os.getenv("ACTII_CRM_MODE", "disabled") == "queue"
+            and os.getenv("ACTII_COMPARE_ATTACH_ENABLED", "false").strip().lower() == "true")
+
+
+@app.post("/history/attach-to-crm")
+async def history_attach_to_crm(request: Request):
+    """Queue one of the caller's own saved Compare reports for an EXISTING ACT II contact."""
+    user = auth_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "Sign in to attach a report to ACT II."}, status_code=401)
+    from agents.actii_queue_routes import limited_json, respond
+    from agents.actii_queue_agent import QueueError
+    try:
+        payload = await limited_json(request, 8 * 1024)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
+    if not isinstance(payload, dict) or not _csrf_token_valid(request, str(payload.get("csrf_token") or "")):
+        return JSONResponse({"ok": False, "error": "Your session has expired. Refresh and try again."}, status_code=403)
+    if not compare_attach_enabled():
+        return JSONResponse({"ok": False, "error": "Attaching reports to ACT II is not enabled."}, status_code=503)
+    from urllib.parse import urlsplit
+    origin = request.headers.get("origin")
+    expected = urlsplit(os.getenv("APP_BASE_URL", "https://leadmeleads.com"))
+    if origin and origin != f"{expected.scheme}://{expected.netloc}":
+        return JSONResponse({"ok": False, "error": "Refresh this page before attaching a report."}, status_code=403)
+    saved_report = str(payload.get("saved_report") or "")
+    prefix = "/reports/saved/"
+    report_file = saved_report[len(prefix):] if saved_report.startswith(prefix) else ""
+    if not report_file or report_file != os.path.basename(report_file):
+        return JSONResponse({"ok": False, "error": "This saved report is not owned by your account."}, status_code=403)
+    return respond(lambda queue: queue.enqueue_report(user, report_file), accepted=True)
 
 
 
@@ -3043,7 +3082,7 @@ async def analyze(
         html = final_polish_report_html(html)
         owner_user = auth_current_user(request)
         owner_id = owner_user["id"] if owner_user else None
-        save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id)
+        save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id, recommendations=site_quick_wins)
     except Exception as e:
         print("Report history save failed:", e)
 

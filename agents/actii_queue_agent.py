@@ -20,7 +20,13 @@ MAX_JOBS = 1000
 MAX_ATTEMPTS = 10
 LEASE_SECONDS = 120
 JOB_SECONDS = 7 * 86400
-TERMINAL = {"added", "already_present", "needs_review", "failed"}
+TERMINAL = {"added", "already_present", "needs_review", "failed", "attached", "already_attached", "no_match"}
+LEAD_IMPORT, COMPARE_REPORT = "lead_import", "compare_report"
+# Receipt outcomes each job kind may report. Compare reports never create contacts.
+OUTCOMES = {LEAD_IMPORT: {"created", "existing", "review", "failed", "not_sent", "uncertain"},
+            COMPARE_REPORT: {"attached", "already_attached", "no_contact", "ambiguous", "failed", "not_sent", "uncertain"}}
+REPORT_REF = re.compile(r"[A-Za-z0-9_.-]{1,200}\.html")
+REPORT_TIMESTAMP = re.compile(r"[A-Za-z0-9_.-]{1,120}")
 ID = re.compile(r"[a-f0-9]{32}")
 SAFE_NAME = re.compile(r"[A-Za-z0-9_-]{1,80}")
 MESSAGES = {
@@ -28,6 +34,8 @@ MESSAGES = {
     "added": "Added to CRM.", "already_present": "Already present in CRM.",
     "needs_review": "Needs review on the ACT II workstation. Do not resubmit.",
     "failed": "Import failed. Review the connection before trying again.",
+    "attached": "Report attached to the ACT II contact.", "already_attached": "Already added.",
+    "no_match": "No matching contact in ACT II for this website.",
 }
 
 
@@ -92,11 +100,68 @@ def current_source_authorized(user_id, username, filename, source_domain):
                 and from_export(path, source_domain) is not None)
 
 
+# Same file app.main.history_file_path() uses (<repo>/reports/history.json); read only.
+REPORT_HISTORY = Path(__file__).resolve().parents[1] / "reports" / "history.json"
+
+
+def owned_report(user_id, report_file, history_path=None):
+    """The caller's own saved-report history entry for /reports/saved/<report_file>, else None."""
+    if not isinstance(report_file, str) or not REPORT_REF.fullmatch(report_file):
+        return None
+    try:
+        history = json.loads(Path(history_path or REPORT_HISTORY).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for entry in history if isinstance(history, list) else []:
+        if (isinstance(entry, dict) and entry.get("saved_report") == f"/reports/saved/{report_file}"
+                and entry.get("owner_id") == user_id):
+            return entry
+    return None
+
+
+def current_report_authorized(user_id, username, report_file, source_domain):
+    """Read-only account lookup plus exact ownership of the saved report and its prospect domain."""
+    from agents.auth_agent import AUTH_DB
+    from agents.actii_search_metadata_agent import domain
+    connection = sqlite3.connect(Path(AUTH_DB).resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        row = connection.execute("SELECT id FROM users WHERE id=? AND username=? AND is_active=1",
+                                 (user_id, username)).fetchone()
+    finally:
+        connection.close()
+    entry = owned_report(user_id, report_file) if row else None
+    return bool(entry and domain(entry.get("site_url", "")) == source_domain)
+
+
+def report_payload(entry):
+    """The ACT II attachment fields for one saved report; old reports simply lack some."""
+    def text(key, limit):
+        return str(entry.get(key) or "").strip()[:limit]
+    def number(key):
+        value = entry.get(key, 0)
+        return value if type(value) in {int, float} else 0
+    return {
+        "site_url": text("site_url", 2000), "competitor_url": text("competitor_url", 2000),
+        "site_final_url": text("site_final_url", 2000), "competitor_final_url": text("competitor_final_url", 2000),
+        "site_domain": text("site_domain", 255), "competitor_domain": text("competitor_domain", 255),
+        "site_score": number("site_score"), "competitor_score": number("competitor_score"),
+        "score_difference": number("score_difference"),
+        "top_gaps": [str(item)[:120] for item in (entry.get("top_gaps") or [])[:12] if isinstance(item, str)],
+        "volume_opportunities": [{"keyword": str(item.get("keyword"))[:120],
+                                  "volume": item.get("volume") if type(item.get("volume")) is int else None}
+                                 for item in (entry.get("volume_opportunities") or [])[:12]
+                                 if isinstance(item, dict) and isinstance(item.get("keyword"), str)],
+        "recommendations": [str(item)[:400] for item in (entry.get("recommendations") or [])[:8] if isinstance(item, str)],
+        "report_url": text("saved_report", 300), "report_date": text("date", 80).split(" · ")[0],
+    }
+
+
 class ImportQueue:
-    def __init__(self, root=None, bindings=None, authorize=None, clock=time.time):
+    def __init__(self, root=None, bindings=None, authorize=None, clock=time.time, authorize_report=None):
         self.root = private_directory(Path(root or "data/actii_import_queue"))
         self.bindings_path = Path(bindings or os.getenv("ACTII_CONNECTOR_BINDINGS_FILE", ""))
         self.authorize = authorize or current_source_authorized
+        self.authorize_report = authorize_report or current_report_authorized
         self.clock = clock
 
     def bindings(self):
@@ -177,7 +242,8 @@ class ImportQueue:
             reason = "binding_changed"
         elif self.clock() >= job["expires_at"]:
             reason = "expired"
-        elif not self.authorize(job["user_id"], job["username"], job["source_file"], job["source_domain"]):
+        elif not (self.authorize_report if job.get("kind") == COMPARE_REPORT else self.authorize)(
+                job["user_id"], job["username"], job["source_file"], job["source_domain"]):
             reason = "authorization_revoked"
         if reason:
             # An outstanding dispatch may already have committed. Never make it retryable.
@@ -214,6 +280,37 @@ class ImportQueue:
             if len(jobs) >= MAX_JOBS or sum(j["user_id"] == user["id"] and j["created_at"] > self.clock() - 60 for j in jobs) >= 20:
                 raise QueueError("CRM queue limit reached. Try later.", 429)
             job = {"id": uuid.uuid4().hex, "state": "queued", "source_file": filename,
+                   "source_domain": source_domain, "source_ref": source_ref,
+                   **{key: binding[key] for key in ("connector_id", "binding_version", "user_id", "username")},
+                   "payload": payload, "payload_hash": payload_hash(payload), "attempts": 0,
+                   "created_at": self.clock(), "expires_at": self.clock() + JOB_SECONDS,
+                   "next_attempt_at": self.clock(), "events": []}
+            self._save(job, "enqueued")
+            return self.public(job)
+
+    def enqueue_report(self, user, report_file):
+        """Queue one owned saved report for attachment to an existing ACT II contact."""
+        from agents.actii_search_metadata_agent import domain
+        binding = self.binding(user)
+        entry = owned_report(user["id"], report_file)
+        source_domain = domain((entry or {}).get("site_url", ""))
+        if not entry or not source_domain or not self.authorize_report(user["id"], user["username"], report_file, source_domain):
+            raise QueueError("This saved report is not owned by your account.", 403)
+        if not REPORT_TIMESTAMP.fullmatch(str(entry.get("timestamp") or "")):
+            raise QueueError("This saved report cannot be attached.", 422)
+        source_ref = f"leadmeleads-compare:{entry['timestamp']}"
+        payload = {"owner_id": user["username"], "source_ref": source_ref, "report": report_payload(entry)}
+        if len(json.dumps(payload, ensure_ascii=True).encode()) > MAX_PAYLOAD:
+            raise QueueError("Report details exceed the CRM limit.", 422)
+        with file_lock(self.root):
+            jobs = list(self._jobs())
+            for job in jobs:
+                if job["user_id"] == user["id"] and job["source_ref"] == source_ref:
+                    self._reconcile(job, binding)
+                    return self.public(job)
+            if len(jobs) >= MAX_JOBS or sum(j["user_id"] == user["id"] and j["created_at"] > self.clock() - 60 for j in jobs) >= 20:
+                raise QueueError("CRM queue limit reached. Try later.", 429)
+            job = {"id": uuid.uuid4().hex, "state": "queued", "kind": COMPARE_REPORT, "source_file": report_file,
                    "source_domain": source_domain, "source_ref": source_ref,
                    **{key: binding[key] for key in ("connector_id", "binding_version", "user_id", "username")},
                    "payload": payload, "payload_hash": payload_hash(payload), "attempts": 0,
@@ -261,9 +358,9 @@ class ImportQueue:
                 job.update(state="processing", lease_id=uuid.uuid4().hex, lease_until=self.clock() + LEASE_SECONDS,
                            attempts=job["attempts"] + 1)
                 self._save(job, "claimed")
-                return {"ok": True, "job": {key: job[key] for key in (
+                return {"ok": True, "job": {"kind": job.get("kind", LEAD_IMPORT), **{key: job[key] for key in (
                     "id", "connector_id", "user_id", "username", "binding_version", "payload", "payload_hash",
-                    "source_domain", "lease_id", "lease_until", "expires_at")}}
+                    "source_domain", "lease_id", "lease_until", "expires_at")}}}
             return {"ok": True, "job": None}
 
     def acknowledge(self, authorization, body):
@@ -271,19 +368,22 @@ class ImportQueue:
         if (not isinstance(body, dict) or not isinstance(body.get("id"), str) or not ID.fullmatch(body["id"])
                 or not isinstance(body.get("lease_id"), str) or not ID.fullmatch(body["lease_id"])
                 or not isinstance(body.get("outcome"), str)
-                or body.get("outcome") not in {"created", "existing", "review", "failed", "not_sent", "uncertain"}):
+                or body.get("outcome") not in OUTCOMES[LEAD_IMPORT] | OUTCOMES[COMPARE_REPORT]):
             raise QueueError("Invalid CRM receipt.", 422)
         outcome = body["outcome"]
         contact_id = body.get("contact_id")
-        if outcome in {"created", "existing"} and (type(contact_id) is not int or contact_id <= 0):
+        with_contact = {"created", "existing", "attached", "already_attached"}
+        if outcome in with_contact and (type(contact_id) is not int or contact_id <= 0):
             raise QueueError("Invalid CRM receipt.", 422)
         receipt = {key: body[key] for key in ("id", "lease_id", "outcome")}
-        if outcome in {"created", "existing"}:
+        if outcome in with_contact:
             receipt["contact_id"] = contact_id
         with file_lock(self.root):
             job = next((j for j in self._jobs() if j["id"] == body["id"] and j["connector_id"] == binding["connector_id"]), None)
             if not job:
                 raise QueueError("CRM job not found.", 404)
+            if outcome not in OUTCOMES[job.get("kind", LEAD_IMPORT)]:
+                raise QueueError("Invalid CRM receipt.", 422)
             if any(job[key] != binding[key] for key in ("user_id", "username", "binding_version")):
                 raise QueueError("CRM binding changed; review required.", 409)
             if job.get("receipt") == receipt:
@@ -294,6 +394,12 @@ class ImportQueue:
             job["receipt"] = receipt
             if outcome in {"created", "existing"}:
                 job.update(state="added" if outcome == "created" else "already_present", contact_id=contact_id)
+            elif outcome in {"attached", "already_attached"}:
+                job.update(state=outcome, contact_id=contact_id)
+            elif outcome == "no_contact":
+                job["state"] = "no_match"
+            elif outcome == "ambiguous":
+                job.update(state="needs_review", reason="multiple_matching_contacts")
             elif outcome == "not_sent" and job["attempts"] < MAX_ATTEMPTS and self.clock() < job["expires_at"]:
                 jitter = int(job["id"][:2], 16) % 5
                 job.update(state="queued", next_attempt_at=self.clock() + min(300, 5 * 2 ** (job["attempts"] - 1) + jitter))
