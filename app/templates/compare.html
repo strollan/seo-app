@@ -741,6 +741,56 @@ function resetAnalyzeFormState() {
 window.addEventListener("pageshow", resetAnalyzeFormState);
 window.addEventListener("focus", resetAnalyzeFormState);
 
+const SAME_SITE_RULES = {{ same_site_rules | tojson }};
+const SAME_SITE_MESSAGE = {{ same_site_message | tojson }};
+function siteHost(value) {
+    let text = String(value || "").trim();
+    if (!text) return null;
+    if (!text.includes("://")) text = "http://" + text;
+    let host;
+    try { host = new URL(text).hostname; } catch (e) { return null; }
+    host = host.replace(/\.$/, "").toLowerCase();
+    while (host.startsWith("www.") && host.split(".").length >= 3) host = host.slice(4);
+    return host || null;
+}
+function registrableDomain(host) {
+    if (/^[0-9.]+$/.test(host) || host.includes(":") || host.startsWith("[")) return host;
+    const labels = host.split(".");
+    if (labels.length <= 2) return host;
+    for (const suffix of SAME_SITE_RULES.shared) {
+        if (host === suffix || host.endsWith("." + suffix)) {
+            const depth = suffix.split(".").length + 1;
+            return labels.length >= depth ? labels.slice(-depth).join(".") : host;
+        }
+    }
+    const lastTwo = labels.slice(-2).join(".");
+    if (SAME_SITE_RULES.multi.includes(lastTwo) || (labels[labels.length - 1].length === 2 && SAME_SITE_RULES.generic.includes(labels[labels.length - 2]))) {
+        return labels.slice(-3).join(".");
+    }
+    return lastTwo;
+}
+function siteIdentity(value) {
+    const host = siteHost(value);
+    if (!host) return null;
+    const base = registrableDomain(host);
+    const need = SAME_SITE_RULES.paths[host] || SAME_SITE_RULES.paths[base];
+    if (need) {
+        let text = String(value).trim();
+        if (!text.includes("://")) text = "http://" + text;
+        let path = "";
+        try { path = new URL(text).pathname; } catch (e) { path = ""; }
+        const segments = path.split("/").filter(Boolean).slice(0, need).map(function (s) { return s.toLowerCase(); });
+        return base + (segments.length ? "/" + segments.join("/") : "");
+    }
+    return base;
+}
+function sameWebsite(a, b) {
+    const first = siteIdentity(a), second = siteIdentity(b);
+    return !!first && first === second;
+}
+document.getElementById("url_2").addEventListener("input", function () { this.setCustomValidity(""); });
+document.getElementById("url_1").addEventListener("input", function () { document.getElementById("url_2").setCustomValidity(""); });
+
 form.addEventListener("submit", function (event) {
     const url1 = document.getElementById("url_1");
     const url2 = document.getElementById("url_2");
@@ -753,6 +803,16 @@ form.addEventListener("submit", function (event) {
         event.preventDefault();
         resetAnalyzeFormState();
         (url1.value ? url2 : url1).reportValidity();
+        return;
+    }
+
+    // Same-website check (mirrors agents/same_site.py; the server re-checks,
+    // including redirects, which only the server can see).
+    if (sameWebsite(url1.value, url2.value)) {
+        event.preventDefault();
+        resetAnalyzeFormState();
+        url2.setCustomValidity(SAME_SITE_MESSAGE);
+        url2.reportValidity();
         return;
     }
 

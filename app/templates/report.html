@@ -607,6 +607,13 @@
     text-decoration: underline !important;
 }
 
+.compared-url {
+    margin: 4px 0 8px;
+    font-size: 13px;
+    color: #475569;
+    overflow-wrap: anywhere;
+}
+
 .chip,
 .chip-medium,
 .chip-high,
@@ -998,6 +1005,8 @@ body.report-page {
                     <div class="site-label">Your Site</div>
                     <div class="score">{{ site.score if site.score is number else 0 }}</div>
                     <div class="site-url"><a href="https://{{ site.clean_domain }}" target="_blank" rel="noopener">{{ site.clean_domain }}</a></div>
+                    <div class="compared-url"><strong>Requested URL:</strong> {{ site.url }}</div>
+                    {% if site.final_url and site.final_url.rstrip('/') != site.url.rstrip('/') %}<div class="compared-url"><strong>Scanned URL (after redirect):</strong> {{ site.final_url }}</div>{% endif %}
 
                     {% if site.meta_description and site.meta_description not in ["ERROR", "No meta", "No meta description", "Blocked by site", "Unable to fetch"] %}
                         <span class="pill good">Meta Present</span>
@@ -1031,6 +1040,8 @@ body.report-page {
                     <div class="site-label">Competitor {{ loop.index }}</div>
                     <div class="score">{{ c.score }}</div>
                     <div class="site-url">{{ c.clean_domain }}</div>
+                    <div class="compared-url"><strong>Requested URL:</strong> {{ c.url }}</div>
+                    {% if c.final_url and c.final_url.rstrip('/') != c.url.rstrip('/') %}<div class="compared-url"><strong>Scanned URL (after redirect):</strong> {{ c.final_url }}</div>{% endif %}
 
                     {% if c.meta_description and c.meta_description not in ["ERROR", "No meta", "No meta description", "Blocked by site", "Unable to fetch"] %}
                         <span class="pill good">Meta Present</span>

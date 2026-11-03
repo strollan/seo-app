@@ -42,6 +42,7 @@ import requests
 from bs4 import BeautifulSoup
 from agents.crawl_agent import crawl_get
 from agents.url_safety import validate_public_url, UnsafeURLError
+from agents.same_site import SAME_WEBSITE_MESSAGE, rules_for_browser as same_site_rules_for_browser, same_website
 from agents.lead_contact_quality_agent import (
     merge_flags as leadbot_merge_contact_flags,
     resolve_outreach_status as leadbot_resolve_outreach_status,
@@ -824,6 +825,7 @@ def fetch_page_data(url: str):
         "alt_count": 0,
         "error": None,
         "score": 0,
+        "final_url": None,
     }
 
     try:
@@ -840,6 +842,8 @@ def fetch_page_data(url: str):
             allow_redirects=True,
             verify=False,
         )
+        # crawl_get follows (and SSRF-checks) redirects itself; r.url is the page actually scanned.
+        data["final_url"] = str(getattr(r, "url", "") or url)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
@@ -1541,6 +1545,8 @@ def save_report_snapshot(html: str, site: dict, competitor: dict, gap: dict, vol
         "timestamp": timestamp,
         "site_url": site.get("url", ""),
         "competitor_url": competitor.get("url", ""),
+        "site_final_url": site.get("final_url") or "",
+        "competitor_final_url": competitor.get("final_url") or "",
         "site_domain": site.get("clean_domain", ""),
         "competitor_domain": competitor.get("clean_domain", ""),
         "site_score": site.get("score", 0),
@@ -2401,6 +2407,8 @@ async def compare_page(request: Request):
             "logo_url": safe_logo_url(),
             "user": auth_current_user(request),
             "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.COMPARE_PAGE),
+            "same_site_rules": same_site_rules_for_browser(),
+            "same_site_message": SAME_WEBSITE_MESSAGE,
             "webapp_jsonld_html": seo_meta.render_webapplication_jsonld(
                 seo_meta.COMPARE_PAGE.title,
                 seo_meta.COMPARE_PAGE.description,
@@ -2556,6 +2564,26 @@ async def analyze_get_redirect():
     return RedirectResponse(url="/")
 
 
+# Values the report itself treats as "Missing Meta" (report.html meta pill).
+MISSING_META_PLACEHOLDERS = {"error", "no meta", "no meta description", "blocked by site", "unable to fetch"}
+
+
+def compare_page_score(page, raw_score):
+    """One display score for either URL Compare slot, from the page's own scan fields.
+
+    Your Site and Competitor get exactly the same caps (title length, missing
+    title/meta/H1, thin content, image alt coverage) and the no-perfect rule,
+    so identical scan data scores identically in either slot.  Comparison-level
+    flags set only on the competitor (weak_data, location_mismatch) are
+    excluded: they stay as report warnings, not score penalties.  weak_data's
+    own conditions (thin page, no H1, no title) are already capped directly.
+    """
+    quality = {k: v for k, v in (page or {}).items() if k not in {"weak_data", "location_mismatch"}} if isinstance(page, dict) else page
+    score = apply_score_caps(quality, raw_score)
+    score = strict_final_score_cap(quality, score)
+    return no_perfect_display_score(quality, score)
+
+
 def strict_final_score_cap(page, score):
     """Final report-display score cap so flawed pages do not show unrealistic perfect scores."""
     try:
@@ -2567,7 +2595,11 @@ def strict_final_score_cap(page, score):
         return score
 
     title = str(page.get("title", "") or "").strip()
-    meta = str(page.get("meta", "") or page.get("description", "") or "").strip()
+    # Scans store meta_description (placeholders such as "ERROR" mean missing);
+    # meta/description stay as fallbacks for any other page-shaped dict.
+    meta = str(page.get("meta_description", "") or page.get("meta", "") or page.get("description", "") or "").strip()
+    if meta.lower() in MISSING_META_PLACEHOLDERS:
+        meta = ""
     h1 = str(page.get("h1", "") or "").strip()
 
     try:
@@ -2586,7 +2618,7 @@ def strict_final_score_cap(page, score):
         images = 0
 
     try:
-        images_with_alt = int(page.get("images_with_alt", 0) or page.get("image_alt_count", 0) or 0)
+        images_with_alt = int(page.get("alt_count", 0) or page.get("images_with_alt", 0) or page.get("image_alt_count", 0) or 0)
     except Exception:
         images_with_alt = 0
 
@@ -2848,6 +2880,18 @@ async def analyze(
                 status_code=400,
             )
 
+    def same_website_response():
+        back_qs = urlencode({"url_1": raw_url_1, "url_2": raw_url_2})
+        return HTMLResponse(
+            f"<h1>Choose a different competitor</h1>"
+            f"<p>{_html.escape(SAME_WEBSITE_MESSAGE)}</p>"
+            f"<p><a href='/compare?{back_qs}'>Back to Compare</a></p>",
+            status_code=400,
+        )
+
+    if same_website(url_1, url_2):
+        return same_website_response()
+
     if not auth_current_user(request):
         analyze_client_host = request.client.host if request.client else ""
 
@@ -2866,58 +2910,27 @@ async def analyze(
         analyze_record_attempt(analyze_client_host)
 
     site = fetch_page_data(url_1)
-    # Auto-select a real business competitor if no competitor URL was provided.
-    # Live SERP stays protected by USE_LIVE_SERP in the Serper/client layer.
-    selected_competitor_url = (url_2 or "").strip()
+    # Both URLs are required, so the competitor is always the one the user
+    # entered. (A former auto-select branch here was unreachable and would
+    # have searched for the client's own URL; no automatic search is done.)
+    competitor = fetch_page_data(url_2)
 
-    if not selected_competitor_url:
-        search_parts = [
-            (service or "").strip() if "service" in locals() else "",
-            (location or "").strip() if "location" in locals() else "",
-        ]
-        competitor_query = " ".join(part for part in search_parts if part).strip()
-
-        if not competitor_query:
-            competitor_query = raw_url_1
-
-        try:
-            found_competitors = find_business_competitors(competitor_query)
-        except Exception as exc:
-            print(f"Business competitor finder failed: {exc}")
-            found_competitors = []
-
-        if found_competitors:
-            selected_competitor_url = (
-                found_competitors[0].get("url")
-                or found_competitors[0].get("link")
-                or found_competitors[0].get("website")
-                or ""
-            )
-
-    if not selected_competitor_url:
-        selected_competitor_url = url_2
-
-    competitor = fetch_page_data(selected_competitor_url)
+    # Redirects can land two different-looking URLs on one website.
+    if same_website([url_1, site.get("final_url") or ""], [url_2, competitor.get("final_url") or ""]):
+        return same_website_response()
     competitors_sorted = [competitor]
 
+    # Both slots use one rule set (compare_page_score); see its docstring.
     site_score, site_breakdown = score_page(site)
-    site_score = apply_score_caps(site, site_score)
-    site_score = no_perfect_display_score(site, site_score)
-    site_score = no_perfect_display_score(site, site_score)
+    site_score = compare_page_score(site, site_score)
     comp_score, comp_breakdown = score_page(competitor)
-    comp_score = strict_final_score_cap(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
-    comp_score = strict_final_score_cap(competitor, comp_score)
-    comp_score = apply_score_caps(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
+    comp_score = compare_page_score(competitor, comp_score)
 
     auto_save_geo_phrases(site.get("geo_phrases", []))
     auto_save_geo_phrases(competitor.get("geo_phrases", []))
     results = {
-    "site_score": no_perfect_display_score(site, site_score),
-    "competitor_score": strict_final_score_cap(competitor, comp_score),
+    "site_score": site_score,
+    "competitor_score": comp_score,
     "site": site,
     "competitor": competitor
     }
@@ -2931,14 +2944,7 @@ async def analyze(
         or not competitor.get("title")
     )
 
-    site_score = no_perfect_display_score(site, site_score)
-    site_score = no_perfect_display_score(site, site_score)
     site["score"] = site_score
-    comp_score = apply_score_caps(competitor, comp_score)
-    comp_score = strict_final_score_cap(competitor, comp_score)
-    comp_score = strict_final_score_cap(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
-    comp_score = no_perfect_display_score(competitor, comp_score)
     competitor["score"] = comp_score
     if isinstance(comp_breakdown, dict):
         if "total" in comp_breakdown:
@@ -2954,8 +2960,8 @@ async def analyze(
     volume_data = enrich_keywords_with_dataforseo(missing_terms_for_volume)
     missing_terms_for_volume = filter_by_volume(missing_terms_for_volume, volume_data)
 
+    # A location mismatch is reported as a warning (build_geo_mismatch_warning), not a score cap.
     competitor = apply_geo_mismatch_safety(site, competitor)
-    comp_score = apply_score_caps(competitor, comp_score)
 
     if competitor.get("weak_data"):
         site_quick_wins = [
@@ -3015,7 +3021,7 @@ async def analyze(
                 {
                     "domain": competitor["clean_domain"],
                     "breakdown": comp_breakdown,
-                    "score": strict_final_score_cap(competitor, competitor.get("score", 0)),
+                    "score": competitor.get("score", 0),
                 }
             ],
             "site_quick_wins": site_quick_wins,
