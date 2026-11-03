@@ -827,6 +827,17 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 f'data-source-file="{html.escape(selected_name, quote=True)}" '
                 f'data-source-domain="{html.escape(domain, quote=True)}">Add to CRM</button>'
             )
+        compare_link = ""
+        if selected_name and domain:
+            from urllib.parse import urlencode as _urlencode
+            compare_query = _urlencode({"source_file": selected_name, "source_domain": domain})
+            compare_link = (
+                f'<a class="lead-top-competitor" href="/lead-bot/compare-top-competitor?{html.escape(compare_query, quote=True)}" '
+                f'data-source-file="{html.escape(selected_name, quote=True)}" '
+                f'data-source-domain="{html.escape(domain, quote=True)}" '
+                f'title="Pre-fills Compare with the top competitor from this saved search. No scan runs until you click Analyze.">'
+                f'Compare with Top Competitor</a>'
+            )
 
         delete_html = ""
         if selected_name and selected_name != "leadbot_master.csv" and domain:
@@ -884,7 +895,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                     </div>
                 </div>
 
-                <div class="leadbot-save-details-row"><button class="lead-contact-save" type="submit">Save Details</button>{crm_button}</div>
+                <div class="leadbot-save-details-row"><button class="lead-contact-save" type="submit">Save Details</button>{crm_button}{compare_link}</div>
             </form>
 
             <div class="lead-address-box">
@@ -9313,6 +9324,9 @@ def _actii_crm_modal(csrf_token=""):
 @media(max-width:700px) {{ .leadbot-save-details-row > .lead-add-crm {{ min-height:44px; font-size:12px; flex:1 1 auto; }} }}
 .lead-add-crm {{ background:#123d8b; color:#fff; border:0; border-radius:999px; padding:7px 12px; min-height:28px; font:inherit; font-size:10px; line-height:1; font-weight:700; cursor:pointer; }}
 .lead-add-crm:hover,.lead-add-crm:focus-visible {{ background:#0d2f6d; }}
+.lead-top-competitor {{ display:inline-flex; align-items:center; background:#fff; color:#123d8b; border:1px solid #123d8b; border-radius:999px; padding:6px 12px; min-height:28px; font-size:10px; line-height:1; font-weight:700; text-decoration:none; }}
+.lead-top-competitor:hover,.lead-top-competitor:focus-visible {{ background:#eef3fb; outline:3px solid #2563eb; outline-offset:2px; }}
+@media(max-width:700px) {{ .leadbot-save-details-row > .lead-top-competitor {{ min-height:44px; font-size:12px; flex:1 1 auto; justify-content:center; }} }}
 .crm-dialog {{ width:min(680px, calc(100vw - 28px)); box-sizing:border-box; max-height:calc(100dvh - 28px); overflow:auto; border:0; border-radius:14px; padding:0; box-shadow:0 22px 70px rgba(15,23,42,.35); }}
 .crm-dialog::backdrop {{ background:rgba(15,23,42,.58); }}
 .crm-dialog form {{ padding:22px; }}

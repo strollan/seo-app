@@ -671,6 +671,15 @@ body {
     }
 }
 </style>
+<style>
+.top-competitor-panel{border:1px solid #cbd5e1;border-radius:14px;padding:14px 16px;margin:0 0 16px;background:#f8fafc;overflow-wrap:anywhere}
+.top-competitor-panel h2{font-size:18px;margin:0 0 6px}
+.top-competitor-panel p{margin:6px 0}
+.top-competitor-panel .tc-muted{color:#475569;font-size:13px}
+.top-competitor-panel .tc-note{color:#92400e}
+.top-competitor-panel .tc-reuse{background:#ecfdf5;border-radius:10px;padding:8px 10px}
+.top-competitor-panel ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+</style>
 </head>
 
 <body class="compare-page">
@@ -681,16 +690,46 @@ body {
     {% include "_public_header.html" %}
 
     <div class="card">
+        {% if top_competitor %}
+        <section class="top-competitor-panel" aria-labelledby="topCompetitorTitle">
+            {% set tc = top_competitor %}
+            {% if tc.status == "selected" %}
+            {% set c = tc.competitor %}{% set p = tc.prospect %}
+            <h2 id="topCompetitorTitle">Why this competitor</h2>
+            <p><strong>{{ c.business }}</strong> ({{ c.domain }}) ranked
+               <strong>{{ "Google organic" if c.ranking_type == "organic" else "non-organic" }} #{{ c.position }}</strong>{% if c.page %} (page {{ c.page }}){% endif %}
+               for “{{ c.query or c.keyword }}” in {{ c.location }}{% if c.scan_date %} on {{ c.scan_date[:10] }}{% endif %}.</p>
+            <p>Your prospect, {{ p.domain }}, ranked {% if p.position %}#{{ p.position }}{% else %}without a saved position{% endif %} for “{{ p.query or p.keyword }}”.
+               {% if tc.prospect_outranks %}It already ranks higher, so this is the strongest competing business saved below it.{% endif %}</p>
+            {% if tc.note %}<p class="tc-note">{{ tc.note }}</p>{% endif %}
+            <p class="tc-muted">Source: your saved Lead Finder export {{ tc.export }}. Lead Finder keeps only the businesses it saved as leads, so higher results it filtered out (for example page one) are not included. No search was run.</p>
+            {% else %}
+            <h2 id="topCompetitorTitle">No automatic competitor</h2>
+            <p>{{ tc.limitation }}</p>
+            {% endif %}
+            {% if tc.excluded %}
+            <details class="tc-excluded"><summary>Skipped results ({{ tc.excluded | length }})</summary>
+                <ul>{% for e in tc.excluded %}<li>{{ e.domain }} — {{ e.reason }}</li>{% endfor %}</ul>
+            </details>
+            {% endif %}
+            {% if tc.reuse %}
+            <p class="tc-reuse"><strong>You already compared these two websites</strong> on {{ tc.reuse.date.split(" · ")[0] }}.
+               <a href="{{ tc.reuse.saved_report }}" target="_blank" rel="noopener">Open the saved report</a> instead of running a new paid scan.</p>
+            {% endif %}
+            <p class="tc-muted">Nothing runs until you click <strong>Analyze Pages</strong>. You can change either URL first.</p>
+        </section>
+        {% endif %}
         <form method="post" action="/analyze" id="analyzeForm">
+            <input type="hidden" name="submission_id" value="{{ submission_id or '' }}">
             <div class="form-grid">
                 <div class="input-card">
                     <label for="url_1">Your Site</label>
-                    <input id="url_1" name="url_1" placeholder="cnn.com or https://cnn.com" required value="{{ request.query_params.get('url_1', '') }}">
+                    <input id="url_1" name="url_1" placeholder="cnn.com or https://cnn.com" required value="{{ prefill_url_1 or request.query_params.get('url_1', '') }}">
                 </div>
 
                 <div class="input-card">
                     <label for="url_2">Competitor</label>
-                    <input id="url_2" name="url_2" placeholder="msnbc.com or https://msnbc.com" required value="{{ request.query_params.get('url_2', '') }}">
+                    <input id="url_2" name="url_2" placeholder="msnbc.com or https://msnbc.com" required value="{{ prefill_url_2 or request.query_params.get('url_2', '') }}">
                 </div>
             </div>
 

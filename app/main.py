@@ -2313,12 +2313,10 @@ async def rerun_saved_report(request: Request, saved_report: str):
         if not (is_admin or (entry_owner_id is not None and entry_owner_id == user["id"])):
             break
 
-        # Directly render analyze logic
-        return await analyze(
-            request,
-            url_1=item.get("site_url", ""),
-            url_2=item.get("competitor_url", "")
-        )
+        # Pre-fill Compare; the paid scan runs only when the user clicks Analyze.
+        # (A GET that scanned directly re-ran and re-billed on every refresh.)
+        return RedirectResponse(url="/compare?" + urlencode({"url_1": item.get("site_url", ""), "url_2": item.get("competitor_url", "")}),
+                                status_code=303)
 
     return RedirectResponse(url="/history", status_code=303)
 
@@ -2391,6 +2389,31 @@ async def history_attach_to_crm(request: Request):
 # signup above -- not persisted, doesn't need to survive restarts or be
 # shared across servers for the current single-server deployment. Logged-in
 # users are exempt: they're already identified via their own session.
+ANALYZE_SUBMISSION_ID = re.compile(r"[A-Za-z0-9_-]{16,64}")
+ANALYZE_SUBMISSION_TTL_SECONDS = 6 * 3600
+_analyze_submissions_lock = threading.Lock()
+_analyze_submissions = {}
+
+
+def _claim_analyze_submission(key):
+    """None for a first submission (now claimed); else the earlier record. In-process, like the rate limiter."""
+    now = time.time()
+    with _analyze_submissions_lock:
+        for stale in [k for k, v in _analyze_submissions.items() if now - v["at"] > ANALYZE_SUBMISSION_TTL_SECONDS]:
+            _analyze_submissions.pop(stale, None)
+        previous = _analyze_submissions.get(key)
+        if previous is not None:
+            return dict(previous)
+        _analyze_submissions[key] = {"at": now, "saved_report": None, "owner_id": None}
+        return None
+
+
+def _record_analyze_submission(key, saved_report, owner_id):
+    with _analyze_submissions_lock:
+        if key in _analyze_submissions:
+            _analyze_submissions[key].update(saved_report=saved_report, owner_id=owner_id)
+
+
 ANALYZE_RATE_LIMIT_MAX_ATTEMPTS = 10
 ANALYZE_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 
@@ -2436,25 +2459,62 @@ def analyze_retry_after_seconds(client_host):
     return max(1, int(oldest + ANALYZE_RATE_LIMIT_WINDOW_SECONDS - time.time()))
 
 
+def _compare_page_context(request: Request) -> dict:
+    return {
+        "request": request,
+        "logo_url": safe_logo_url(),
+        "user": auth_current_user(request),
+        "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.COMPARE_PAGE),
+        "same_site_rules": same_site_rules_for_browser(),
+        "same_site_message": SAME_WEBSITE_MESSAGE,
+        "webapp_jsonld_html": seo_meta.render_webapplication_jsonld(
+            seo_meta.COMPARE_PAGE.title,
+            seo_meta.COMPARE_PAGE.description,
+            seo_meta.COMPARE_PAGE.canonical_path,
+        ),
+        # One id per rendered form: a refresh or resubmit of the same comparison
+        # is recognised by /analyze and never runs (or bills) a second scan.
+        "submission_id": secrets.token_urlsafe(18),
+    }
+
+
 @app.get("/compare")
 async def compare_page(request: Request):
-    return templates.TemplateResponse(
-        request,
-        "compare.html",
-        {
-            "request": request,
-            "logo_url": safe_logo_url(),
-            "user": auth_current_user(request),
-            "seo_meta_html": seo_meta.render_seo_meta_html(seo_meta.COMPARE_PAGE),
-            "same_site_rules": same_site_rules_for_browser(),
-            "same_site_message": SAME_WEBSITE_MESSAGE,
-            "webapp_jsonld_html": seo_meta.render_webapplication_jsonld(
-                seo_meta.COMPARE_PAGE.title,
-                seo_meta.COMPARE_PAGE.description,
-                seo_meta.COMPARE_PAGE.canonical_path,
-            ),
-        },
-    )
+    return templates.TemplateResponse(request, "compare.html", _compare_page_context(request))
+
+
+@app.get("/lead-bot/compare-top-competitor", response_class=HTMLResponse)
+async def leadbot_compare_top_competitor(request: Request, source_file: str = "", source_domain: str = ""):
+    """Pre-fill Compare with a prospect and the top competitor from the SAME saved Lead Finder search.
+
+    Read-only: no search, no scan and no paid call. The user still clicks Analyze.
+    """
+    user, block = _login_required_user_or_response(request)
+    if block:
+        return block
+    if (not source_file or source_file != os.path.basename(source_file) or "\\" in source_file
+            or not source_domain or not leadbot_user_can_access_export(source_file, request)):
+        return HTMLResponse("<h1>Forbidden</h1><p>This prospect is not available from one of your exports.</p>", status_code=403)
+    import csv
+    from agents.lead_dashboard_agent import safe_export_file
+    from agents.top_competitor_agent import reusable_report, select_top_competitor
+    path = safe_export_file(source_file)
+    if not path:
+        return HTMLResponse("<h1>Not found</h1><p>This Lead Finder export is not available.</p>", status_code=404)
+    try:
+        selection = select_top_competitor(path, source_domain)
+    except (OSError, ValueError, UnicodeDecodeError, csv.Error):
+        selection = {"status": "none", "limitation": "This Lead Finder export could not be read.", "excluded": []}
+    selection.setdefault("excluded", [])
+    if selection["status"] == "not_found":
+        return HTMLResponse("<h1>Not found</h1><p>This prospect is not in the selected Lead Finder export.</p>", status_code=404)
+    prospect_url = (selection.get("prospect") or {}).get("url", "")
+    competitor_url = (selection.get("competitor") or {}).get("url", "") if selection["status"] == "selected" else ""
+    if competitor_url:
+        selection["reuse"] = reusable_report(load_report_history(), user["id"], prospect_url, competitor_url)
+    return templates.TemplateResponse(request, "compare.html", _compare_page_context(request) | {
+        "top_competitor": selection, "prefill_url_1": prospect_url, "prefill_url_2": competitor_url,
+    })
 
 
 @app.get("/what-makes-a-good-lead")
@@ -2886,6 +2946,7 @@ async def analyze(
     request: Request,
     url_1: str = Form(...),
     url_2: str = Form(...),
+    submission_id: str = Form(""),
 ):
     import html as _html
 
@@ -2930,6 +2991,24 @@ async def analyze(
 
     if same_website(url_1, url_2):
         return same_website_response()
+
+    # A refresh/resubmit of an already-submitted form never runs a second paid scan.
+    submission_key = None
+    if ANALYZE_SUBMISSION_ID.fullmatch(submission_id or ""):
+        submission_key = (submission_id, url_1, url_2)
+        previous = _claim_analyze_submission(submission_key)
+        if previous is not None:
+            current = auth_current_user(request)
+            if previous.get("saved_report") and current and previous.get("owner_id") == current["id"]:
+                return RedirectResponse(url=previous["saved_report"], status_code=303)
+            again = urlencode({"url_1": raw_url_1, "url_2": raw_url_2})
+            return HTMLResponse(
+                "<h1>This comparison was already submitted</h1>"
+                "<p>It was not run again, so no additional scan was made.</p>"
+                + ("<p><a href='/history'>Open it from History</a></p>" if current else "")
+                + f"<p><a href='/compare?{again}'>Start a new comparison</a></p>",
+                status_code=409,
+            )
 
     if not auth_current_user(request):
         analyze_client_host = request.client.host if request.client else ""
@@ -3082,7 +3161,9 @@ async def analyze(
         html = final_polish_report_html(html)
         owner_user = auth_current_user(request)
         owner_id = owner_user["id"] if owner_user else None
-        save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id, recommendations=site_quick_wins)
+        saved = save_report_snapshot(html, site, competitor, gap, volume_data, owner_id=owner_id, recommendations=site_quick_wins)
+        if submission_key:
+            _record_analyze_submission(submission_key, saved.get("saved_report"), owner_id)
     except Exception as e:
         print("Report history save failed:", e)
 
@@ -14603,6 +14684,8 @@ async function addCompletedLiveCrmActions(job) {{
         const action = document.createElement("div");
         action.className = "lead-crm-action";
         action.appendChild(button.cloneNode(true));
+        const compare = button.parentElement && button.parentElement.querySelector(".lead-top-competitor");
+        if (compare && compare.dataset.sourceDomain === button.dataset.sourceDomain) action.appendChild(compare.cloneNode(true));
         card.appendChild(action);
     }});
 }}

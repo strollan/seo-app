@@ -7,7 +7,8 @@ owner check at all, so any visitor (including logged-out ones) could rerun
 
 auth_current_user is monkeypatched so these tests never touch the real auth
 DB (no session/user rows are created), and app.main.analyze is monkeypatched
-so no real crawl/network request happens -- only the ownership-check branch
+so no real crawl/network request happens (and fails the test if reached:
+rerun now only pre-fills /compare) -- only the ownership-check branch
 in rerun_saved_report is exercised. history.json is redirected to a temp
 file so the real reports/history.json is never read or written.
 """
@@ -21,7 +22,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi.responses import HTMLResponse
+from urllib.parse import parse_qs, urlsplit
+
 from fastapi.testclient import TestClient
 
 import app.main as appmain
@@ -39,7 +41,7 @@ def fake_auth_current_user(request):
 
 
 async def fake_analyze(request, url_1="", url_2=""):
-    return HTMLResponse(f"analyzed:{url_1}:{url_2}")
+    raise AssertionError("rerun must not run a scan; it only pre-fills Compare")
 
 
 class HistoryRerunOwnershipTests(unittest.TestCase):
@@ -73,6 +75,13 @@ class HistoryRerunOwnershipTests(unittest.TestCase):
 
         self.client = TestClient(appmain.app)
 
+    def assertPrefilledCompare(self, resp, url_1, url_2):
+        # Rerun pre-fills Compare (303); the paid scan runs only when the user clicks Analyze.
+        self.assertEqual(resp.status_code, 303)
+        location = urlsplit(resp.headers["location"])
+        self.assertEqual(location.path, "/compare")
+        self.assertEqual(parse_qs(location.query), {"url_1": [url_1], "url_2": [url_2]})
+
     def test_owner_can_rerun_own_report(self):
         self.client.cookies.set(appmain.AUTH_COOKIE_NAME, "user1-token")
         resp = self.client.get(
@@ -80,8 +89,7 @@ class HistoryRerunOwnershipTests(unittest.TestCase):
             params={"saved_report": "/reports/saved/user1-report.html"},
             follow_redirects=False,
         )
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("user1-site.example", resp.text)
+        self.assertPrefilledCompare(resp, "https://user1-site.example", "https://user1-competitor.example")
 
     def test_other_users_report_is_blocked(self):
         self.client.cookies.set(appmain.AUTH_COOKIE_NAME, "user1-token")
@@ -102,8 +110,7 @@ class HistoryRerunOwnershipTests(unittest.TestCase):
             params={"saved_report": "/reports/saved/user2-report.html"},
             follow_redirects=False,
         )
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn("user2-site.example", resp.text)
+        self.assertPrefilledCompare(resp, "https://user2-site.example", "https://user2-competitor.example")
 
     def test_unauthenticated_request_is_redirected_to_login(self):
         resp = self.client.get(
