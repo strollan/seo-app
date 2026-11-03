@@ -1,0 +1,577 @@
+{
+  "version": 1,
+  "slug": "local-search-results-before-you-pitch",
+  "title": "What the First Page of Local Search Results Tells You Before You Pitch Anyone",
+  "dek": "Read a prospect's local search results page as free pre-pitch intelligence: map pack presence, reviews, competitors, and gaps worth asking about.",
+  "intro_paragraphs": [],
+  "body_sections": [
+    {
+      "heading": "The Page You Are Already Allowed to Read",
+      "paragraphs": [
+        "Every prospect you want to pitch has a public research file. It is not behind a paywall, it does not require a discovery call, and it updates itself constantly. It is the first page of local search results for the service they sell and the city they sell it in.",
+        "Most outreach starts with a company website, a LinkedIn profile, or a CRM note. Those are fine sources, but they describe the business from the inside. A local results page describes the business from the outside, the way a customer actually encounters it. That difference matters, because the gap between how a business sees itself and how it appears in search is usually where the real conversation lives.",
+        "This is not a scoring exercise and it is not a substitute for talking to the prospect. It is a way to arrive at that conversation already knowing what to ask about, and to avoid pitching a fix for a problem the business may not have."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Every prospect you want to pitch has a public research file. It is not behind a paywall, it does not require a discovery call, and it updates itself constantly. It is the first page of local search results for the service they sell and the city they sell it in."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Most outreach starts with a company website, a LinkedIn profile, or a CRM note. Those are fine sources, but they describe the business from the inside. A local results page describes the business from the outside, the way a customer actually encounters it. That difference matters, because the gap between how a business sees itself and how it appears in search is usually where the real conversation lives."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "This is not a scoring exercise and it is not a substitute for talking to the prospect. It is a way to arrive at that conversation already knowing what to ask about, and to avoid pitching a fix for a problem the business may not have."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "The Map Block Is a Diagnostic, Not a Verdict",
+      "paragraphs": [
+        "The map block at the top of a local query, often called the local pack, is the highest-visibility real estate on the page. It shows a small set of nearby businesses that the search engine considers relevant to the query, along with ratings, review counts, and a link to the profile.",
+        "Reading it takes about ninety seconds. What you are looking for is not a grade. You are looking for the shape of the competition and where the prospect sits inside it."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "The map block at the top of a local query, often called the local pack, is the highest-visibility real estate on the page. It shows a small set of nearby businesses that the search engine considers relevant to the query, along with ratings, review counts, and a link to the profile."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Reading it takes about ninety seconds. What you are looking for is not a grade. You are looking for the shape of the competition and where the prospect sits inside it."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Who Actually Appears",
+      "paragraphs": [
+        "Start by asking a simple question: is the prospect in the map block at all? For a business with a physical location and a claimed profile, absence from a competitive local query is worth noting. It could mean the profile is incomplete, the category is wrong, the address or service area is inconsistent, or the business simply is not optimizing for that query. Those are different problems with different fixes, and you cannot tell which one it is from the results page alone. That is exactly why it makes a good opening question rather than a confident diagnosis.",
+        "If the prospect is in the map block, note the position. Positions shift by device, location, and time, so treat the position as a snapshot rather than a stable fact. Do not build a pitch on \"you are ranked third\" as though that number were permanent."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Start by asking a simple question: is the prospect in the map block at all? For a business with a physical location and a claimed profile, absence from a competitive local query is worth noting. It could mean the profile is incomplete, the category is wrong, the address or service area is inconsistent, or the business simply is not optimizing for that query. Those are different problems with different fixes, and you cannot tell which one it is from the results page alone. That is exactly why it makes a good opening question rather than a confident diagnosis."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "If the prospect is in the map block, note the position. Positions shift by device, location, and time, so treat the position as a snapshot rather than a stable fact. Do not build a pitch on \"you are ranked third\" as though that number were permanent."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Review Signals Worth Noticing",
+      "paragraphs": [
+        "Review count and average rating are visible, and so is the recency of reviews. Three patterns tend to be worth asking about:",
+        "None of these patterns proves anything on its own. A low review count can be a deliberate choice in a referral-driven business. Treat each one as a question, not an accusation."
+      ],
+      "bullets": [
+        "Volume mismatch. A business with a strong reputation offline but a small review count relative to nearby competitors may be collecting satisfied customers without ever asking them for a review.",
+        "Recency gaps. A cluster of reviews from several years ago with little since then suggests the asking stopped, not that the customers did.",
+        "Unanswered reviews. Whether the owner replies to reviews is visible. It says something about who manages the profile day to day, which is often the same person you will need to talk to."
+      ],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Review count and average rating are visible, and so is the recency of reviews. Three patterns tend to be worth asking about:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            [
+              {
+                "text": "Volume mismatch.",
+                "bold": true
+              },
+              {
+                "text": " A business with a strong reputation offline but a small review count relative to nearby competitors may be collecting satisfied customers without ever asking them for a review."
+              }
+            ],
+            [
+              {
+                "text": "Recency gaps.",
+                "bold": true
+              },
+              {
+                "text": " A cluster of reviews from several years ago with little since then suggests the asking stopped, not that the customers did."
+              }
+            ],
+            [
+              {
+                "text": "Unanswered reviews.",
+                "bold": true
+              },
+              {
+                "text": " Whether the owner replies to reviews is visible. It says something about who manages the profile day to day, which is often the same person you will need to talk to."
+              }
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "None of these patterns proves anything on its own. A low review count can be a deliberate choice in a referral-driven business. Treat each one as a question, not an accusation."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Category and Service Area Clues",
+      "paragraphs": [
+        "The category label attached to a profile tells you how the business is classified. If a company that installs two related services is only categorized for one of them, that is a concrete, checkable detail you can raise. Similarly, if the profile shows a service area rather than a storefront, or the reverse, it tells you whether the business competes on proximity or on coverage."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "The category label attached to a profile tells you how the business is classified. If a company that installs two related services is only categorized for one of them, that is a concrete, checkable detail you can raise. Similarly, if the profile shows a service area rather than a storefront, or the reverse, it tells you whether the business competes on proximity or on coverage."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "The Organic Results Below the Map",
+      "paragraphs": [
+        "Scroll past the map block and you get a different layer of information, one that describes the whole market rather than a single business."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Scroll past the map block and you get a different layer of information, one that describes the whole market rather than a single business."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Directory and Aggregator Dominance",
+      "paragraphs": [
+        "If the organic results are mostly directories, aggregators, and third-party listing sites, that is a market signal. It usually means the businesses competing for that query are not producing pages strong enough to outrank the directories. It can also mean the query is broad and informational rather than commercial. Either way, it tells you what a realistic content or page-level fix would have to beat."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "If the organic results are mostly directories, aggregators, and third-party listing sites, that is a market signal. It usually means the businesses competing for that query are not producing pages strong enough to outrank the directories. It can also mean the query is broad and informational rather than commercial. Either way, it tells you what a realistic content or page-level fix would have to beat."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Competitor Pages That Look Thin",
+      "paragraphs": [
+        "Open two or three of the ranking competitor pages. You are not auditing them. You are checking whether they look like deliberate pages built for that service and that city, or generic pages that happen to rank. A competitor ranking with a thin page is useful context: it suggests the bar for entry is lower than the prospect might assume, or that the competitor has other advantages carrying the ranking."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Open two or three of the ranking competitor pages. You are not auditing them. You are checking whether they look like deliberate pages built for that service and that city, or generic pages that happen to rank. A competitor ranking with a thin page is useful context: it suggests the bar for entry is lower than the prospect might assume, or that the competitor has other advantages carrying the ranking."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Titles That Reveal Intent",
+      "paragraphs": [
+        "Titles and descriptions in the organic results can show how the market frames the query. If most titles include a specific neighborhood or a price signal, that may be a clue that customers search with those modifiers, though it is not proof. If every title is generic, the query might be earlier in the buying process, but that too is an inference to verify with the prospect or additional research. This shapes what you would even propose, and it is far cheaper to learn it here than three calls in."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Titles and descriptions in the organic results can show how the market frames the query. If most titles include a specific neighborhood or a price signal, that may be a clue that customers search with those modifiers, though it is not proof. If every title is generic, the query might be earlier in the buying process, but that too is an inference to verify with the prospect or additional research. This shapes what you would even propose, and it is far cheaper to learn it here than three calls in."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "The Paid Layer Tells You About Budget and Confidence",
+      "paragraphs": [
+        "Ads above and below the organic results are often visible without any tooling, though placements vary by query and device. Note whether competitors appear to be bidding on the query and whether the prospect is among them. A business that buys ads on a term it does not rank for organically may believe the term converts, or it may be testing demand. If that is the case, the conversation can be easier than convincing someone the demand exists, but you should treat this as a hypothesis to confirm with the prospect.",
+        "The reverse is also worth checking. If nobody in the market appears to be advertising, possible explanations include margins that do not support paid acquisition, a lack of testing, or a channel that simply is not a priority. Those are different situations, and they are worth understanding before you propose paid work."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Ads above and below the organic results are often visible without any tooling, though placements vary by query and device. Note whether competitors appear to be bidding on the query and whether the prospect is among them. A business that buys ads on a term it does not rank for organically may believe the term converts, or it may be testing demand. If that is the case, the conversation can be easier than convincing someone the demand exists, but you should treat this as a hypothesis to confirm with the prospect."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "The reverse is also worth checking. If nobody in the market appears to be advertising, possible explanations include margins that do not support paid acquisition, a lack of testing, or a channel that simply is not a priority. Those are different situations, and they are worth understanding before you propose paid work."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "What the Page Cannot Tell You",
+      "paragraphs": [
+        "This is where discipline matters. A results page shows outcomes, not causes. It cannot tell you:",
+        "A prospect that looks invisible may be invisible on purpose. Plenty of local businesses run on referrals and have no interest in competing for broad local searches. If you open with a visibility problem you have not confirmed exists, you will find out quickly and awkwardly."
+      ],
+      "bullets": [
+        "Whether the business wants more of the customers that query brings.",
+        "Whether the profile is managed by the owner, a franchise office, or nobody at all.",
+        "Whether a ranking change has already been attempted and failed.",
+        "Whether the business is capacity-constrained and actively avoiding new demand."
+      ],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "This is where discipline matters. A results page shows outcomes, not causes. It cannot tell you:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            [
+              {
+                "text": "Whether the business wants more of the customers that query brings."
+              }
+            ],
+            [
+              {
+                "text": "Whether the profile is managed by the owner, a franchise office, or nobody at all."
+              }
+            ],
+            [
+              {
+                "text": "Whether a ranking change has already been attempted and failed."
+              }
+            ],
+            [
+              {
+                "text": "Whether the business is capacity-constrained and actively avoiding new demand."
+              }
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "A prospect that looks invisible may be invisible on purpose. Plenty of local businesses run on referrals and have no interest in competing for broad local searches. If you open with a visibility problem you have not confirmed exists, you will find out quickly and awkwardly."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Turning Observations Into Pre-Pitch Questions",
+      "paragraphs": [
+        "The practical move is to convert what you saw into two or three questions that a busy owner can answer in a sentence."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "The practical move is to convert what you saw into two or three questions that a busy owner can answer in a sentence."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Build a Quick Snapshot",
+      "paragraphs": [
+        "Before outreach, write down four lines:",
+        "Keep it to that. A snapshot with ten observations reads like an audit, and an unsolicited audit is a pitch in disguise."
+      ],
+      "bullets": [
+        "The exact query you checked, including city or neighborhood.",
+        "Whether the business appeared in the map block, and roughly where.",
+        "The most notable review pattern, if any.",
+        "One specific competitor or directory result that stood out."
+      ],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Before outreach, write down four lines:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            [
+              {
+                "text": "The exact query you checked, including city or neighborhood."
+              }
+            ],
+            [
+              {
+                "text": "Whether the business appeared in the map block, and roughly where."
+              }
+            ],
+            [
+              {
+                "text": "The most notable review pattern, if any."
+              }
+            ],
+            [
+              {
+                "text": "One specific competitor or directory result that stood out."
+              }
+            ]
+          ],
+          "ordered": true,
+          "start": 1
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Keep it to that. A snapshot with ten observations reads like an audit, and an unsolicited audit is a pitch in disguise."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Ask Questions That Do Not Sound Like an Audit",
+      "paragraphs": [
+        "For example: \"I searched for [service] in [city] and noticed [specific detail]. Is that something you are already working on, or is it outside what you focus on right now?\"",
+        "That question does several things at once. It proves you did homework, it names a specific observation rather than a vague claim, and it gives the prospect room to say the issue is not a priority. If they say it is not a priority, you have saved both of you a meeting.",
+        "For a deeper version of this routine, a separate guide on how to research a local business before sales outreach covers the wider qualification pass that this search results check fits inside."
+      ],
+      "bullets": [],
+      "level": 3,
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "For example: \"I searched for [service] in [city] and noticed [specific detail]. Is that something you are already working on, or is it outside what you focus on right now?\""
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "That question does several things at once. It proves you did homework, it names a specific observation rather than a vague claim, and it gives the prospect room to say the issue is not a priority. If they say it is not a priority, you have saved both of you a meeting."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "For a deeper version of this routine, a separate guide on how to research a local business before sales outreach covers the wider qualification pass that this search results check fits inside."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Signals That Should Make You Pause",
+      "paragraphs": [
+        "A few patterns suggest you should slow down rather than pitch harder:",
+        "None of these are disqualifiers. They are reasons to change what you lead with."
+      ],
+      "bullets": [
+        "Strong profile, weak everything else. If the map presence and review base are healthy and the site is coherent, there may be no gap worth selling into.",
+        "Recent review momentum. A business that has clearly started collecting reviews recently may already have someone handling this.",
+        "Heavy franchise or corporate control. Locations that are part of a large network often cannot change their profile or site without approval, which lengthens any engagement.",
+        "Aggressive ad presence on terms they already rank for. This can indicate a mature marketing operation with an owner who knows their numbers."
+      ],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "A few patterns suggest you should slow down rather than pitch harder:"
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            [
+              {
+                "text": "Strong profile, weak everything else.",
+                "bold": true
+              },
+              {
+                "text": " If the map presence and review base are healthy and the site is coherent, there may be no gap worth selling into."
+              }
+            ],
+            [
+              {
+                "text": "Recent review momentum.",
+                "bold": true
+              },
+              {
+                "text": " A business that has clearly started collecting reviews recently may already have someone handling this."
+              }
+            ],
+            [
+              {
+                "text": "Heavy franchise or corporate control.",
+                "bold": true
+              },
+              {
+                "text": " Locations that are part of a large network often cannot change their profile or site without approval, which lengthens any engagement."
+              }
+            ],
+            [
+              {
+                "text": "Aggressive ad presence on terms they already rank for.",
+                "bold": true
+              },
+              {
+                "text": " This can indicate a mature marketing operation with an owner who knows their numbers."
+              }
+            ]
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "None of these are disqualifiers. They are reasons to change what you lead with."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Where This Belongs in Your Routine",
+      "paragraphs": [
+        "Checking the local results page is a three to five minute task, and it is best done in the same sitting as whatever else you already review before outreach. It does not replace reading the site, and it does not replace the conversation. It just makes the conversation sharper.",
+        "For a deeper comparison of what the prospect's site is doing versus the business above it, see Comparing a Prospect's Website to the Competitor That Outranks It.",
+        "The habit worth building is restraint. Read the page, write down what you actually saw, and let the prospect tell you whether it matters. A pitch built on a confirmed question beats a pitch built on an assumed problem every time, and the first page of local results is the cheapest place to find that question."
+      ],
+      "bullets": [],
+      "blocks": [
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "Checking the local results page is a three to five minute task, and it is best done in the same sitting as whatever else you already review before outreach. It does not replace reading the site, and it does not replace the conversation. It just makes the conversation sharper."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "For a deeper comparison of what the prospect's site is doing versus the business above it, see "
+            },
+            {
+              "text": "Comparing a Prospect's Website to the Competitor That Outranks It",
+              "href": "/compare-prospect-website-to-outranking-competitor"
+            },
+            {
+              "text": "."
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "spans": [
+            {
+              "text": "The habit worth building is restraint. Read the page, write down what you actually saw, and let the prospect tell you whether it matters. A pitch built on a confirmed question beats a pitch built on an assumed problem every time, and the first page of local results is the cheapest place to find that question."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "seo_title": "What Local Search Results Tell You Before You Pitch Anyone",
+  "meta_description": "Read a prospect's local search results page as free pre-pitch intelligence: map pack presence, reviews, competitors, and gaps worth asking about.",
+  "hero_image": {
+    "alt": "Local search results page on a laptop screen next to a notebook with handwritten notes.",
+    "url": "/static/images/resources/imported/local-search-results-before-you-pitch/hero.png"
+  },
+  "inline_images": [
+    {
+      "alt": "Diagram comparing three local business profile states on a search results page.",
+      "placement_after_section": 4,
+      "url": "/static/images/resources/imported/local-search-results-before-you-pitch/inline-1.png"
+    }
+  ],
+  "resource_card": {
+    "topic": "verification",
+    "summary": "Read a prospect's local search results page as free pre-pitch intelligence: map pack presence, reviews, competitors, and gaps worth asking about."
+  },
+  "body_format": 2,
+  "unlinked_links": [],
+  "modified_at": "2026-11-03T17:00:32.561167+00:00"
+}
