@@ -3057,8 +3057,9 @@ async def analyze(
     "site": site,
     "competitor": competitor
     }
-    
-    agent_insights = run_seo_agent(results)
+
+    # (A run_seo_agent(results) OpenAI call used to run here; its result was
+    # never used, so it only cost money and latency. Removed.)
 
     # Detect weak/blocked competitor crawls so the report does not overtrust bad scrape data.
     competitor["weak_data"] = (
@@ -5703,18 +5704,17 @@ def final_fix_empty_recommended_keywords_html(html):
 
     html = str(html or "")
 
-    if "Recommended Target Keywords" not in html:
+    # "Provisional Keyword Ideas" is the same block, renamed for weak competitor crawls.
+    if "Recommended Target Keywords" not in html and "Provisional Keyword Ideas" not in html:
         return html
 
-    # Detect empty primary target chip area.
-    empty_primary_patterns = [
-        '<h3 class="keyword-group-title">Primary Target</h3><div class="chip-wrap"></div>',
-        '<h3 class="keyword-group-title">Primary Target</h3>\n                    <div class="chip-wrap"></div>',
-    ]
+    # Detect an empty primary target chip area. The chip is usually emptied by
+    # the chip dedupe step, which can leave whitespace behind, so match loosely.
+    empty_primary_re = re.compile(
+        r'<h3 class="keyword-group-title">Primary Target</h3>\s*<div class="chip-wrap">\s*</div>'
+    )
 
-    has_empty_primary = any(pattern in html for pattern in empty_primary_patterns)
-
-    if not has_empty_primary:
+    if not empty_primary_re.search(html):
         return html
 
     # Pull first useful secondary target.
@@ -5735,17 +5735,21 @@ def final_fix_empty_recommended_keywords_html(html):
                 primary = clean
                 break
 
-    # Fallbacks by industry if secondary list is empty.
+    # Fallbacks by industry if secondary list is empty. Detect the industry
+    # from page content, not from chips this pipeline generated itself.
     if not primary:
-        lower_html = html.lower()
+        lower_html = _report_industry_text(html)
         if "painting" in lower_html:
             primary = "Professional Painting Services"
         elif "plumbing" in lower_html:
             primary = "Professional Plumbing Services"
-        elif "roof" in lower_html:
+        elif re.search(r"\broof(?:s|ing|er|ers)?\b", lower_html):
             primary = "Roof Repair and Installation"
-        else:
-            primary = "Primary Service Keyword"
+
+    if not primary:
+        # Nothing supported by the scanned pages: drop the empty Primary Target
+        # heading instead of printing the "Primary Service Keyword" placeholder.
+        return empty_primary_re.sub("", html)
 
     primary_block = (
         '<h3 class="keyword-group-title">Primary Target</h3>'
@@ -5754,10 +5758,7 @@ def final_fix_empty_recommended_keywords_html(html):
         '</div>'
     )
 
-    for pattern in empty_primary_patterns:
-        html = html.replace(pattern, primary_block)
-
-    return html
+    return empty_primary_re.sub(lambda _m: primary_block, html)
 
 
 # === FINAL TARGET KEYWORD PRIMARY/SECONDARY DEDUPE ===
@@ -5767,7 +5768,7 @@ def final_dedupe_target_keywords_html(html):
 
     html = str(html or "")
 
-    if "Recommended Target Keywords" not in html:
+    if "Recommended Target Keywords" not in html and "Provisional Keyword Ideas" not in html:
         return html
 
     primary_match = re.search(
@@ -5970,13 +5971,9 @@ def final_add_additional_keyword_ideas_html(html):
             "Same-Day Plumbing Service",
         ]
     else:
-        base_terms = [
-            "Professional Services",
-            "Residential Services",
-            "Commercial Services",
-            "Emergency Services",
-            "Local Service Provider",
-        ]
+        # Unknown industry: never invent generic terms (see
+        # _report_industry_text). The empty-state notes stay instead.
+        base_terms = []
 
     ideas = []
     seen = set()
@@ -6137,18 +6134,11 @@ def final_replace_empty_gap_buckets_with_ideas_html(html):
             "Commercial Plumbing Contractor",
         ]
     else:
-        service_terms = [
-            "Professional Services",
-            "Residential Services",
-            "Commercial Services",
-            "Emergency Services",
-        ]
-        commercial_terms = [
-            "Free Estimate",
-            "Local Contractor",
-            "Emergency Service",
-            "Service Quote",
-        ]
+        # Unknown industry: never invent generic placeholders such as
+        # "Local Contractor" -- the industry detector downstream used to read
+        # them back and relabel any business (ice cream, restaurant...) as a
+        # contractor. Keep the honest empty-state notes instead.
+        return html
 
     location_terms = []
     if primary_loc:
@@ -7105,6 +7095,12 @@ a[href*="/lead-bot/my-leads"] {
 
     if ".target-quickwins-grid" not in html:
         html = html.replace("</head>", css + "\n</head>", 1)
+
+    # This return was missing: a successful merge returned None and the
+    # middleware then served a blank 200 report.
+    return html
+
+
 def final_fix_priority_recommendations_layout_retry_html(html):
     import re
 
@@ -7386,11 +7382,22 @@ def final_priority_recommendations_layout_v4_html(html):
 
 # === INDUSTRY-WEIGHTED KEYWORD TERMS ===
 
+def _report_industry_text(html):
+    """Report text with generated keyword chips removed, for industry detection.
+
+    Chips are suggestions this pipeline wrote itself; letting the detector read
+    them is circular (a generic "Local Contractor" chip made every unknown
+    business detect as "contractor")."""
+    import re
+
+    return re.sub(r'<span class="chip[^"]*">.*?</span>', " ", str(html or ""), flags=re.DOTALL).lower()
+
+
 def final_industry_weighted_keyword_terms_html(html):
     import re
 
     html = str(html or "")
-    lower = html.lower()
+    lower = _report_industry_text(html)
 
     # Detect the main client industry from the report content.
     industry = None
@@ -17561,3 +17568,143 @@ async def imported_guide_page(slug: str, request: Request):
             "faq_jsonld_html": "",
         },
     )
+
+
+# === CONTENT-SUPPORTED KEYWORD GAP FALLBACK ===
+# keyword_gap only accepts phrases containing SERVICE_TERMS (SEO-agency and
+# plumbing vocabulary), so most industries (ice cream, restaurants, even
+# remodeling contractors) came back with an empty gap and the report filled the
+# hole with invented template terms. When -- and only when -- the existing
+# engine finds nothing at all, fall back to phrases that literally appear in the
+# scanned pages: competitor-only phrases become service gaps, phrases on both
+# pages become shared topic signals. Nothing is invented; a page with no usable
+# phrases still gets an empty gap.
+
+def _page_phrase_text(page):
+    import re
+
+    if not isinstance(page, dict):
+        return ""
+    parts = [page.get(k) or "" for k in ("title", "meta_description", "h1", "visible_text")]
+    text = " ".join(str(p) for p in parts).lower()
+    # Keep word order but treat punctuation as a phrase break.
+    return " " + re.sub(r"[^a-z0-9&'\s]+", " | ", text).replace("  ", " ") + " "
+
+
+_GENERIC_PAGE_WORDS = {
+    "about", "back", "browse", "contact", "gallery", "hello", "home", "latest",
+    "new", "news", "notes", "page", "pages", "post", "posts", "projects", "recent",
+    "say", "stories", "things", "touch", "updates", "work", "works",
+}
+
+
+def content_supported_keyword_gap(site, competitors, limit=10):
+    import re
+
+    competitors = [c for c in (competitors or []) if isinstance(c, dict)]
+    if not isinstance(site, dict) or not competitors:
+        return {"service": [], "shared": []}
+
+    site_text = _page_phrase_text(site)
+    comp_texts = [_page_phrase_text(c) for c in competitors]
+
+    # Words belonging to detected place names (e.g. "stony brook") never form
+    # a topic phrase; locations are handled by the location logic.
+    geo_words = set()
+    for page in [site] + competitors:
+        for phrase in page.get("geo_phrases") or []:
+            geo_words.update(re.findall(r"[a-z0-9']+", str(phrase).lower()))
+
+    # Words like "village" in "Babylon Village" are part of a place name.
+    geo_words.update({"village", "town", "city", "county", "heights", "beach", "harbor", "station"})
+
+    # Brand words: the title segment naming the business ("Sweet Swirl
+    # Creamery | ...") is not a keyword -- except words the other scanned
+    # page also uses ("Scoops & Cones Ice Cream Shop" keeps "ice cream",
+    # because the competitor sells ice cream too).
+    pages = [site] + competitors
+    page_texts = [site_text] + comp_texts
+    brand_words = set()
+    for i, page in enumerate(pages):
+        title = str(page.get("title") or "")
+        segments = [seg.strip() for seg in re.split(r"[|–—-]", title) if seg.strip()]
+        if len(segments) > 1:
+            others = " ".join(t for j, t in enumerate(page_texts) if j != i)
+            brand_words.update(
+                w for w in re.findall(r"[a-z0-9']+", segments[0].lower())
+                if (" " + w + " ") not in others
+            )
+        domain = str(page.get("clean_domain") or "").lower().split(".")[0]
+        if domain:
+            brand_words.add(domain)
+
+    def usable(phrase):
+        words = phrase.split()
+        if not 2 <= len(words) <= 3:
+            return False
+        if not is_valid_phrase(phrase):
+            return False
+        if phrase_has_location_term(phrase) or any(w in geo_words for w in words):
+            return False
+        if any(w in brand_words for w in words):
+            return False
+        # Site-navigation filler ("recent work", "contact page") is not a topic.
+        if all(w in _GENERIC_PAGE_WORDS for w in words):
+            return False
+        return True
+
+    def present(phrase, text):
+        return (" " + phrase + " ") in text
+
+    site_keywords = [normalize_phrase(k) for k in (site.get("keywords") or [])]
+    comp_keywords = []
+    for comp in competitors:
+        comp_keywords.extend(normalize_phrase(k) for k in (comp.get("keywords") or []))
+
+    missing, shared = [], []
+    for phrase in dict.fromkeys(comp_keywords):
+        if not usable(phrase) or not any(present(phrase, t) for t in comp_texts):
+            continue
+        (shared if present(phrase, site_text) else missing).append(phrase)
+    for phrase in dict.fromkeys(site_keywords):
+        if phrase not in shared and usable(phrase) and present(phrase, site_text) and any(present(phrase, t) for t in comp_texts):
+            shared.append(phrase)
+
+    def longest_only(phrases):
+        # "homemade ice" is a fragment of "homemade ice cream": keep the longer.
+        return [p for p in phrases if not any(p != q and (" " + p + " ") in (" " + q + " ") for q in phrases)]
+
+    def as_items(phrases, priority):
+        return [{"term": p, "priority": priority} for p in longest_only(phrases)[:limit]]
+
+    return {
+        "service": as_items(missing, "medium"),
+        "shared": as_items(shared, "shared"),
+    }
+
+
+def _keyword_gap_is_empty(gap):
+    if not isinstance(gap, dict):
+        return True
+    grouped = gap.get("missing_grouped") or {}
+    return not any(grouped.get(k) for k in grouped) and not gap.get("shared")
+
+
+if "keyword_gap" in globals() and "_keyword_gap_before_content_supported_fallback" not in globals():
+    _keyword_gap_before_content_supported_fallback = keyword_gap
+
+    def keyword_gap(site, competitors):
+        gap = _keyword_gap_before_content_supported_fallback(site, competitors)
+        if not _keyword_gap_is_empty(gap):
+            return gap
+        fallback = content_supported_keyword_gap(site, competitors)
+        if not fallback["service"] and not fallback["shared"]:
+            return gap
+        gap = dict(gap or {})
+        grouped = dict(gap.get("missing_grouped") or {})
+        grouped.setdefault("location", [])
+        grouped.setdefault("commercial", [])
+        grouped["service"] = fallback["service"]
+        gap["missing_grouped"] = grouped
+        gap["shared"] = fallback["shared"]
+        return gap
