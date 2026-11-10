@@ -798,7 +798,9 @@ def build_volume_opportunity_summary(volume_data):
     </ul>
     """
 
-def fetch_page_data(url: str):
+def fetch_page_data(url: str, *, strict: bool = False):
+    """strict=True (SEO audits only): verify TLS certificates, bypass the crawl cache and treat any
+    non-2xx final response as a failed fetch. Compare calls keep the default (unchanged) behaviour."""
     url = sanitize_url(url)
 
     data = {
@@ -840,11 +842,14 @@ def fetch_page_data(url: str):
                 "Upgrade-Insecure-Requests": "1",
             },
             allow_redirects=True,
-            verify=False,
+            verify=strict,
+            use_cache=not strict,
         )
         # crawl_get follows (and SSRF-checks) redirects itself; r.url is the page actually scanned.
         data["final_url"] = str(getattr(r, "url", "") or url)
         r.raise_for_status()
+        if strict and not 200 <= int(getattr(r, "status_code", 0) or 0) < 300:
+            raise ValueError("The page did not return a successful response.")
         soup = BeautifulSoup(r.text, "html.parser")
 
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
@@ -13299,6 +13304,33 @@ async def actii_connector_result(request: AuthRequest):
     except QueueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
     return respond(lambda queue: queue.acknowledge(request.headers.get("authorization", ""), body))
+
+
+@app.post("/integrations/actii/site-audit")
+async def actii_connector_site_audit(request: AuthRequest):
+    """Connector-authenticated single-page SEO audit for an ACT II contact (free: one page fetch).
+
+    Separate switch, default off. Reuses fetch_page_data; no score, keyword gap, DataForSEO or AI call.
+    Nothing is stored on this server beyond a short in-memory retry cache.
+    """
+    from starlette.concurrency import run_in_threadpool
+    from agents.actii_file_store import StorageError
+    from agents.actii_queue_agent import QueueError, configured_queue
+    from agents.actii_queue_routes import limited_json
+    from agents.site_audit_agent import run_site_audit
+    headers = {"Cache-Control": "no-store, private"}
+    if os.getenv("ACTII_SITE_AUDIT_ENABLED", "false").strip().lower() != "true":
+        return JSONResponse({"ok": False, "error": "Site audits are not enabled."}, status_code=503, headers=headers)
+    try:
+        binding = configured_queue().authenticate(request.headers.get("authorization", ""))
+        body = await limited_json(request, 4096)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status, headers=headers)
+    except (OSError, StorageError, ValueError, KeyError, TypeError):
+        return JSONResponse({"ok": False, "error": "CRM queue requires operator review."}, status_code=503, headers=headers)
+    status, payload = await run_in_threadpool(run_site_audit, binding, body, fetch=lambda u: fetch_page_data(u, strict=True),
+                                              validate=validate_public_url, sanitize=sanitize_url)
+    return JSONResponse(payload, status_code=status, headers=headers)
 
 
 @app.get("/lead-bot/run")

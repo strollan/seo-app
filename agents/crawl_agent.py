@@ -224,7 +224,7 @@ def _blocked_response(url, reason):
     )
 
 
-def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=False):
+def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=False, use_cache=True):
     """
     Backend crawl helper for report pages.
 
@@ -239,7 +239,9 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
     cache_key = url.strip()
 
     now = time.time()
-    cached = _CRAWL_CACHE.get(cache_key)
+    # use_cache=False (SEO audits): never read or write the shared cache, so a fetch made
+    # without certificate verification can never satisfy a verified one.
+    cached = _CRAWL_CACHE.get(cache_key) if use_cache else None
 
     if cached:
         created, payload = cached
@@ -330,7 +332,8 @@ def crawl_get(url, headers=None, timeout=(3, 6), allow_redirects=True, verify=Fa
             "headers": dict(response.headers or {}),
         }
 
-        _CRAWL_CACHE[cache_key] = (now, payload)
+        if use_cache:
+            _CRAWL_CACHE[cache_key] = (now, payload)
 
         return CachedResponse(
             url=payload["url"],

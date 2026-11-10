@@ -16,10 +16,14 @@ def main(argv=None):
     operation = parser.add_mutually_exclusive_group(required=True)
     operation.add_argument("--once", action="store_true", help="Explicitly claim at most one new import")
     operation.add_argument("--recover-only", action="store_true", help="Acknowledge saved receipts; never claim or import")
+    operation.add_argument("--site-audits", action="store_true", help="Run at most one queued ACT II site audit (free, single page)")
     args = parser.parse_args(argv)
     try:
         connector = PullConnector(load_config(args.config))
-        print(connector.recover_only() if args.recover_only else connector.run_once())
+        if args.site_audits:
+            print(connector.run_site_audits_once())
+        else:
+            print(connector.recover_only() if args.recover_only else connector.run_once())
     except (ConnectorError, StorageError, OSError, ValueError, KeyError, TypeError):
         # Never dump an exception, response, configuration, credential or prospect.
         print("Connector stopped. Check private configuration, journal, and server status; do not clear recovery records.", file=sys.stderr)

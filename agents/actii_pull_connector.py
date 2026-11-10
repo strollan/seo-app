@@ -48,12 +48,13 @@ def load_config(path):
 
 
 class PullConnector:
-    def __init__(self, config, *, clock=time.time, session=None):
+    def __init__(self, config, *, clock=time.time, session=None, local_origin=LOCAL_ORIGIN):
         self.config = config
         self.clock = clock
         self.root = private_directory(Path(config["state_dir"]))
         self.session = session or requests.Session()
         self.session.trust_env = False
+        self.local_origin = local_origin
 
     def _remote(self, path, body):
         try:
@@ -244,3 +245,51 @@ class PullConnector:
                     "ambiguous": "Needs review: more than one matching contact.",
                     "uncertain": "Needs review; import outcome is uncertain.", "not_sent": "Not submitted; retry queued.",
                     "failed": "Failed; review configuration."}[receipt["outcome"]]
+
+
+    # --- Site audits (v1): ACT II request -> production single-page audit -> ACT II result for THAT request. ---
+    def _local_post(self, path, payload, secret):
+        """Signed loopback POST to ACT II, same HMAC scheme as imports. Returns (status, body dict or None)."""
+        raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        stamp = str(int(self.clock()))
+        signature = hmac.new(secret.encode(), stamp.encode() + b"." + raw, hashlib.sha256).hexdigest()
+        try:
+            response = self.session.post(
+                self.local_origin + path, data=raw,
+                headers={"Content-Type": "application/json", "X-ACTII-Timestamp": stamp, "X-ACTII-Signature": signature},
+                timeout=(3, 5), allow_redirects=False, stream=True)
+            with response:
+                body = self._body(response, 256 * 1024)
+                return response.status_code, body if isinstance(body, dict) else None
+        except (requests.RequestException, ConnectorError):
+            return None, None
+
+    def run_site_audits_once(self, limit=1):
+        """Explicit pass: lease up to `limit` queued audit requests from ACT II, audit each URL on production, return each
+        result to ACT II keyed by its request id. Free (one page fetch per audit); never creates or matches contacts."""
+        from agents.site_audit_agent import REQUEST_ID
+        with file_lock(self.root, blocking=False):
+            self._check_expiry()
+            secret = self._local_secret()
+            owner = self.config["username"]
+            status, body = self._local_post("/internal/leadme/audit-requests/claim", {"owner_id": owner, "limit": limit}, secret)
+            if status != 200 or not body or body.get("ok") is not True or not isinstance(body.get("requests"), list):
+                raise ConnectorError("ACT II audit queue unavailable; run again later.")
+            done = []
+            for item in body["requests"][:limit]:
+                if (not isinstance(item, dict) or set(item) != {"request_id", "url"} or not isinstance(item["request_id"], str)
+                        or not REQUEST_ID.fullmatch(item["request_id"]) or not isinstance(item["url"], str) or not item["url"]):
+                    raise ConnectorError("ACT II audit request failed validation; review required.")
+                try:
+                    result = self._remote("/integrations/actii/site-audit", {"request_id": item["request_id"], "url": item["url"]})
+                    audit = result.get("audit")
+                    if result.get("request_id") != item["request_id"] or not isinstance(audit, dict) or audit.get("requested_url") is None:
+                        raise ConnectorError("Invalid audit response.")
+                    report = {"owner_id": owner, "request_id": item["request_id"], "outcome": "completed", "audit": audit}
+                except ConnectorError:
+                    report = {"owner_id": owner, "request_id": item["request_id"], "outcome": "retry"}
+                status, reply = self._local_post("/internal/leadme/audit-result", report, secret)
+                done.append(reply.get("status") if status == 200 and reply and reply.get("ok") is True else "not_recorded")
+            if not done:
+                return "No queued site audits."
+            return "Site audits: " + ", ".join(done) + "."
