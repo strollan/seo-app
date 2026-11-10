@@ -77,6 +77,11 @@ def verify_website(lead, source_domain):
             raise ValueError
     except ValueError:
         raise QueueError("Website must retain the original prospect's hostname.", 422) from None
+    # A Google redirect/Maps URL is not the company's website, and as a CRM
+    # duplicate key it would merge unrelated businesses into one contact.
+    from agents.business_website import is_google_host
+    if is_google_host(website) or is_google_host(source_domain):
+        raise QueueError("This lead has no verified company website.", 422)
     if not isinstance(lead.get("company_name"), str) or not lead["company_name"].strip():
         raise QueueError("Business name is required.", 422)
 

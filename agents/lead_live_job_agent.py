@@ -1084,10 +1084,17 @@ def lead_to_public(lead):
     if isinstance(emails, list):
         emails = ", ".join([str(e) for e in emails if str(e).strip()])
 
+    # Display-only guard: a Google redirect/Maps URL is never shown as the
+    # business website or contact page (see agents/business_website.py).
+    from agents.business_website import display_safe_lead
+
+    lead = display_safe_lead(lead)
+
     return {
         "title": lead.get("title") or "",
         "domain": lead.get("domain") or "",
         "url": lead.get("url") or lead.get("website") or lead.get("link") or "",
+        "website_status": lead.get("website_status") or ("website" if (lead.get("url") or lead.get("website") or lead.get("link")) else "missing"),
         "serp_page": str(lead.get("serp_page") or ""),
         "serp_position": str(lead.get("serp_position") or ""),
         "source": lead.get("source") or "",
@@ -1606,6 +1613,13 @@ def run_job(job_id):
             if not domain or domain in seen_domains:
                 return False
 
+            # A Google redirect/Maps URL is not a business website: never
+            # save it, crawl it, cache it, or let it claim the shared
+            # "google.com" dedupe slot for every later business.
+            from agents.business_website import is_google_host
+            if is_google_host(domain) or is_google_host(lead.get("url") or ""):
+                return False
+
             seen_domains.add(domain)
 
             # Real per-lead progress now exists. Deterministically silence
@@ -1916,6 +1930,14 @@ def run_job(job_id):
         job["status"] = "done"
         job["partial"] = is_partial
         job["message"] = PARTIAL_RESULTS_WARNING_MESSAGE if is_partial else "Done. Open Desktop is ready."
+        # Say plainly when the scan came up short instead of a bare "Done".
+        job["requested"] = total_limit
+        found_count = len(job.get("leads") or [])
+        job["result_note"] = (
+            f"Found {found_count} of {total_limit} requested leads. The searches "
+            "returned no more businesses with a verified website that passed the lead filters."
+            if found_count < total_limit else ""
+        )
 
         try:
             _leadbot_sync_live_addresses_to_export(job)

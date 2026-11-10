@@ -183,6 +183,11 @@ def run_site_audit(binding, body, *, fetch, validate, sanitize, limiter=LIMITER)
         return 422, {"ok": False, "error": "The website address is not a public http(s) URL."}
     if urlsplit(url).scheme not in {"http", "https"}:
         return 422, {"ok": False, "error": "The website address is not a public http(s) URL."}
+    from agents.business_website import is_google_host
+    if is_google_host(url):
+        # A Google redirect/Maps page is not the business website; auditing it
+        # would report on Google, not the prospect.
+        return 422, {"ok": False, "error": "The website address is a Google link, not the business website."}
     if not limiter.admit(connector):
         return 429, {"ok": False, "error": "Audit limit reached. Try again later."}
     audit = build_audit(fetch(url), url)

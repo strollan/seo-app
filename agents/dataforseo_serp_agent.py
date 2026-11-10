@@ -381,6 +381,8 @@ _LEADBOT_PROVIDER_DIAGNOSTICS_LOG = Path(__file__).resolve().parents[1] / "data"
 _LEADBOT_DATAFORSEO_RETRYABLE_TASK_STATUS_CODES = {40101, 40103}
 _LEADBOT_DATAFORSEO_NO_RESULTS_TASK_STATUS_CODE = 40102
 _LEADBOT_DATAFORSEO_INVALID_LOCATION_TASK_STATUS_CODE = 40501
+# 40106 = Task completed with partial results -- results are usable, not a failure.
+_LEADBOT_DATAFORSEO_PARTIAL_RESULTS_TASK_STATUS_CODE = 40106
 _LEADBOT_DATAFORSEO_MAX_ATTEMPTS = 3  # 1 initial attempt + 2 retries
 _LEADBOT_DATAFORSEO_RETRY_BACKOFF_SECONDS = [1, 2]  # before retry 1, before retry 2
 
@@ -698,6 +700,23 @@ def search_google_organic(
                         f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
                     )
 
+                if task_status_code == _LEADBOT_DATAFORSEO_PARTIAL_RESULTS_TASK_STATUS_CODE:
+                    # 40106 = "Task completed with partial results. Some pages
+                    # could not be retrieved after several retry attempts."
+                    # (DataForSEO error table). The task DID complete and was
+                    # billed; its items are real. Treating it as a failure
+                    # threw those results away and marked the whole search
+                    # "could not be completed". Keep them, never retry.
+                    _circuit_breaker_record_success()
+                    _leadbot_log_provider_diagnostic(
+                        failure_category="partial_results",
+                        status_code=task_status_code,
+                        location_name=resolved_location_name,
+                        attempt=attempt,
+                        outcome="partial_results",
+                    )
+                    break
+
                 if task_status_code != 20000:
                     raise RuntimeError(
                         f"DataForSEO task error: {task_status_code} {task.get('status_message')}"
@@ -764,6 +783,16 @@ def search_google_organic(
         if not url_value:
             continue
 
+        # Resolve Google redirect links here, before any guardrail reads the
+        # row's domain: otherwise every google.com/goto row looks like
+        # "google.com" (and a directory hidden behind one is not rejected).
+        from agents.business_website import resolve_business_website
+
+        resolved_website = resolve_business_website(url_value, serp_domain=item.get("domain") or "")
+        if not resolved_website["url"]:
+            continue  # a Google link with no readable business website
+        url_value = resolved_website["url"]
+
         rank_group = item.get("rank_group")
         rank_absolute = item.get("rank_absolute")
 
@@ -781,6 +810,11 @@ def search_google_organic(
             {
                 "title": item.get("title") or "",
                 "link": url_value,
+                # Google may link a result through google.com/goto?url=<opaque
+                # token>; the SERP's own displayed domain is then the only
+                # readable website signal (see agents/business_website.py).
+                "serp_domain": item.get("domain") or "",
+                "website_status": resolved_website["status"],
                 "snippet": item.get("description") or "",
                 "source": "dataforseo",
                 "lead_source_label": "Google Organic",

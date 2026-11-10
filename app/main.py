@@ -13632,6 +13632,15 @@ def leadbot_live_status(job_id: str, request: AuthRequest):
     if job and str(job.get("status") or "").lower() == "cancelling":
         job = reap_job(job_id) or job
 
+    # Display-only: jobs saved before the Google-redirect fix may hold
+    # google.com/goto?... as a lead's website. Never show those as company
+    # websites; the job file on disk is not modified.
+    if isinstance(job, dict) and isinstance(job.get("leads"), list):
+        from agents.business_website import display_safe_lead
+
+        job = dict(job)
+        job["leads"] = [display_safe_lead(lead) for lead in job["leads"]]
+
     return job
 
 
@@ -14591,7 +14600,7 @@ function renderLead(lead, jobParams) {{
     const phone = lead.best_phone || "Not found";
     const email = lead.emails || "Not found";
     const contact = lead.contact_page_url ? link(lead.contact_page_url) : "Not found";
-    const website = lead.url ? link(lead.url) : "Not found";
+    const website = lead.url ? link(lead.url) : (lead.website_status === "missing" ? "Missing (no verified website)" : "Not found");
     const address = lead.address || lead.full_address || lead.business_address || lead.formatted_address || lead.location || "Not found";
 
     const jp = jobParams || {{}};
@@ -14755,7 +14764,8 @@ async function poll() {{
             }} else {{
                 messageEl.style.display = "";
                 messageEl.innerHTML =
-                    (isFinalLiveStatus ? "" : '<span class="pulse"></span>') + esc(job.message || job.status || "");
+                    (isFinalLiveStatus ? "" : '<span class="pulse"></span>') + esc(job.message || job.status || "") +
+                    (job.status === "done" && job.result_note ? "<br>" + esc(job.result_note) : "");
             }}
         }}
 

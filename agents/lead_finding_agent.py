@@ -264,7 +264,12 @@ def make_query(industry, market, service_keyword=None):
     service_keyword = (service_keyword or "").strip()
 
     if service_keyword:
-        return f"{service_keyword} {market}".strip()
+        # run_job passes query variants that already contain the market
+        # ("plumber Shirley, NY"); appending it again sent the provider
+        # "plumber Shirley, NY Shirley, NY".
+        from agents.dataforseo_serp_agent import leadbot_build_dataforseo_query
+
+        return leadbot_build_dataforseo_query(service_keyword, market)
 
     defaults = {
         "roofing": "roofing contractor",
@@ -385,6 +390,9 @@ def _leadbot_preserve_source_metadata(scored, item):
         # position number is ambiguous without this. See the comment in
         # business_competitor_finder._raw_find_business_competitors.
         "query_used",
+        # How the website was established (website / unwrapped_google_redirect
+        # / serp_domain) -- see agents/business_website.py.
+        "website_status",
     ):
         if item.get(key) not in (None, ""):
             scored[key] = item.get(key)
@@ -470,6 +478,28 @@ def find_leads(
         # count toward the quota, or reach a new export.
         if _leadbot_is_page_one_organic_result(item):
             return None
+
+        # A Google redirect / Google-hosted URL is never the business website.
+        # Unwrap a real destination; otherwise the row has no verified website
+        # and cannot be a domain-keyed lead (it used to become "google.com" and
+        # swallow every other such business as a duplicate).
+        if isinstance(item, dict):
+            from agents.business_website import MISSING, resolve_business_website
+
+            raw_link = item.get("url") or item.get("link") or item.get("website") or ""
+            resolved = resolve_business_website(raw_link)
+            if raw_link and resolved["url"] != raw_link:
+                item = dict(item)
+                for key in ("url", "link", "website"):
+                    if key in item:
+                        item[key] = resolved["url"]
+                item["domain"] = clean_domain(resolved["url"])
+                item["website_status"] = resolved["status"]
+            if resolved["status"] == MISSING and (raw_link or item.get("source") != "google_places"):
+                # Same policy the Places search already applies to places
+                # without a website (and the quality gate's missing_domain).
+                # Existing website-less Places handling below is unchanged.
+                return None
 
         # Personal/global blocks are cheap domain checks. Reject before
         # scoring and contact crawling.
@@ -570,6 +600,21 @@ def find_leads(
         scored["emails"] = contact.get("emails", [])
         scored["contact_page_url"] = contact.get("contact_page_url", "")
         scored["contact_confidence"] = contact.get("confidence", 0)
+
+        # A contact page is only kept when it is on the business's own site.
+        # The crawler follows redirects, so a site that redirects to Google
+        # (or anywhere else) used to yield "contact pages" like
+        # google.com/contact that belong to some other site.
+        if scored["contact_page_url"]:
+            from agents.business_website import is_google_host
+            from agents.same_site import site_identity
+
+            contact_site = site_identity(scored["contact_page_url"])
+            website_site = site_identity(scored.get("url") or "")
+            if is_google_host(scored["contact_page_url"]) or not contact_site or contact_site != website_site:
+                scored["contact_page_url"] = ""
+                contact = dict(contact)
+                contact["flags"] = list(contact.get("flags") or []) + ["contact_page_offsite_dropped"]
 
         if isinstance(item, dict) and item.get("source") == "google_places":
             if scored["best_phone"] and not scored["contact_confidence"]:

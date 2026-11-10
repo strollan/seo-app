@@ -643,6 +643,25 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
         if any(isinstance(item, dict) and item.get("source") == "google_places" for item in page_results):
             break
 
+    # Never let a Google redirect / Google-hosted URL stand in for the business
+    # website: unwrap a real destination, otherwise mark the website missing.
+    # (Every such row used to get the domain "google.com" and collapse into one.)
+    from agents.business_website import resolve_business_website
+
+    for result in organic_results:
+        if not isinstance(result, dict):
+            continue
+        raw_link = result.get("link") or result.get("url") or result.get("website") or ""
+        resolved = resolve_business_website(raw_link, serp_domain=result.get("serp_domain") or "")
+        result["link"] = resolved["url"]
+        if resolved["status"] != "website" or not result.get("website_status"):
+            result["website_status"] = resolved["status"]
+        for key in ("url", "website"):
+            if key in result:
+                result[key] = resolved["url"]
+        if "domain" in result:
+            result["domain"] = normalize_domain(resolved["url"]) if resolved["url"] else ""
+
     # Main list stays organic/DataForSEO.
     business_results = filter_business_results(organic_results)
 
@@ -678,7 +697,7 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
 
     for result in business_results:
         link = result.get("link") or ""
-        domain = normalize_domain(link)
+        domain = normalize_domain(link) if link else ""
 
         if own_domain_clean and domain == own_domain_clean:
             continue
@@ -689,6 +708,12 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
             dedupe_key = result.get("place_id") or link or domain
         else:
             dedupe_key = link or domain
+        if not dedupe_key:
+            # No verified website: dedupe by the business itself, never by a shared host.
+            from agents.business_website import no_website_dedupe_key
+            dedupe_key = no_website_dedupe_key(result)
+            if not dedupe_key:
+                continue
 
         dedupe_key = str(dedupe_key or "").strip().lower()
 
@@ -702,6 +727,7 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
             "title": result.get("title", ""),
             "url": link,
             "domain": domain,
+            "website_status": result.get("website_status", ""),
             "snippet": result.get("snippet", ""),
             "serp_page": result.get("serp_page"),
             "serp_position": result.get("serp_position"),

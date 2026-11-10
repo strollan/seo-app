@@ -81,6 +81,14 @@ def get_business(domain_or_url):
     if not domain:
         return None
 
+    # Google is never a business. Scans before the Google-redirect fix saved
+    # many different businesses under one "google.com" row (merged phones,
+    # emails, contact pages); never hand that row to any lead. The row is
+    # left in place, just never read.
+    from agents.business_website import is_google_host
+    if is_google_host(domain):
+        return None
+
     with connect() as conn:
         row = conn.execute(
             "SELECT * FROM businesses WHERE domain = ?",
@@ -102,6 +110,10 @@ def save_business_from_lead(lead, enriched=False):
 
     if not domain:
         return None
+
+    from agents.business_website import is_google_host
+    if is_google_host(domain):
+        return None  # never cache contact data under a Google host
 
     title = str(lead.get("title") or "").strip()
     url = str(lead.get("url") or lead.get("website") or lead.get("link") or "").strip()
@@ -224,8 +236,14 @@ def apply_cached_business_to_lead(lead):
         changed = True
 
     if cached.get("contact_page_url") and not str(lead.get("contact_page_url") or lead.get("contact_page") or "").strip():
-        lead["contact_page_url"] = cached["contact_page_url"]
-        changed = True
+        # Only a page on the lead's own site is a contact page; older cache
+        # rows can hold "tel:..." links or another site's page.
+        from agents.same_site import site_identity
+
+        cached_site = site_identity(cached["contact_page_url"])
+        if cached_site and cached_site == site_identity(lead.get("url") or lead.get("website") or lead.get("domain") or ""):
+            lead["contact_page_url"] = cached["contact_page_url"]
+            changed = True
 
     if changed:
         # Grade the merged contact data instead of assuming "phone + any
