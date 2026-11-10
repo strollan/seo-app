@@ -14735,7 +14735,7 @@ function leadSnapshotInt(value) {{
     return Number.isFinite(n) ? n : null;
 }}
 function leadSnapshotHtml(lead) {{
-    const isMaps = lead.discovery_source === "google_maps" || String(lead.source || "").toLowerCase() === "dataforseo_maps";
+    const isMaps = lead.discovery_source === "google_maps" || String(lead.serp_page || "").trim().toLowerCase() === "google maps";
     const source = String(lead.source || "").toLowerCase();
     const page = String(lead.serp_page || "").trim().toLowerCase();
     let out = '<aside class="lead-snapshot" aria-label="Lead snapshot">';
@@ -14751,7 +14751,7 @@ function leadSnapshotHtml(lead) {{
     }}
 
     let organic = null;
-    if (!isMaps && !["dataforseo_maps", "google_places", "google_maps"].includes(source) && !["google maps", "google places"].includes(page)) {{
+    if (!isMaps && !["google_places", "google_maps"].includes(source) && !["google maps", "google places"].includes(page)) {{
         const pos = leadSnapshotInt(lead.serp_position);
         if (pos !== null && pos >= 1) organic = pos;
     }}
@@ -14766,10 +14766,11 @@ function leadSnapshotHtml(lead) {{
 
     const url = String(lead.url || "").trim();
     let host = "";
-    try {{ host = new URL(url).hostname.toLowerCase().replace(/^www\\./, ""); }} catch (_) {{}}
-    const googleHost = /(^|\\.)google\\.[a-z.]+$/.test(host) || host === "goo.gl" || host === "g.page" || host === "maps.app.goo.gl";
+    try {{ host = new URL(url).hostname.toLowerCase(); }} catch (_) {{}}
+    if (host.startsWith("www.")) host = host.slice(4);
+    const googleHost = /(^|[.])google[.][a-z.]+$/.test(host) || host === "goo.gl" || host === "g.page" || host === "maps.app.goo.gl";
     if (url && !googleHost && !["not found", "none", "null", "nan", "missing"].includes(url.toLowerCase())) {{
-        const linkable = /^https?:\\/\\//i.test(url) && !!host;
+        const linkable = /^https?:[/][/]/i.test(url) && !!host;
         const urlHtml = linkable
             ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer nofollow">' + esc(url) + '</a>'
             : esc(url);
@@ -15060,7 +15061,7 @@ async function addCompletedLiveCrmActions(job) {{
     // matched by Maps listing ID, else by the organic website's domain.
     function liveLeadKey(item) {{
         if (item.dataset.listingKey) return item.dataset.listingKey;
-        const d = String(item.dataset.crmDomain || "").replace(/^www\\d*\\./, "");
+        const d = String(item.dataset.crmDomain || "").replace(/^www[0-9]*[.]/, "");
         return d ? "domain:" + d : "";
     }}
     const liveByKey = new Map();
