@@ -486,5 +486,19 @@ class DiagnosticLogRotationTests(_CircuitBreakerTestCase):
         mock_post.assert_called_once()
 
 
+def setUpModule():
+    # Paid discovery needs a spend ledger; give this module a throwaway one.
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent))
+    import discovery_ledger_testing
+    discovery_ledger_testing.install()
+
+
+def tearDownModule():
+    import discovery_ledger_testing
+    discovery_ledger_testing.uninstall()
+
+
 if __name__ == "__main__":
     unittest.main()

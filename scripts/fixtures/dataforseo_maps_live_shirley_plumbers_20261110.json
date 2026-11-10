@@ -1,0 +1,1048 @@
+{
+ "_note": "Trimmed from ONE real DataForSEO google/maps/live/advanced response, keyword 'plumbers', Shirley,New York,United States, 2026-11-10 16:59Z, cost $0.002. Items unmodified; envelope fields kept; other items removed.",
+ "status_code": 20000,
+ "status_message": "Ok.",
+ "cost": 0.002,
+ "tasks": [
+  {
+   "id": "11101659-1696-0139-0000-6d03fe2ef654",
+   "status_code": 20000,
+   "status_message": "Ok.",
+   "time": "2.9807 sec.",
+   "cost": 0.002,
+   "result_count": 1,
+   "path": [
+    "v3",
+    "serp",
+    "google",
+    "maps",
+    "live",
+    "advanced"
+   ],
+   "data": {
+    "api": "serp",
+    "function": "live",
+    "se": "google",
+    "se_type": "maps",
+    "keyword": "plumbers",
+    "location_name": "Shirley,New York,United States",
+    "language_code": "en",
+    "depth": 100,
+    "device": "desktop",
+    "os": "windows"
+   },
+   "result": [
+    {
+     "keyword": "plumbers",
+     "type": "maps",
+     "se_domain": "google.com",
+     "location_code": 1023361,
+     "language_code": "en",
+     "check_url": "https://google.com/maps/search/plumbers/@40.8014876,-72.8676033,12z?hl=en&gl=US&uule=w+CAIQIFISCcubTJQOUOiJEQvbrhRsKNpI",
+     "datetime": "2026-11-10 16:59:21 +00:00",
+     "spell": null,
+     "refinement_chips": null,
+     "item_types": [
+      "maps_paid_item",
+      "maps_search"
+     ],
+     "se_results_count": 0,
+     "items_count": 11,
+     "items": [
+      {
+       "type": "maps_paid_item",
+       "rank_group": 1,
+       "rank_absolute": 1,
+       "domain": null,
+       "title": "Ray The Plumber",
+       "url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 4.8,
+        "votes_count": 1732,
+        "rating_max": null
+       },
+       "rating_distribution": null
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 1,
+       "rank_absolute": 3,
+       "domain": null,
+       "title": "L & J Cesspool Services Inc",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": null,
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 5,
+        "votes_count": 8,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 8
+       },
+       "snippet": "Shirley, NY 11967",
+       "address": "Shirley, NY 11967",
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": "Shirley",
+        "zip": "11967",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJ8Qr9FJFa6IkR674q8JwGyEc",
+       "phone": "+1631-399-3200",
+       "main_image": "https://streetviewpixels-pa.googleapis.com/v1/thumbnail?panoid=dzVA2n8AUCiURwO-JggItQ&cb_client=search.gws-prod.grass&w=408&h=240&yaw=10.772815&pitch=0&thumbfov=100",
+       "total_photos": 1,
+       "category": "Plumber",
+       "additional_categories": [
+        "Construction",
+        "Professional services"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "monday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ],
+         "saturday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 22,
+            "minute": 0
+           }
+          }
+         ]
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0x89e85a9114fd0af1:0x47c8069cf02abeeb",
+       "cid": "5172391443149012715",
+       "latitude": 40.8014876,
+       "longitude": -72.8676033,
+       "is_claimed": false,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 6,
+       "rank_absolute": 8,
+       "domain": null,
+       "title": "Richard Supply Mastic Corporation",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": "https://maps.google.com/maps/contrib/102808191113109973481",
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 4.7,
+        "votes_count": 35,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 2,
+        "2": 0,
+        "3": 0,
+        "4": 1,
+        "5": 32
+       },
+       "snippet": "1560 Montauk Hwy, Mastic, NY 11950",
+       "address": "1560 Montauk Hwy, Mastic, NY 11950",
+       "address_info": {
+        "borough": null,
+        "address": "1560 Montauk Hwy",
+        "city": "Mastic",
+        "zip": "11950",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJR6u2Bl1a6IkR0cQ9TjLKsl8",
+       "phone": "+1631-281-0060",
+       "main_image": "https://lh3.googleusercontent.com/grass-cs/AABkmLfJyRwnoXa_iLdrx7mW_U8mxKrB42hF_nEG05VT0PdaOmUkMoLcIqyHdEj6J-9JAgovVgIq8D21YBq3gye6-D5UlaOZn-MvRXxkWdU9kFy9gUe9XbcdsAwzruE-DtJ4B2QuaVI=w408-h544-k-no",
+       "total_photos": 53,
+       "category": "Plumbing supply store",
+       "additional_categories": [
+        "Hardware store",
+        "Irrigation equipment supplier"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": null,
+         "monday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 55
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 55
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 55
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 55
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 55
+           }
+          }
+         ],
+         "saturday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 11,
+            "minute": 50
+           }
+          }
+         ]
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0x89e85a5d06b6ab47:0x5fb2ca324e3dc4d1",
+       "cid": "6895796296867497169",
+       "latitude": 40.8060991,
+       "longitude": -72.8423969,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 16,
+       "rank_absolute": 18,
+       "domain": "www.hardyplumbing.com",
+       "title": "Hardy Plumbing & Heating",
+       "original_title": null,
+       "url": "https://www.hardyplumbing.com/?utm_source=google&utm_medium=organic&utm_campaign=gmb-listing-southampton",
+       "contact_url": "https://www.hardyplumbing.com/contact-us/",
+       "contributor_url": "https://maps.google.com/maps/contrib/104018315314334844379",
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 4.8,
+        "votes_count": 439,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 20,
+        "2": 1,
+        "3": 2,
+        "4": 14,
+        "5": 402
+       },
+       "snippet": "144 Kroemer Ave, Riverhead, NY 11901",
+       "address": "144 Kroemer Ave, Riverhead, NY 11901",
+       "address_info": {
+        "borough": null,
+        "address": "144 Kroemer Ave",
+        "city": "Riverhead",
+        "zip": "11901",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJ6dtMQjmT6IkRLbvKWbCPSE8",
+       "phone": "+1631-283-9333",
+       "main_image": "https://lh3.googleusercontent.com/grass-cs/AABkmLcOyWd8pQABPyfAH_IOdqtvj3kZ5sZMLPv1qFLJCNdjyYNQeLLnltvCaNRtnGfMw7WTrZcsfP49PdOCu_Y3kMSLD5cFQyuNDA-k5WujzvY-b24378m3slc0wN3vjOOzT5Nr5LOM=w408-h400-k-no",
+       "total_photos": 61,
+       "category": "Plumber",
+       "additional_categories": [
+        "Boiler supplier",
+        "Drainage service",
+        "Heating contractor",
+        "Heating equipment supplier",
+        "HVAC contractor"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": null,
+         "monday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 30
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 30
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 30
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 30
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 30
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "saturday": null
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0x89e89339424cdbe9:0x4f488fb059cabb2d",
+       "cid": "5712974114902948653",
+       "latitude": 40.9204018,
+       "longitude": -72.7068528,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 20,
+       "rank_absolute": 22,
+       "domain": null,
+       "title": "Plumbob plumbing & heating llc",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": "https://maps.google.com/maps/contrib/111906376803441301552",
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 5,
+        "votes_count": 3,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 3
+       },
+       "snippet": null,
+       "address": null,
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": null,
+        "zip": null,
+        "region": null,
+        "country_code": null
+       },
+       "place_id": "ChIJR231vPbvQKcRKCZfhKHtHok",
+       "phone": "+1631-655-6599",
+       "main_image": "https://lh3.googleusercontent.com/grass-cs/AABkmLc6OresItrPxA9J-YAZKemWE8QWJMYl4SuAw0XCzMkqGNtS6LhlPffRqiDLFfPXO4rdYeAvkw9Ah-TogwaLLCRoJ3aSEsosRoSYM9tnCMaEyJ7JGNvbvzTCyDb6hj8rKpFIeYU7HsfrxVGM=w408-h306-k-no",
+       "total_photos": 10,
+       "category": "Plumber",
+       "additional_categories": [
+        "Service establishment",
+        "HVAC contractor",
+        "Water filter supplier",
+        "Water softening equipment supplier"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "monday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ],
+         "saturday": [
+          {
+           "open": {
+            "hour": 0,
+            "minute": 0
+           },
+           "close": {
+            "hour": 24,
+            "minute": 0
+           }
+          }
+         ]
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0xa740eff6bcf56d47:0x891eeda1845f2628",
+       "cid": "9880595910463792680",
+       "latitude": 40.915445999999996,
+       "longitude": -72.77884209999999,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 31,
+       "rank_absolute": 33,
+       "domain": "www.ferguson.com",
+       "title": "Ferguson Plumbing Supply",
+       "original_title": null,
+       "url": "https://www.ferguson.com/store/ny/medford/plumbingpvf-3518?utm_source=google&utm_medium=organic&utm_campaign=rt_lis_listingtraffic&utm_content=listing",
+       "contact_url": null,
+       "contributor_url": "https://maps.google.com/maps/contrib/109648694124260767961",
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 4.1,
+        "votes_count": 117,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 16,
+        "2": 3,
+        "3": 7,
+        "4": 24,
+        "5": 67
+       },
+       "snippet": "2700 NY-112, Medford, NY 11763",
+       "address": "2700 NY-112, Medford, NY 11763",
+       "address_info": {
+        "borough": null,
+        "address": "2700 NY-112",
+        "city": "Medford",
+        "zip": "11763",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJO90e2whG6IkR3KGlOvND1vo",
+       "phone": "+1631-475-3170",
+       "main_image": "https://lh3.googleusercontent.com/grass-cs/AABkmLdbFZlpKdmecO1528_3XHPs9PQ2FBJSqD0VnJP_xUAIodHdJYeUcxinZOe6ZKjvojKLugVpD5EVSsHvpQF4XMa1ClZajf3N1q-evbCJBIiPci9B0XwJlmrXRA1S3XW0U2JsZ24=w426-h240-k-no",
+       "total_photos": 26,
+       "category": "Plumbing supply store",
+       "additional_categories": [
+        "Bathroom supply store",
+        "Hardware store",
+        "Home improvement store",
+        "Industrial equipment supplier",
+        "Insulation contractor",
+        "Safety equipment supplier",
+        "Wholesaler"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": null,
+         "monday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 7,
+            "minute": 0
+           },
+           "close": {
+            "hour": 16,
+            "minute": 0
+           }
+          }
+         ],
+         "saturday": [
+          {
+           "open": {
+            "hour": 8,
+            "minute": 0
+           },
+           "close": {
+            "hour": 12,
+            "minute": 0
+           }
+          }
+         ]
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0x89e84608db1edd3b:0xfad643f33aa5a1dc",
+       "cid": "18074708866438111708",
+       "latitude": 40.8197633,
+       "longitude": -72.99835329999999,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 34,
+       "rank_absolute": 36,
+       "domain": null,
+       "title": "Warhawk Plumbing & Heating Inc",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": null,
+       "book_online_url": null,
+       "rating": null,
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": null,
+       "snippet": "399 Glen Dr, Shirley, NY 11967",
+       "address": "399 Glen Dr, Shirley, NY 11967",
+       "address_info": {
+        "borough": null,
+        "address": "399 Glen Dr",
+        "city": "Shirley",
+        "zip": "11967",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJAQAMYCZb6IkRvgiyh0H2JDI",
+       "phone": null,
+       "main_image": "https://streetviewpixels-pa.googleapis.com/v1/thumbnail?panoid=B95pQg8iXw-zD3wf4BeXgw&cb_client=search.gws-prod.grass&w=408&h=240&yaw=251.0122&pitch=0&thumbfov=100",
+       "total_photos": 1,
+       "category": null,
+       "additional_categories": null,
+       "category_ids": null,
+       "work_hours": null,
+       "feature_id": "0x89e85b26600c0001:0x3224f64187b208be",
+       "cid": "3613283562367879358",
+       "latitude": 40.8336468,
+       "longitude": -72.8841087,
+       "is_claimed": false,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 43,
+       "rank_absolute": 45,
+       "domain": null,
+       "title": "Plumbing",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": null,
+       "book_online_url": null,
+       "rating": null,
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": null,
+       "snippet": "Shirley, NY 11967",
+       "address": "Shirley, NY 11967",
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": "Shirley",
+        "zip": "11967",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJATxpY3pQ6IkRRCr0zpcE4Qo",
+       "phone": null,
+       "main_image": "https://streetviewpixels-pa.googleapis.com/v1/thumbnail?panoid=LkKdBlvscJBSnH6IGtyXPw&cb_client=search.gws-prod.grass&w=408&h=240&yaw=73.46758&pitch=0&thumbfov=100",
+       "total_photos": 1,
+       "category": "Area",
+       "additional_categories": null,
+       "category_ids": null,
+       "work_hours": null,
+       "feature_id": "0x89e8507a63693c01:0xae10497cef42a44",
+       "cid": "783912860197857860",
+       "latitude": 40.7801805,
+       "longitude": -72.86250969999999,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 59,
+       "rank_absolute": 61,
+       "domain": null,
+       "title": "Plumbing, Kitchen and Bath",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": null,
+       "book_online_url": null,
+       "rating": null,
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": null,
+       "snippet": "Coram, NY 11727",
+       "address": "Coram, NY 11727",
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": "Coram",
+        "zip": "11727",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJVXIJuqFG6IkRziD0Je_QZo8",
+       "phone": null,
+       "main_image": "https://streetviewpixels-pa.googleapis.com/v1/thumbnail?panoid=wLA0ztc904yUy3P6Izw8lg&cb_client=search.gws-prod.grass&w=408&h=240&yaw=159.64636&pitch=0&thumbfov=100",
+       "total_photos": 1,
+       "category": "Area",
+       "additional_categories": null,
+       "category_ids": null,
+       "work_hours": null,
+       "feature_id": "0x89e846a1ba097255:0x8f66d0ef25f420ce",
+       "cid": "10333176120600699086",
+       "latitude": 40.868397,
+       "longitude": -72.9970333,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 60,
+       "rank_absolute": 62,
+       "domain": null,
+       "title": "Plumbing, Kitchen and Bath",
+       "original_title": null,
+       "url": null,
+       "contact_url": null,
+       "contributor_url": null,
+       "book_online_url": null,
+       "rating": null,
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": null,
+       "snippet": "Coram, NY 11727",
+       "address": "Coram, NY 11727",
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": "Coram",
+        "zip": "11727",
+        "region": "New York",
+        "country_code": "US"
+       },
+       "place_id": "ChIJE8TNt6FG6IkR4CEFgkrz7tE",
+       "phone": null,
+       "main_image": null,
+       "total_photos": null,
+       "category": "Area",
+       "additional_categories": null,
+       "category_ids": null,
+       "work_hours": null,
+       "feature_id": "0x89e846a1b7cdc413:0xd1eef34a820521e0",
+       "cid": "15127295699718578656",
+       "latitude": 40.8679712,
+       "longitude": -72.9967565,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      },
+      {
+       "type": "maps_search",
+       "rank_group": 61,
+       "rank_absolute": 63,
+       "domain": "www.facebook.com",
+       "title": "A Level Above Carpentry",
+       "original_title": null,
+       "url": "https://www.facebook.com/alevelabovecarpentry2/",
+       "contact_url": null,
+       "contributor_url": "https://maps.google.com/maps/contrib/107124818144073714298",
+       "book_online_url": null,
+       "rating": {
+        "rating_type": "Max5",
+        "value": 5,
+        "votes_count": 21,
+        "rating_max": null
+       },
+       "hotel_rating": null,
+       "price_level": null,
+       "rating_distribution": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 21
+       },
+       "snippet": null,
+       "address": null,
+       "address_info": {
+        "borough": null,
+        "address": null,
+        "city": null,
+        "zip": null,
+        "region": null,
+        "country_code": null
+       },
+       "place_id": "ChIJCbpmF71b6IkR_3c3WS0sgik",
+       "phone": "+1631-317-3342",
+       "main_image": "https://lh3.googleusercontent.com/grass-cs/AABkmLeaDxX8jemzKxbdILOnaBrljEyy6SaCc9PQVQenD63PRtp-CIomoYJ-7A86_isvYzX6m8W_qNkYmxTDAu6mIU-Rza0VMtDMrmvQOqAi0yVFFqlXxqsnlfzuBinrUShWoys7C30N=w408-h408-k-no",
+       "total_photos": 61,
+       "category": "General contractor",
+       "additional_categories": [
+        "Service establishment"
+       ],
+       "category_ids": null,
+       "work_hours": {
+        "timetable": {
+         "sunday": null,
+         "monday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ],
+         "tuesday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ],
+         "wednesday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ],
+         "thursday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ],
+         "friday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ],
+         "saturday": [
+          {
+           "open": {
+            "hour": 9,
+            "minute": 0
+           },
+           "close": {
+            "hour": 17,
+            "minute": 0
+           }
+          }
+         ]
+        },
+        "current_status": "open"
+       },
+       "feature_id": "0x89e85bbd1766ba09:0x29822c2d593777ff",
+       "cid": "2991001675809388543",
+       "latitude": 40.922326,
+       "longitude": -72.63744799999999,
+       "is_claimed": true,
+       "local_justifications": null,
+       "is_directory_item": false
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

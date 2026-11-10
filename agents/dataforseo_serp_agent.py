@@ -659,20 +659,51 @@ def search_google_organic(
         # immediately on the first attempt, unchanged from before. 40102
         # "No Search Results" is not an error at all and returns []
         # without ever entering the retry path.
+        # Every attempt (retries included) is a paid request: reserve its
+        # worst case against the shared discovery spend guard BEFORE sending
+        # (agents/discovery_spend_guard.py). A refusal raises before
+        # anything is sent and is not retried.
+        from agents.discovery_spend_guard import guard_for_request
+
+        spend_guard = guard_for_request()
+
         for attempt in range(1, _LEADBOT_DATAFORSEO_MAX_ATTEMPTS + 1):
             envelope_status_code = None
             task_status_code = None
 
+            spend_reservation = spend_guard.reserve("organic", keyword=keyword, depth=depth, attempt=attempt)
+            spend_settled = False
+            spend_sent = False
             try:
-                response = requests.post(
-                    url,
-                    headers=_auth_header(),
-                    json=payload,
-                    timeout=90,
-                )
+                try:
+                    request_headers = _auth_header()
+                    spend_sent = True
+                    response = requests.post(
+                        url,
+                        headers=request_headers,
+                        json=payload,
+                        timeout=90,
+                    )
 
-                response.raise_for_status()
-                data = response.json()
+                    response.raise_for_status()
+                    data = response.json()
+                    _spend_tasks = data.get("tasks") if isinstance(data, dict) else None
+                    _spend_task = _spend_tasks[0] if isinstance(_spend_tasks, list) and _spend_tasks and isinstance(_spend_tasks[0], dict) else {}
+                    _spend_blocks = _spend_task.get("result") or []
+                    spend_guard.record(
+                        _spend_task.get("cost", data.get("cost") if isinstance(data, dict) else None),
+                        res_id=spend_reservation,
+                        provider_status=f"{data.get('status_code') if isinstance(data, dict) else '?'}/{_spend_task.get('status_code')}",
+                        results=len((_spend_blocks[0] or {}).get("items") or []) if _spend_blocks and isinstance(_spend_blocks[0], dict) else 0,
+                    )
+                    spend_settled = True
+                finally:
+                    if not spend_settled and spend_sent:
+                        # Sent (or maybe sent) with unknown cost: book the worst case.
+                        spend_guard.record(None, res_id=spend_reservation, provider_status="request_failed")
+                    elif not spend_settled:
+                        # Credentials failed before anything was sent.
+                        spend_guard.release_unsent(spend_reservation)
 
                 envelope_status_code = data.get("status_code")
                 if envelope_status_code != 20000:

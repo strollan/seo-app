@@ -1409,6 +1409,27 @@ def _leadbot_sync_live_addresses_to_export(job):
 
 
 def run_job(job_id):
+    """Run one live scan.
+
+    LEADBOT_MAPS_ENABLED=1: one guarded Google Maps request is the ONLY
+    discovery source; organic SERP never runs alongside it or as a fallback
+    (agents/lead_maps_discovery_agent.py). Otherwise the organic path runs
+    unchanged, except that every paid DataForSEO request it makes is checked
+    against the shared discovery spend guard for this scan.
+    """
+    if os.getenv("LEADBOT_MAPS_ENABLED", "0").strip() == "1":
+        from agents.lead_maps_discovery_agent import run_maps_job
+
+        run_maps_job(job_id)
+        return
+
+    from agents.discovery_spend_guard import DiscoverySpendGuard, scan_guard
+
+    with scan_guard(DiscoverySpendGuard(job_id=job_id)):
+        _run_organic_job(job_id)
+
+
+def _run_organic_job(job_id):
     job = read_job(job_id)
 
     if not job:

@@ -108,8 +108,12 @@ def safe_slug(value):
     return "".join(ch for ch in value if ch.isalnum() or ch in {"_", "-"})
 
 
-def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True, keyword=""):
+def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True, keyword="", extra_fields=None):
+    """extra_fields: optional extra column names (copied from each lead as-is),
+    appended after EXPORT_FIELDS. Used by Google Maps scans for address,
+    place_id and website status; existing callers' CSVs are unchanged."""
     leads = result.get("leads", []) if isinstance(result, dict) else []
+    extra_fields = [f for f in (extra_fields or []) if f not in EXPORT_FIELDS]
 
     if only_outreach_ready:
         leads = [
@@ -127,7 +131,7 @@ def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True
     path = export_dir / f"leads_{industry_slug}_{market_slug}_{stamp}.csv"
 
     with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=EXPORT_FIELDS)
+        writer = csv.DictWriter(f, fieldnames=EXPORT_FIELDS + extra_fields)
         writer.writeheader()
 
         for lead in leads:
@@ -160,6 +164,10 @@ def export_leads_to_csv(result, industry="", market="", only_outreach_ready=True
                 "query_used": lead.get("query_used") or "",
                 "source": lead.get("source") or "",
                 "lead_source_label": lead.get("lead_source_label") or "",
+                **{
+                    field: ("true" if lead.get(field) is True else "false" if lead.get(field) is False else str(lead.get(field) if lead.get(field) is not None else ""))
+                    for field in extra_fields
+                },
             })
 
     return {

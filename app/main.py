@@ -7059,6 +7059,28 @@ a[href*="/lead-bot/my-leads"] {
 /* === LEADBOT PROVIDER UNAVAILABLE STATE END === */
 
 
+/* === LEADBOT MAPS WEBSITE STATUS TAGS START === */
+.lf-web-tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.5;
+    white-space: normal;
+}
+.badges .lf-web-tag { margin-left: 0; }
+.lf-no-website { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; }
+.lf-web-ok { background: #dcfce7; color: #166534; border: 1px solid #22c55e; }
+.lf-web-unverified { background: #f1f5f9; color: #475569; border: 1px solid #94a3b8; }
+.leadbot-maps-card .info a { overflow-wrap: anywhere; }
+.leadbot-maps-card .lead-actions-disabled { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.lead-action-disabled { background: #f1f5f9; color: #64748b; border: 1px dashed #94a3b8; border-radius: 999px; padding: 6px 12px; min-height: 32px; font: inherit; font-size: 12px; font-weight: 700; cursor: not-allowed; }
+.lead-action-disabled-why { flex-basis: 100%; color: #64748b; font-size: 12px; }
+/* === LEADBOT MAPS WEBSITE STATUS TAGS END === */
+
+
 .auth-brand-text {
     text-align: center;
     margin-bottom: 16px;
@@ -12965,6 +12987,8 @@ async def leadbot_delete_row_safe(request: Request):
 
         filename = str(params.get("filename") or params.get("file") or "").strip()
         domain = clean_domain(params.get("domain") or "")
+        from agents.lead_row_identity import clean_listing_key, is_maps_export, maps_rows_for_key
+        listing_key = clean_listing_key(params.get("listing_key") or "")
         csrf_token = str(params.get("csrf_token") or "").strip()
 
         if not filename:
@@ -12973,7 +12997,7 @@ async def leadbot_delete_row_safe(request: Request):
                 status_code=400,
             )
 
-        if not domain:
+        if not domain and not listing_key:
             return JSONResponse(
                 {"ok": False, "error": "Missing domain."},
                 status_code=400,
@@ -13015,6 +13039,37 @@ async def leadbot_delete_row_safe(request: Request):
         if not fieldnames:
             return JSONResponse(
                 {"ok": False, "error": "Export has no header row."},
+                status_code=400,
+            )
+
+        if is_maps_export(fieldnames):
+            # Google Maps export: rows are businesses, not websites. Several
+            # can share one website or have none, so only the listing's
+            # stable Google ID may select the row to delete.
+            if not listing_key:
+                return JSONResponse(
+                    {"ok": False, "error": "This lead needs its Google Maps listing ID to be deleted."},
+                    status_code=400,
+                )
+            doomed = set(maps_rows_for_key(rows, listing_key))
+            kept = [row for i, row in enumerate(rows) if i not in doomed]
+            deleted = len(doomed)
+            if deleted:
+                with export_path.open("w", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(kept)
+            return JSONResponse({
+                "ok": True,
+                "filename": safe_name,
+                "listing_key": listing_key,
+                "deleted": deleted,
+                "remaining": len(kept),
+            })
+
+        if not domain:
+            return JSONResponse(
+                {"ok": False, "error": "Missing domain."},
                 status_code=400,
             )
 
@@ -13244,11 +13299,24 @@ async def leadbot_add_to_crm(request: AuthRequest):
     from agents.actii_integration_agent import lead_payload
     from agents.actii_search_metadata_agent import domain as crm_domain, first as crm_first
     import csv
+    if not crm_domain(source_domain):
+        # Never let an empty/garbage domain match a row that has no website.
+        return JSONResponse({"ok": False, "error": "This lead is not available from one of your exports."}, status_code=403)
     with source_path.open(encoding="utf-8-sig", newline="") as stream:
-        row = next((row for row in csv.DictReader(stream)
-                    if crm_domain(crm_first(row, "domain", "website", "url")) == crm_domain(source_domain)), None)
+        matching_rows = [row for row in csv.DictReader(stream)
+                         if crm_domain(crm_first(row, "domain", "website", "url")) == crm_domain(source_domain)]
+    row = matching_rows[0] if matching_rows else None
     if row is None:
         return JSONResponse({"ok": False, "error": "The original lead is no longer available."}, status_code=422)
+    if "website_status" in row:
+        # Google Maps exports: the CRM is keyed by website, so only a single
+        # business with a website we verified ourselves may be imported.
+        # Businesses without one ("No Website") and chain locations sharing
+        # one website are not importable yet.
+        if str(row.get("website_verified") or "").strip().lower() != "true":
+            return JSONResponse({"ok": False, "error": "This business has no verified website, so it cannot be added to the CRM yet."}, status_code=422)
+        if len(matching_rows) > 1:
+            return JSONResponse({"ok": False, "error": "Several locations share this website, so it cannot be added to the CRM yet."}, status_code=422)
     canonical = lead_payload(row, source_path.name)
     # Only contact details are editable. Ignore browser-supplied owners, ranks and provenance.
     for key in ("company_name", "person_name", "email", "phone", "website", "address"):
@@ -14592,7 +14660,126 @@ function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, 
     return [line1, line2, line3, line4];
 }}
 
+// Google Maps discovery cards (agents/lead_maps_discovery_agent.py). One card
+// per Maps listing (place_id/CID), so chain locations sharing one website
+// stay separate. A provider-listed website is shown as "not verified" until
+// we fetched it ourselves; businesses without one say "No Website" and get
+// no website checks or Compare/CRM actions.
+function mapsWebsiteHtml(lead) {{
+    if (lead.url && lead.website_verified === true) {{
+        return link(lead.url) + ' <span class="lf-web-tag lf-web-ok">Verified</span>';
+    }}
+    if (lead.url) {{
+        return link(lead.url) + ' <span class="lf-web-tag lf-web-unverified">Listed on Google Maps · not verified</span>';
+    }}
+    let out = '<span class="lf-web-tag lf-no-website">No Website</span>';
+    if (lead.website_status === "social_profile" && lead.profile_url) {{
+        out += '<br><small>Social profile (not a website): ' + link(lead.profile_url) + '</small>';
+    }}
+    return out;
+}}
+
+function renderMapsLead(lead, jobParams) {{
+    const key = "maps:" + (lead.listing_key || (String(lead.title || "") + "|" + String(lead.best_phone || "") + "|" + String(lead.address || "")));
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const jp = jobParams || {{}};
+    const hasWebsite = !!lead.url;
+    const verified = hasWebsite && lead.website_verified === true;
+    const noSiteText = "Not available (no website)";
+    const phone = lead.best_phone || "Not listed";
+    const email = lead.emails || (verified ? "Not found" : (hasWebsite ? "Not checked" : noSiteText));
+    const contact = lead.contact_page_url ? link(lead.contact_page_url) : (verified ? "Not found" : (hasWebsite ? "Not checked" : noSiteText));
+    const address = lead.address || lead.formatted_address || "Not listed";
+    const position = String(lead.maps_position || "").trim();
+
+    const kw = String(jp.keyword || "").trim();
+    const market = String(jp.market || "").trim();
+    const category = String(lead.category || "").trim();
+    const line1 = "Listed on Google Maps" + (category ? " as \u201c" + category + "\u201d" : "") +
+        (kw ? " for \u201c" + kw + "\u201d" : "") + (market ? " in " + market : "") + ".";
+    const hasPhone = !!leadbotWhyNoteClean(lead.best_phone);
+    const hasEmail = !!leadbotWhyNoteClean(lead.emails);
+    const line2 = hasPhone && hasEmail ? "Phone and email are available for outreach."
+        : hasPhone ? (verified ? "Phone found, but no email was located." : "Phone is listed on Google Maps.")
+        : hasEmail ? "Email found, but no phone number was located."
+        : "No direct contact details were found yet.";
+    const line3 = !hasWebsite ? "No website is listed for this business, so website checks do not apply."
+        : verified ? "Website verified: it answered on the listed address."
+        : "The listed website could not be verified, so it was not checked.";
+    const line4 = lead.has_street_address ? "Street address comes from the Google Maps listing."
+        : "Review the listing to confirm fit before outreach.";
+
+    const div = document.createElement("article");
+    div.className = "card leadbot-maps-card";
+    // Compare/CRM actions attach only to a verified website (actions_domain).
+    div.dataset.crmDomain = String(lead.actions_domain || "").trim().toLowerCase();
+    div.dataset.placeId = String(lead.place_id || "");
+    div.innerHTML = `
+        <h3>${{esc(lead.title || "Untitled Lead")}}</h3>
+        <div class="domain">${{esc(lead.domain || (hasWebsite ? "" : "No Website"))}}</div>
+        <div class="badges">
+            <span>${{esc(lead.outreach_status || "needs_manual_research")}}</span>
+            <span>Google Maps${{position ? " #" + esc(position) : ""}}</span>
+            ${{category ? "<span>" + esc(category) + "</span>" : ""}}
+            ${{hasWebsite ? "" : '<span class="lf-web-tag lf-no-website">No Website</span>'}}
+            <span>Contact Confidence ${{esc(lead.contact_confidence || "0")}}</span>
+            <span>Lead Score ${{esc(lead.final_lead_score || "0")}}</span>
+        </div>
+        <div class="info">
+            <div><b>Phone</b>${{esc(phone)}}</div>
+            <div><b>Email</b>${{esc(email)}}</div>
+            <div><b>Website</b>${{mapsWebsiteHtml(lead)}}</div>
+            <div><b>Contact Page</b>${{contact}}</div>
+        </div>
+
+        <div class="reason" style="border-left-color:#16a34a;">
+            <b>Address</b><br>${{esc(address)}}
+        </div>
+
+        <div class="leadbot-why-note">
+            <b>Why this lead</b>
+            <p>${{esc(line1)}}</p>
+            <p>${{esc(line2)}}</p>
+            <p>${{esc(line3)}}</p>
+            <p>${{esc(line4)}}</p>
+        </div>
+    `;
+
+    if (!div.dataset.crmDomain) {{
+        // Website-dependent actions stay visible but disabled, with the reason.
+        const why = !hasWebsite ? "Needs a verified website: this business has no website."
+            : !verified ? "Needs a verified website: the listed website could not be verified."
+            : "Several locations share this website, so it cannot be used for this lead.";
+        const off = document.createElement("div");
+        off.className = "lead-crm-action lead-actions-disabled";
+        off.innerHTML = '<button type="button" class="lead-action-disabled" disabled aria-disabled="true" title="' + esc(why) + '">Add to CRM</button>' +
+            '<button type="button" class="lead-action-disabled" disabled aria-disabled="true" title="' + esc(why) + '">Compare with Top Competitor</button>' +
+            '<small class="lead-action-disabled-why">' + esc(why) + '</small>';
+        div.appendChild(off);
+    }}
+
+    document.getElementById("leads").appendChild(div);
+
+    const waitingMessageEl = document.getElementById("message");
+    if (waitingMessageEl) {{
+        waitingMessageEl.style.display = "none";
+    }}
+    const liveConsoleFirstLine = document.getElementById("liveConsoleLine1");
+    if (
+        liveConsoleFirstLine &&
+        /looking for the first lead cards/i.test(liveConsoleFirstLine.textContent || "")
+    ) {{
+        liveConsoleFirstLine.textContent = "Lead cards are appearing.";
+    }}
+}}
+
 function renderLead(lead, jobParams) {{
+    if (lead && lead.discovery_source === "google_maps") {{
+        renderMapsLead(lead, jobParams);
+        return;
+    }}
     const key = lead.domain || lead.url || lead.title;
     if (seen.has(key)) return;
     seen.add(key);
@@ -14866,6 +15053,36 @@ async function poll() {{
                     <a class="btn" href="/lead-bot">Back to Lead Finder</a>
                 `;
                 leadsWrap.appendChild(unavailable);
+            }}
+        }}
+
+        if (job.discovery_source === "google_maps") {{
+            // Google Maps discovery: say exactly how many of the requested
+            // leads were found, and why a scan came up short or did not run.
+            const mapsFound = (job.leads || []).length;
+            const mapsRequested = job.requested || params.limit || "—";
+            if (job.status === "done") {{
+                if (liveLine2) liveLine2.textContent = "Found " + mapsFound + " of " + mapsRequested + " requested leads.";
+                const zeroBox = document.getElementById("leadbotZeroResultsEmpty");
+                if (mapsFound === 0 && zeroBox && zeroBox.dataset.maps !== "1") {{
+                    zeroBox.dataset.maps = "1";
+                    zeroBox.innerHTML = "<h3>No leads found.</h3><p>" + esc(job.result_note || "No businesses matched this search.") + "</p>";
+                    if (liveLine1) liveLine1.textContent = "The scan completed, but no qualifying businesses were found.";
+                    if (liveLine2) liveLine2.textContent = "Found 0 of " + mapsRequested + " requested leads.";
+                    if (liveLine3) liveLine3.textContent = "";
+                }}
+            }} else if (job.status === "error" && ["discovery_safe_mode", "discovery_budget_reached", "discovery_ledger_unavailable"].indexOf(job.error_code) !== -1) {{
+                if (liveLine1) liveLine1.textContent = job.message || "No search was run.";
+                if (liveLine2) liveLine2.textContent = "Found " + mapsFound + " of " + mapsRequested + " requested leads.";
+                if (liveLine3) liveLine3.textContent = "No paid search request was sent.";
+                const leadsWrapMaps = document.getElementById("leads");
+                if (leadsWrapMaps && !document.getElementById("leadbotDiscoveryBlocked")) {{
+                    const blocked = document.createElement("div");
+                    blocked.id = "leadbotDiscoveryBlocked";
+                    blocked.className = "leadbot-zero-results-empty";
+                    blocked.innerHTML = "<h3>No search was run.</h3><p>" + esc(job.message || "") + "</p>";
+                    leadsWrapMaps.appendChild(blocked);
+                }}
             }}
         }}
 
@@ -15670,9 +15887,11 @@ def leadbot_delete_row_route(
     request: AuthRequest,
     domain: str = AuthForm(""),
     csrf_token: str = AuthForm(""),
+    listing_key: str = AuthForm(""),
 ):
     import csv
     from pathlib import Path
+    from agents.lead_row_identity import is_maps_export, maps_rows_for_key
 
     safe_name = Path(str(filename or "")).name
     target_domain = str(domain or "").strip().lower().replace("www.", "")
@@ -15711,14 +15930,21 @@ def leadbot_delete_row_route(
     kept = []
     removed = 0
 
-    for row in rows:
-        row_domain = str(row.get("domain") or "").strip().lower().replace("www.", "")
+    if is_maps_export(fieldnames):
+        # Google Maps export: delete exactly the listing named by its stable
+        # Google ID; never by (shared or empty) domain.
+        doomed = set(maps_rows_for_key(rows, listing_key))
+        kept = [row for i, row in enumerate(rows) if i not in doomed]
+        removed = len(doomed)
+    else:
+        for row in rows:
+            row_domain = str(row.get("domain") or "").strip().lower().replace("www.", "")
 
-        if target_domain and row_domain == target_domain:
-            removed += 1
-            continue
+            if target_domain and row_domain == target_domain:
+                removed += 1
+                continue
 
-        kept.append(row)
+            kept.append(row)
 
     with open(export_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -15744,10 +15970,12 @@ def leadbot_update_address(
     filename: str = AuthForm(""),
     domain: str = AuthForm(""),
     address: str = AuthForm(""),
+    listing_key: str = AuthForm(""),
 ):
     import csv
     from pathlib import Path
     from urllib.parse import quote, urlparse, parse_qs
+    from agents.lead_row_identity import is_maps_export, maps_rows_for_key
 
     raw_filename = str(filename or "").strip()
 
@@ -15849,12 +16077,16 @@ def leadbot_update_address(
         return cleaned
 
     updated = 0
+    # Google Maps exports: only the listing named by its stable Google ID.
+    maps_targets = set(maps_rows_for_key(rows, listing_key)) if is_maps_export(fieldnames) else None
 
-    for row in rows:
+    for row_index, row in enumerate(rows):
         domains = row_domains(row)
 
         matched = False
-        if target_domain:
+        if maps_targets is not None:
+            matched = row_index in maps_targets
+        elif target_domain:
             for row_domain in domains:
                 if row_domain == target_domain or row_domain.endswith("." + target_domain) or target_domain.endswith("." + row_domain):
                     matched = True
@@ -15874,6 +16106,11 @@ def leadbot_update_address(
         row["address_source"] = "manual" if new_address else ""
 
         updated += 1
+
+        if maps_targets is not None:
+            # The business cache and detail index are keyed by domain; a Maps
+            # listing (maybe one of several chain locations) must not write there.
+            continue
 
         try:
             from agents.lead_business_cache_agent import save_business_from_lead
@@ -16699,10 +16936,12 @@ def leadbot_save_details_combined(
     website: str = AuthForm(""),
     contact_page: str = AuthForm(""),
     address: str = AuthForm(""),
+    listing_key: str = AuthForm(""),
 ):
     import csv
     from pathlib import Path
     from urllib.parse import quote, urlparse, parse_qs
+    from agents.lead_row_identity import is_maps_export, maps_rows_for_key
 
     raw_filename = str(filename or "").strip()
 
@@ -16772,18 +17011,26 @@ def leadbot_save_details_combined(
             fieldnames.append(field)
 
     updated = 0
+    # Google Maps exports: edit exactly the listing named by its stable Google
+    # ID. Several rows can share one website or have none, so a domain match
+    # would overwrite other businesses.
+    maps_targets = set(maps_rows_for_key(rows, listing_key)) if is_maps_export(fieldnames) else None
 
-    for row in rows:
-        row_domain = clean_domain(
-            row.get("domain")
-            or row.get("website")
-            or row.get("url")
-            or row.get("link")
-            or ""
-        )
+    for row_index, row in enumerate(rows):
+        if maps_targets is not None:
+            if row_index not in maps_targets:
+                continue
+        else:
+            row_domain = clean_domain(
+                row.get("domain")
+                or row.get("website")
+                or row.get("url")
+                or row.get("link")
+                or ""
+            )
 
-        if row_domain != target_domain:
-            continue
+            if row_domain != target_domain:
+                continue
 
         # Save submitted values exactly, including blanks.
         # This lets users clear bad phone/email/address/contact data.
@@ -16805,6 +17052,11 @@ def leadbot_save_details_combined(
         row["formatted_address"] = address
 
         updated += 1
+
+        if maps_targets is not None:
+            # The business cache and detail index are keyed by domain; a Maps
+            # listing (maybe one of several chain locations) must not write there.
+            continue
 
         try:
             from agents.lead_business_cache_agent import save_business_from_lead

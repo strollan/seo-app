@@ -154,8 +154,12 @@ class RawFindBusinessCompetitorsProviderFailureTests(EnvVarSandbox):
 
     def test_primary_succeeds_with_zero_results_is_still_a_genuine_empty_result(self):
         """The critical non-regression: a provider that runs fine and
-        legitimately finds nothing must NOT be turned into a failure."""
-        os.environ["LEADBOT_DATAFORSEO_ENABLED"] = "0"
+        legitimately finds nothing must NOT be turned into a failure.
+
+        Paid discovery is ON here: since 2026-11-10 Safe Mode
+        (LEADBOT_DATAFORSEO_ENABLED != 1) skips the paid Serper path too
+        (see scripts/test_maps_row_actions.py)."""
+        os.environ["LEADBOT_DATAFORSEO_ENABLED"] = "1"
         with mock.patch.object(bcf, "google_search", return_value={"organic": []}), \
              mock.patch.object(bcf, "get_organic_results", return_value=[]):
             results = bcf._raw_find_business_competitors("plumber", location="Test City", limit=5, pages=[1])

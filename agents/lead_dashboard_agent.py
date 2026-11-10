@@ -667,6 +667,14 @@ def lead_cards(rows, selected_name="", csrf_token=""):
 
     cards = []
 
+    # Google Maps exports can hold several locations of one chain sharing a
+    # website; website-keyed actions (CRM/Compare) would be ambiguous there.
+    maps_domain_counts = {}
+    for _row in rows:
+        if isinstance(_row, dict) and "website_status" in _row and get_value(_row, "domain"):
+            _d = get_value(_row, "domain").lower()
+            maps_domain_counts[_d] = maps_domain_counts.get(_d, 0) + 1
+
     for row in rows:
         title = get_value(row, "business", "title", "domain") or "Unknown Business"
         domain = get_value(row, "domain")
@@ -759,6 +767,26 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         )
         h1 = get_value(row, "h1", "h1_text", "page_h1")
 
+        # Google Maps exports (agents/lead_maps_discovery_agent.py) carry a
+        # website_status column. Only a website we fetched ourselves counts as
+        # verified; a business without one is labeled "No Website" and never
+        # offered Compare/CRM actions (those are keyed by a verified domain).
+        is_maps_row = "website_status" in row
+        maps_website_status = get_value(row, "website_status") if is_maps_row else ""
+        maps_website_verified = is_maps_row and get_value(row, "website_verified").lower() == "true"
+        actions_domain = domain if (not is_maps_row or maps_website_verified) else ""
+        if is_maps_row and maps_domain_counts.get(domain.lower(), 0) > 1:
+            actions_domain = ""
+        maps_category = get_value(row, "category") if is_maps_row else ""
+        # Per-lead actions on a Maps export are keyed by the listing's stable
+        # Google ID (agents/lead_row_identity.py), never by domain.
+        from agents.lead_row_identity import row_listing_key
+        listing_key = row_listing_key(row) if is_maps_row else ""
+        listing_key_attr = html.escape(listing_key, quote=True)
+        listing_key_input = (
+            f'<input type="hidden" name="listing_key" value="{listing_key_attr}">' if listing_key else ""
+        )
+
         why_keyword = get_value(row, "keyword")
         why_market = get_value(row, "market")
         why_line1, why_line2, why_line3, why_line4 = leadbot_why_note_lines(
@@ -807,6 +835,19 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 '</div>'
             )
 
+        if is_maps_row:
+            if not website:
+                maps_note = "No website is listed for this business, so website checks do not apply."
+            elif maps_website_verified:
+                maps_note = "Website verified. Page title and meta description were not checked during Google Maps discovery."
+            else:
+                maps_note = "Website listed on Google Maps but not verified, so website checks were skipped."
+            seo_snapshot_items = [
+                '<div class="leadbot-seo-snapshot-item leadbot-maps-website-note">'
+                f'<p>{html.escape(maps_note)}</p>'
+                '</div>'
+            ]
+
         if seo_snapshot_items:
             seo_snapshot_html = (
                 '<div class="leadbot-seo-snapshot">'
@@ -821,14 +862,14 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         crm_payload = lead_payload(row, selected_name)
         crm_data = html.escape(json.dumps(crm_payload), quote=True)
         crm_button = ""
-        if selected_name and domain:
+        if selected_name and actions_domain:
             crm_button = (
                 f'<button type="button" class="lead-add-crm" data-lead="{crm_data}" '
                 f'data-source-file="{html.escape(selected_name, quote=True)}" '
                 f'data-source-domain="{html.escape(domain, quote=True)}">Add to CRM</button>'
             )
         compare_link = ""
-        if selected_name and domain:
+        if selected_name and actions_domain:
             from urllib.parse import urlencode as _urlencode
             compare_query = _urlencode({"source_file": selected_name, "source_domain": domain})
             compare_link = (
@@ -839,8 +880,28 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 f'Compare with Top Competitor</a>'
             )
 
+        if is_maps_row and selected_name and not actions_domain:
+            # Website-dependent actions shown disabled, with the reason, when
+            # this Maps business has no single verified website.
+            if not website:
+                why_disabled = "Needs a verified website: this business has no website."
+            elif not maps_website_verified:
+                why_disabled = "Needs a verified website: the listed website could not be verified."
+            else:
+                why_disabled = "Several locations share this website, so it cannot be used for this lead."
+            why_attr = html.escape(why_disabled, quote=True)
+            crm_button = (
+                f'<button type="button" class="lead-action-disabled" disabled aria-disabled="true" '
+                f'title="{why_attr}">Add to CRM</button>'
+            )
+            compare_link = (
+                f'<button type="button" class="lead-action-disabled" disabled aria-disabled="true" '
+                f'title="{why_attr}">Compare with Top Competitor</button>'
+                f'<small class="lead-action-disabled-why">{html.escape(why_disabled)}</small>'
+            )
+
         delete_html = ""
-        if selected_name and selected_name != "leadbot_master.csv" and domain:
+        if selected_name and selected_name != "leadbot_master.csv" and (listing_key if is_maps_row else domain):
             safe_file = html.escape(selected_name)
             safe_domain = html.escape(domain)
             safe_csrf = html.escape(csrf_token or "")
@@ -849,13 +910,26 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 f'action="/lead-bot/delete-row/{safe_file}" '
                 f'onsubmit="return confirm(&quot;Delete this lead from this export?&quot;);">'
                 f'<input type="hidden" name="domain" value="{safe_domain}">'
+                f'{listing_key_input}'
                 f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
                 f'<button type="submit" class="lead-delete-one">Delete</button>'
                 f'</form>'
             )
 
+        if is_maps_row:
+            maps_bits = ['<span class="leadbot-source-badge">Google Maps</span>']
+            if maps_category:
+                maps_bits.append(f'<span>{html.escape(maps_category)}</span>')
+            if not website:
+                maps_bits.append('<span class="leadbot-no-website-badge" style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;">No Website</span>')
+            elif not maps_website_verified:
+                maps_bits.append('<span class="leadbot-unverified-website-badge" style="background:#f1f5f9;color:#475569;border:1px solid #94a3b8;">Website not verified</span>')
+            maps_badges_html = "".join(maps_bits)
+        else:
+            maps_badges_html = serp_badge_html
+
         cards.append(f"""
-        <article class="lead-card">
+        <article class="lead-card"{(' data-listing-key="' + listing_key_attr + '"') if listing_key else ''}>
             {delete_html}
             <div class="lead-head">
                 <div>
@@ -867,7 +941,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
 
             <div class="badges">
                 <span>{html.escape(outreach)}</span>
-                {serp_badge_html}
+                {maps_badges_html}
                 <span>Contact Confidence {html.escape(confidence)}</span>
                 <span>Lead Score {html.escape(score)}</span>
             </div>
@@ -875,6 +949,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             <form class="lead-contact-edit-form" method="post" action="/lead-bot/save-details">
                 <input type="hidden" name="filename" value="{html.escape(selected_name or '')}">
                 <input type="hidden" name="domain" value="{html.escape(domain or '')}">
+                {listing_key_input}
 
                 <div class="info-grid lead-edit-grid">
                     <div>
@@ -903,6 +978,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 <form method="post" action="/lead-bot/update-address">
                     <input type="hidden" name="filename" value="{html.escape(selected_name or '')}">
                     <input type="hidden" name="domain" value="{html.escape(domain or '')}">
+                    {listing_key_input}
                     <input name="address" value="{html.escape((row.get('address') or row.get('full_address') or row.get('business_address') or row.get('formatted_address') or row.get('street_address') or row.get('mailing_address') or (address if address != 'Not found' else '') or ''))}" placeholder="Add street address, city, state, ZIP">
                     <button type="submit">Save Address</button>
                 </form>
@@ -3871,7 +3947,7 @@ document.addEventListener("DOMContentLoaded", function () {
 <script>
 (function () {
     function resetLeadBotState() {
-        document.querySelectorAll("button, input[type='submit']").forEach(function (btn) {
+        document.querySelectorAll("button:not(.lead-action-disabled), input[type='submit']").forEach(function (btn) {
             btn.disabled = false;
             if (btn.dataset.originalText) {
                 btn.textContent = btn.dataset.originalText;
@@ -3954,7 +4030,7 @@ document.addEventListener("DOMContentLoaded", function () {
             panel.classList.remove("is-active");
         }
 
-        document.querySelectorAll("button, input[type='submit']").forEach(function (btn) {
+        document.querySelectorAll("button:not(.lead-action-disabled), input[type='submit']").forEach(function (btn) {
             btn.disabled = false;
 
             if ((btn.textContent || "").includes("Running") || (btn.textContent || "").includes("Working")) {
@@ -5724,8 +5800,10 @@ btn.dataset.busy = "1";
         const card = cardFromButton(btn);
         const file = selectedFile();
         const domain = domainFromCard(card);
+        // Google Maps cards are keyed by their stable listing ID, not domain.
+        const listingKey = card && card.dataset ? (card.dataset.listingKey || "") : "";
 
-        if (!file || !domain) {
+        if (!file || (!domain && !listingKey)) {
             btn.classList.add("is-deleting");
             btn.textContent = "Missing info";
             setTimeout(function () {
@@ -5745,7 +5823,7 @@ btn.dataset.busy = "1";
         }
 
         fetch(
-            "/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""),
+            "/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + (listingKey ? "&listing_key=" + encodeURIComponent(listingKey) : "") + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""),
             {
                 method: "POST",
                 cache: "no-store",
@@ -6311,10 +6389,12 @@ btn.dataset.busy = "1";
         clearTimeout(btn.__leadbotDeleteResetTimer);
 
         const file = selectedFile();
-        const domain = domainFromButton(btn);
         const card = btn.closest(".lead-card, article.card, .card");
+        // Google Maps cards are keyed by their stable listing ID, not domain.
+        const listingKey = card && card.dataset ? (card.dataset.listingKey || "") : "";
+        const domain = listingKey ? "" : domainFromButton(btn);
 
-        if (!file || !domain) {
+        if (!file || (!domain && !listingKey)) {
             resetButton(btn);
             alert("Could not delete this lead because the file or domain was missing.");
             return false;
@@ -6324,7 +6404,7 @@ btn.dataset.busy = "1";
         btn.textContent = "Deleting...";
         btn.classList.add("is-deleting");
 
-        fetch("/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""), {
+        fetch("/lead-bot/delete-row-safe?filename=" + encodeURIComponent(file) + "&domain=" + encodeURIComponent(domain) + (listingKey ? "&listing_key=" + encodeURIComponent(listingKey) : "") + "&csrf_token=" + encodeURIComponent(window.LEADBOT_CSRF_TOKEN || ""), {
             method: "POST",
             credentials: "same-origin",
             cache: "no-store"
@@ -6465,8 +6545,11 @@ btn.dataset.busy = "1";
     async function saveCard(card, button) {
         const file = currentFile() || cardFilename(card);
         const domain = cardDomain(card);
+        // Google Maps cards are keyed by their stable listing ID, not domain
+        // (several may share one website or have none).
+        const listingKey = card && card.dataset ? (card.dataset.listingKey || "") : "";
 
-        if (!file || !domain) {
+        if (!file || (!domain && !listingKey)) {
             setButtonState(button, "Missing File", "error");
             setTimeout(function () { setButtonState(button, "Save Details", ""); }, 1800);
             console.log("LeadBot save details missing file/domain", {
@@ -6481,6 +6564,7 @@ btn.dataset.busy = "1";
         const data = new FormData();
         data.set("filename", file);
         data.set("domain", domain);
+        if (listingKey) data.set("listing_key", listingKey);
         data.set("phone", getValue(card, "phone"));
         data.set("email", getValue(card, "email"));
         data.set("website", getValue(card, "website"));
@@ -9319,6 +9403,9 @@ def _actii_crm_modal(csrf_token=""):
 .lead-crm-action,.leadbot-save-details-row {{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }}
 .leadbot-save-details-row > button,.lead-crm-action > button {{ margin-top:0 !important; }}
 .lead-add-crm:disabled {{ opacity:.65; cursor:default; }}
+.lead-action-disabled {{ background:#f1f5f9; color:#64748b; border:1px dashed #94a3b8; border-radius:999px; padding:6px 12px; min-height:28px; font:inherit; font-size:10px; line-height:1; font-weight:700; cursor:not-allowed; }}
+.lead-action-disabled-why {{ flex-basis:100%; color:#64748b; font-size:11px; }}
+@media(max-width:700px) {{ .leadbot-save-details-row > .lead-action-disabled {{ min-height:44px; font-size:12px; flex:1 1 auto; }} }}
 .lead-add-crm:focus-visible,.crm-actions button:focus-visible {{ outline:3px solid #2563eb; outline-offset:3px; }}
 .lead-crm-result {{ overflow-wrap:anywhere; }}
 @media(max-width:700px) {{ .leadbot-save-details-row > .lead-add-crm {{ min-height:44px; font-size:12px; flex:1 1 auto; }} }}

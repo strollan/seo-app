@@ -582,8 +582,12 @@ def _raw_find_business_competitors(keyword, own_domain=None, location="United St
 
     organic_results = []
 
+    # Safe Mode (DataForSEO OFF) means no paid discovery request of any kind,
+    # so the paid Serper path is skipped too (agents/discovery_spend_guard.py).
+    from agents.discovery_spend_guard import paid_discovery_enabled
+
     for serp_page in pages:
-        if _leadbot_use_live_serp():
+        if _leadbot_use_live_serp() and paid_discovery_enabled():
             try:
                 data = google_search(keyword, location=location, page=serp_page, num=10)
                 page_results = get_organic_results(data)

@@ -769,7 +769,10 @@ def find_leads(
     # organic SERPs are packed with listicles, directories, travel sites, and
     # forums. Only run this (and only score/emit as many as still needed) if
     # the organic pages above did not already fill the quota.
-    if not quota_reached and not disable_places_main:
+    # Google Places is a paid request: never in Safe Mode (DataForSEO OFF).
+    from agents.discovery_spend_guard import paid_discovery_enabled as _paid_discovery_enabled
+
+    if not quota_reached and not disable_places_main and _paid_discovery_enabled():
         try:
             places_text = f"{industry} {service_keyword} {query}".lower()
             places_terms = (
