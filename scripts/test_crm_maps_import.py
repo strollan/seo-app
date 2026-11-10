@@ -318,7 +318,9 @@ class CardsTokenTests(unittest.TestCase):
         session, page_token = case.login(case.client, "user1")
         response = case.client.get(f"/lead-bot/cards/{case.export.filename}", headers={"X-LeadBot-CSRF": page_token})
         self.assertEqual(response.status_code, 200)
-        self.assertIn(page_token, response.text)
+        # Cards no longer embed the token (the old hard-delete form did); Block/
+        # Delete read the page's actiiCrmConfig token. Reuse = no rotation:
+        self.assertIn('class="lead-card-manage"', response.text)
         from agents.auth_agent import verify_csrf_token
         self.assertTrue(verify_csrf_token(session, page_token))
 

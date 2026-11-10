@@ -220,7 +220,7 @@ class DashboardCardTests(unittest.TestCase):
         for row in maps_rows():
             key = row_listing_key(row)
             self.assertIn(f'data-listing-key="{key}"', html_out)
-            self.assertEqual(html_out.count(f'name="listing_key" value="{key}"'), 3, key)  # delete, details, address
+            self.assertEqual(html_out.count(f'name="listing_key" value="{key}"'), 2, key)  # details, address
         # Add to CRM for every listing, keyed by its Google ID (website or not).
         self.assertEqual(html_out.count('class="lead-add-crm"'), len(maps_rows()))
         for row in maps_rows():
@@ -228,7 +228,8 @@ class DashboardCardTests(unittest.TestCase):
         # Compare needs a single verified website: chain rows share one, so it is
         # shown disabled, with the reason.
         self.assertNotIn('class="lead-top-competitor"', html_out)
-        self.assertEqual(html_out.count('class="lead-delete-one"'), len(maps_rows()))
+        # Delete/Block now come from .lead-card-manage (scripts/test_lead_card_block_delete.py).
+        self.assertNotIn('class="lead-delete-one"', html_out)
         self.assertEqual(html_out.count('class="lead-action-disabled" disabled'), len(maps_rows()))
         self.assertEqual(html_out.count("this business has no website"), 2 * 4)  # title + note, 4 no-site rows
         self.assertEqual(html_out.count("several locations share this website"), 2 * 2)

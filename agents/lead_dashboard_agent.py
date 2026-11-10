@@ -661,11 +661,28 @@ def leadbot_search_summary_row(rows, selected_name=""):
 
 
 
-def lead_cards(rows, selected_name="", csrf_token=""):
-    if not rows:
-        return '<div class="empty">No leads found yet. Start a scan or select an export.</div>'
+def lead_cards(rows, selected_name="", csrf_token="", owner_key=""):
+    # Per-user Block/Delete state (agents/lead_card_actions_agent.py): leads the
+    # signed-in user deleted from this export, or blocked, are not rendered. The
+    # hidden keys are emitted so the Live Scan page can hide its own copies too.
+    hidden_keys_html = ""
+    manage_enabled = bool(owner_key and selected_name and selected_name != "leadbot_master.csv")
+    if owner_key and rows:
+        from agents.lead_card_actions_agent import row_lead_key, visible_rows
+        kept = visible_rows(rows, owner_key, selected_name)
+        kept_ids = {id(r) for r in kept}
+        hidden = sorted({row_lead_key(r) for r in rows if id(r) not in kept_ids} - {""})
+        if hidden:
+            hidden_keys_html = (
+                '<div class="lead-hidden-keys" hidden data-keys="'
+                + html.escape(json.dumps(hidden), quote=True) + '"></div>'
+            )
+        rows = kept
 
-    cards = []
+    if not rows:
+        return hidden_keys_html + '<div class="empty">No leads found yet. Start a scan or select an export.</div>'
+
+    cards = [hidden_keys_html] if hidden_keys_html else []
 
     # Google Maps exports can hold several locations of one chain sharing a
     # website; website-keyed actions (CRM/Compare) would be ambiguous there.
@@ -910,20 +927,24 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 f'<small class="lead-action-disabled-why">{html.escape(why_disabled)}</small>'
             )
 
-        delete_html = ""
-        if selected_name and selected_name != "leadbot_master.csv" and (listing_key if is_maps_row else domain):
-            safe_file = html.escape(selected_name)
-            safe_domain = html.escape(domain)
-            safe_csrf = html.escape(csrf_token or "")
-            delete_html = (
-                f'<form class="lead-delete-one-form" method="post" '
-                f'action="/lead-bot/delete-row/{safe_file}" '
-                f'onsubmit="return confirm(&quot;Delete this lead from this export?&quot;);">'
-                f'<input type="hidden" name="domain" value="{safe_domain}">'
-                f'{listing_key_input}'
-                f'<input type="hidden" name="csrf_token" value="{safe_csrf}">'
-                f'<button type="submit" class="lead-delete-one">Delete</button>'
-                f'</form>'
+        # Block / Delete (agents/lead_card_actions_agent.py), keyed by the
+        # lead's stable identity: Maps listing ID, else the organic domain.
+        manage_html = ""
+        from agents.lead_card_actions_agent import row_lead_key
+        lead_key = row_lead_key(row)
+        if manage_enabled and lead_key:
+            if is_maps_row:
+                block_title = "Hide this Google Maps listing from your future scans (other locations are not affected)"
+            else:
+                block_title = "Hide this website from your future scans"
+            manage_html = (
+                '<div class="lead-card-manage" role="group" aria-label="Manage lead" '
+                f'data-lead-key="{html.escape(lead_key, quote=True)}" '
+                f'data-source-file="{html.escape(selected_name, quote=True)}" '
+                f'data-title="{html.escape(title, quote=True)}">'
+                f'<button type="button" class="lead-card-block" title="{html.escape(block_title, quote=True)}">Block</button>'
+                '<button type="button" class="lead-card-delete" title="Remove this lead from these saved results">Delete</button>'
+                '</div>'
             )
 
         if is_maps_row:
@@ -940,7 +961,6 @@ def lead_cards(rows, selected_name="", csrf_token=""):
 
         cards.append(f"""
         <article class="lead-card"{(' data-listing-key="' + listing_key_attr + '"') if listing_key else ''}>
-            {delete_html}
             <div class="lead-head">
                 <div>
                     <h3>{html.escape(title)}</h3>
@@ -1003,6 +1023,7 @@ def lead_cards(rows, selected_name="", csrf_token=""):
                 <p>{html.escape(why_line3)}</p>
                 <p>{html.escape(why_line4)}</p>
             </div>
+            {manage_html}
         </article>
         """)
 
@@ -4946,6 +4967,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         document.querySelectorAll(".lead-card").forEach(function (card) {
+            // Cards rendered with Block/Delete (.lead-card-manage) need no legacy links.
+            if (card.querySelector(".lead-card-manage")) return;
             const domainEl = card.querySelector(".domain");
             const domain = cleanDomain(domainEl ? domainEl.textContent : "");
 
@@ -9377,7 +9400,11 @@ body.leadbot-live-page button[data-action="block"] {
     page = page.replace("__SELECTED__", html.escape(selected_name))
     page = page.replace("__COUNT__", str(len(rows)))
     page = page.replace("__DOWNLOAD__", download)
-    page = page.replace("__CARDS__", lead_cards(rows, selected_name=selected.name if selected else "", csrf_token=csrf_token))
+    from agents.leadbot_block_gate import blocklist_owner_key as _lca_owner_key
+    page = page.replace("__CARDS__", lead_cards(
+        rows, selected_name=selected.name if selected else "", csrf_token=csrf_token,
+        owner_key=_lca_owner_key(current_user) if current_user else "",
+    ))
     page = page.replace(
         "__HISTORY_NAV_LINK__",
         '<a href="/history">History</a>\n                ' if current_user else "",
@@ -9463,6 +9490,21 @@ def _actii_crm_modal(csrf_token=""):
 </dialog>
 <script type="application/json" id="actiiCrmConfig">{token}</script>
 <script src="/static/actii-crm.js?v=2026-11-10-crm-autopickup" defer></script>
+<style>
+.lead-card-manage {{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }}
+.lead-card-manage button {{ margin:0 !important; border-radius:999px; padding:6px 12px; min-height:28px; font:inherit; font-size:10px; line-height:1; font-weight:700; cursor:pointer; }}
+.lead-card-block {{ background:#fff; color:#334155; border:1px solid #94a3b8; }}
+.lead-card-delete {{ background:#fff; color:#b91c1c; border:1px solid #fca5a5; }}
+.lead-card-block:hover,.lead-card-block:focus-visible {{ background:#f1f5f9; }}
+.lead-card-delete:hover,.lead-card-delete:focus-visible {{ background:#fef2f2; }}
+.lead-card-manage button:focus-visible,.lead-card-undo button:focus-visible {{ outline:3px solid #2563eb; outline-offset:2px; }}
+.lead-card-manage button:disabled {{ opacity:.6; cursor:default; }}
+.lead-card-undo {{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; border:1px dashed #94a3b8; border-radius:14px; background:#f8fafc; padding:12px 16px; margin:0 0 14px; color:#334155; font-size:13px; }}
+.lead-card-undo button {{ background:#123d8b; color:#fff; border:0; border-radius:999px; padding:7px 14px; min-height:28px; font:inherit; font-size:11px; font-weight:700; cursor:pointer; }}
+.lead-card-action-error {{ flex-basis:100%; color:#b91c1c; font-size:11px; text-align:right; }}
+@media(max-width:700px) {{ .lead-card-manage button,.lead-card-undo button {{ min-height:44px; font-size:12px; flex:1 1 auto; }} }}
+</style>
+<script src="/static/lead-card-actions.js?v=2026-11-10-block-delete" defer></script>
 """
 
 # === LEADBOT CSV SIZE CAP START ===

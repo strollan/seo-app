@@ -149,8 +149,13 @@ def build_candidate_funnel(
     market: str,
     limit: int,
     blocked_domains: Iterable[str] = (),
+    blocked_listing_keys: Iterable[str] = (),
 ) -> Dict[str, Any]:
-    """Raw provider items -> ordered eligible listings, with reconciled counts."""
+    """Raw provider items -> ordered eligible listings, with reconciled counts.
+
+    blocked_listing_keys: the user's personally blocked Maps listings
+    ("place_id:..."/"cid:..."); they block that one listing only.
+    """
     from agents import dataforseo_maps_agent as maps
     from agents.leadbot_block_gate import lead_matches_blocked_domains
 
@@ -162,6 +167,8 @@ def build_candidate_funnel(
     rejected: Dict[str, List[Dict[str, Any]]] = {"off_category": [], "ineligible": [], "blocked": []}
     eligible: List[Dict[str, Any]] = []
     blocked = set(blocked_domains or ())
+    blocked_listings = set(blocked_listing_keys or ())
+    from agents.lead_row_identity import row_listing_key
     for row in unique:
         relevant, why = category_relevance(row, keyword)
         row["relevance"] = why
@@ -169,6 +176,8 @@ def build_candidate_funnel(
             rejected["off_category"].append(row)
         elif not row.get("lead_eligible", True):
             rejected["ineligible"].append(row)
+        elif blocked_listings and row_listing_key(row) in blocked_listings:
+            rejected["blocked"].append(row)
         elif row.get("domain") and _is_blocked(row, blocked, lead_matches_blocked_domains):
             rejected["blocked"].append(row)
         else:
@@ -463,6 +472,8 @@ def run_maps_job(job_id: str, post: Optional[Callable[..., Any]] = None,
 
         from agents.leadbot_block_gate import blocklist_owner_key, load_effective_blocked_domains
         blocked_domains = load_effective_blocked_domains(blocklist_owner_key(params))
+        from agents.lead_card_actions_agent import blocked_listing_keys
+        blocked_listings = blocked_listing_keys(blocklist_owner_key(params))
 
         discovery: Dict[str, Any] = {"source": DISCOVERY_SOURCE, "requested": total_limit, "requests": 0}
         job.update({
@@ -511,7 +522,8 @@ def run_maps_job(job_id: str, post: Optional[Callable[..., Any]] = None,
                 finish_error("search_provider_unavailable", live.SEARCH_PROVIDER_UNAVAILABLE_MESSAGE, discovery)
             return
 
-        funnel = build_candidate_funnel(result["items"], keyword, market, total_limit, blocked_domains)
+        funnel = build_candidate_funnel(result["items"], keyword, market, total_limit, blocked_domains,
+                                        blocked_listings)
         counts = funnel["counts"]
         discovery.update({"requests": guard.total_calls, "provider_status": result["status"], "funnel": counts})
         try:

@@ -13603,7 +13603,11 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
         page_token = str(request.headers.get("x-leadbot-csrf") or "").strip()
         if not (page_token and _csrf_token_valid(request, page_token)):
             page_token = _get_or_create_csrf_token(request)
-        return AuthHTMLResponse(lead_cards(rows, selected_name=path.name, csrf_token=page_token))
+        from agents.leadbot_block_gate import blocklist_owner_key
+        return AuthHTMLResponse(lead_cards(
+            rows, selected_name=path.name, csrf_token=page_token,
+            owner_key=blocklist_owner_key(user),
+        ))
 
     except Exception as exc:
         print(f"LEADBOT SELECTED CSV CARD FALLBACK ERROR: {exc}", flush=True)
@@ -14990,6 +14994,28 @@ async function addCompletedLiveCrmActions(job) {{
         const disabledActions = card.querySelector(".lead-actions-disabled");
         if (disabledActions) card.insertBefore(action, disabledActions); else card.appendChild(action);
     }});
+
+    // Block / Delete (/static/lead-card-actions.js): the saved cards carry the
+    // controls and the leads this user already deleted or blocked. Live cards are
+    // matched by Maps listing ID, else by the organic website's domain.
+    function liveLeadKey(item) {{
+        if (item.dataset.listingKey) return item.dataset.listingKey;
+        const d = String(item.dataset.crmDomain || "").replace(/^www\\d*\\./, "");
+        return d ? "domain:" + d : "";
+    }}
+    const liveByKey = new Map();
+    liveCards.forEach(function (item) {{ const k = liveLeadKey(item); if (k && !liveByKey.has(k)) liveByKey.set(k, item); }});
+    savedCards.content.querySelectorAll(".lead-hidden-keys").forEach(function (el) {{
+        let keys = [];
+        try {{ keys = JSON.parse(el.dataset.keys || "[]"); }} catch (_) {{}}
+        keys.forEach(function (k) {{ const item = liveByKey.get(k); if (item) item.remove(); }});
+    }});
+    savedCards.content.querySelectorAll(".lead-card-manage").forEach(function (group) {{
+        if (group.dataset.sourceFile !== filename) return;
+        const item = liveByKey.get(String(group.dataset.leadKey || ""));
+        if (!item || !item.isConnected || item.querySelector(".lead-card-manage")) return;
+        item.appendChild(group.cloneNode(true));
+    }});
 }}
 
 // Builds the SCAN console line from the job's actual submitted keyword/
@@ -15389,6 +15415,75 @@ def leadbot_global_block_remove(
         return LeadBotHTMLResponse("Enter a valid domain or URL.", status_code=400)
     remove_main_blocked_domain(clean)
     return LeadBotRedirectResponse(url="/lead-bot#exports", status_code=303)
+
+
+@app.post("/lead-bot/lead-action")
+def leadbot_lead_card_action(
+    request: AuthRequest,
+    action: str = AuthForm(""),
+    filename: str = AuthForm(""),
+    lead_key: str = AuthForm(""),
+    csrf_token: str = AuthForm(""),
+):
+    """Per-lead Block / Delete (and their Undo) for Lead Finder cards.
+
+    delete/restore: per-user soft delete inside one saved export; the CSV is
+    not rewritten. block/unblock: personal block (Maps listing ID, or the
+    organic lead's domain). Never touches ACT II or the CRM import queue.
+    """
+    from agents import lead_card_actions_agent as lca
+    from agents.lead_dashboard_agent import read_csv_rows, safe_export_file
+    from agents.leadbot_block_gate import blocklist_owner_key
+
+    def fail(status, code, message):
+        return JSONResponse({"ok": False, "error_code": code, "error": message}, status_code=status)
+
+    user = auth_current_user(request)
+    if not user:
+        return fail(401, "signed_out", "Please sign in again.")
+    if not _csrf_token_valid(request, csrf_token):
+        return fail(403, "csrf_stale", "Your session token expired. Try again.")
+
+    action = str(action or "").strip().lower()
+    if action not in {"delete", "restore", "block", "unblock"}:
+        return fail(400, "bad_action", "Unknown action.")
+    key = lca.clean_lead_key(lead_key)
+    if not key:
+        return fail(400, "bad_lead", "This lead has no stable identity to act on.")
+
+    safe_name = Path(str(filename or "")).name
+    if not safe_name or safe_name != str(filename or "") or safe_name == "leadbot_master.csv":
+        return fail(400, "bad_export", "Choose a saved export first.")
+    path = safe_export_file(safe_name)
+    if not path or not leadbot_user_can_access_export(safe_name, request):
+        return fail(403, "not_your_export", "You can only change your own Lead Finder results.")
+
+    owner = blocklist_owner_key(user)
+    if not owner:
+        return fail(403, "no_owner", "Your account has no owner key.")
+
+    title = ""
+    if action in {"delete", "block"}:
+        # The lead must really be in this export: never act on an invented key.
+        match = next((r for r in read_csv_rows(path, limit=5000) if lca.row_lead_key(r) == key), None)
+        if match is None:
+            return fail(404, "lead_not_found", "This lead is no longer in these results.")
+        title = str(match.get("business") or match.get("title") or "").strip()
+
+    if action == "delete":
+        ok = lca.delete_lead(owner, safe_name, key, title)
+    elif action == "restore":
+        ok = lca.restore_lead(owner, safe_name, key)
+    elif action == "block":
+        ok = lca.block_lead(owner, key, title)
+    else:
+        ok = lca.unblock_lead(owner, key)
+    if not ok:
+        return fail(500, "not_saved", "That change could not be saved. Try again.")
+    return JSONResponse({
+        "ok": True, "action": action, "lead_key": key,
+        "scope": "listing" if lca.is_listing_key(key) else "domain",
+    })
 # === LEADBOT DOMAIN BLOCK ROUTE END ===
 
 
