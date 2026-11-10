@@ -221,14 +221,17 @@ class DashboardCardTests(unittest.TestCase):
             key = row_listing_key(row)
             self.assertIn(f'data-listing-key="{key}"', html_out)
             self.assertEqual(html_out.count(f'name="listing_key" value="{key}"'), 3, key)  # delete, details, address
-        # Chain rows share a website: no CRM / Compare for either location.
-        self.assertNotIn("lead-add-crm", html_out)
+        # Add to CRM for every listing, keyed by its Google ID (website or not).
+        self.assertEqual(html_out.count('class="lead-add-crm"'), len(maps_rows()))
+        for row in maps_rows():
+            self.assertIn(f'data-listing-key="{row_listing_key(row)}">Add to CRM</button>', html_out)
+        # Compare needs a single verified website: chain rows share one, so it is
+        # shown disabled, with the reason.
         self.assertNotIn('class="lead-top-competitor"', html_out)
         self.assertEqual(html_out.count('class="lead-delete-one"'), len(maps_rows()))
-        # ...but they are shown disabled, with the reason.
-        self.assertEqual(html_out.count('class="lead-action-disabled" disabled'), 2 * len(maps_rows()))
-        self.assertEqual(html_out.count("this business has no website"), 3 * 4)  # 2 titles + note, 4 no-site rows
-        self.assertEqual(html_out.count("Several locations share this website"), 3 * 2)
+        self.assertEqual(html_out.count('class="lead-action-disabled" disabled'), len(maps_rows()))
+        self.assertEqual(html_out.count("this business has no website"), 2 * 4)  # title + note, 4 no-site rows
+        self.assertEqual(html_out.count("several locations share this website"), 2 * 2)
 
 
 class ChainLocationTests(unittest.TestCase):

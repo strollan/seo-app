@@ -107,6 +107,18 @@ def from_export(path, source_domain, jobs_dir=None):
         return None
     result = {key: matched[0][key] if all(m[key] == matched[0][key] for m in matched)
               else (None if key in {"serp_page", "serp_position"} else "") for key in FIELDS}
+    return _with_job_params(result, path, jobs_dir, any(recorded_base))
+
+
+def from_export_row(path, row, jobs_dir=None):
+    """Metadata for ONE already-identified export row (Google Maps listings,
+    which are identified by place ID/CID, not by domain)."""
+    if not isinstance(row, dict):
+        return None
+    return _with_job_params(from_row(row), path, jobs_dir, bool(first(row, "base_keyword")))
+
+
+def _with_job_params(result, path, jobs_dir, has_recorded_base):
     if jobs_dir is not None and jobs_dir.is_dir():
         # A job's scan parameters retain the original search, including when
         # an older CSV omitted base_keyword. Only exact export links qualify.
@@ -117,7 +129,7 @@ def from_export(path, source_domain, jobs_dir=None):
             job = jobs[0]
             params = job.get("params") if isinstance(job.get("params"), dict) else {}
             original_keyword = first(params, "base_keyword", "keyword")
-            if not any(recorded_base) and original_keyword:
+            if not has_recorded_base and original_keyword:
                 result["base_keyword"] = original_keyword
             result["search_location"] = result["search_location"] or first(params, "market")
             result["scan_date"] = result["scan_date"] or scan_date(job.get("created_at"))

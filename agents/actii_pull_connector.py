@@ -11,8 +11,9 @@ from urllib.parse import urlsplit
 import requests
 
 from agents.actii_file_store import atomic_json, file_lock, private_directory, read_json
-from agents.actii_queue_agent import (COMPARE_REPORT, ID, LEAD_IMPORT, MAX_PAYLOAD, OUTCOMES, REPORT_TIMESTAMP, QueueError,
-                                     payload_hash, timestamp, verify_website)
+from agents.actii_queue_agent import (COMPARE_REPORT, ID, LEAD_IMPORT, MAPS_SOURCE_PREFIX, MAX_PAYLOAD, OUTCOMES,
+                                     REPORT_TIMESTAMP, QueueError, maps_source_ref, payload_hash, timestamp,
+                                     verify_maps_lead, verify_website)
 
 LOCAL_ORIGIN = "http://127.0.0.1:8842"
 
@@ -106,6 +107,15 @@ class PullConnector:
             elif job.get("kind", LEAD_IMPORT) == LEAD_IMPORT:
                 if set(payload) != {"owner_id", "source_ref", "lead"} or payload["owner_id"] != self.config["username"]:
                     raise ValueError
+                if "listing_key" in job:
+                    # Google Maps listing: identity is the place ID/CID; a website is optional.
+                    if (not isinstance(job["listing_key"], str)
+                            or payload["source_ref"] != maps_source_ref(job["listing_key"])
+                            or not payload["source_ref"].startswith(MAPS_SOURCE_PREFIX)
+                            or not isinstance(job["source_domain"], str)):
+                        raise ValueError
+                    verify_maps_lead(payload["lead"], job["source_domain"], job["listing_key"])
+                    return
                 reference = payload["source_ref"].split(":")
                 if (len(reference) != 3 or reference[0] != "leadmeleads" or not reference[1].endswith(".csv")
                         or any(c in reference[1] for c in ("/", "\\")) or reference[2] != job["source_domain"]):

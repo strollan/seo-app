@@ -5,7 +5,7 @@
   const config = document.getElementById('actiiCrmConfig');
   if (!dialog || !form || !config || dialog.dataset.connected) return;
   dialog.dataset.connected = 'true';
-  const csrfToken = JSON.parse(config.textContent);
+  let csrfToken = JSON.parse(config.textContent);
   const message = document.getElementById('actiiCrmMessage');
   const save = form.querySelector('.crm-save');
   const cancel = document.getElementById('actiiCrmCancel');
@@ -22,7 +22,23 @@
   let checking = false;
   let pollTimer = null, polls = 0;
 
-  function key(file, domain) { return JSON.stringify([file, domain]); }
+  // Google Maps leads are one CRM contact per listing (place ID/CID) in every scan;
+  // organic leads are keyed by their saved export and domain.
+  function key(file, domain, listing) { return listing ? 'listing:' + listing : JSON.stringify([file, domain]); }
+
+  // Each page render issues a new form token, so a page left open (or a finished
+  // scan that loaded its saved cards) can hold an outdated one. That is not a
+  // signed-out session: fetch a fresh token for this page once and retry.
+  async function refreshToken() {
+    const response = await fetch('/lead-bot/csrf-token', {credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000)});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || typeof data.csrf_token !== 'string' || !data.csrf_token) return false;
+    csrfToken = data.csrf_token;
+    config.textContent = JSON.stringify(csrfToken);
+    if ('LEADBOT_CSRF_TOKEN' in window) window.LEADBOT_CSRF_TOKEN = csrfToken;
+    document.querySelectorAll('input[name="csrf_token"]').forEach(input => { input.value = csrfToken; });
+    return true;
+  }
 
   function localLink(data) {
     const target = new URL(String(data.open_url || ''));
@@ -64,7 +80,7 @@
 
   function applyJobs() {
     document.querySelectorAll('.lead-add-crm').forEach(button => {
-      const job = jobs.get(key(button.dataset.sourceFile, button.dataset.sourceDomain));
+      const job = jobs.get(key(button.dataset.sourceFile, button.dataset.sourceDomain, button.dataset.listingKey));
       if (job) paint(button, job);
     });
   }
@@ -77,7 +93,7 @@
       if (!response.ok) return;
       const data = await response.json();
       if (data.ok !== true || !Array.isArray(data.jobs)) return;
-      data.jobs.forEach(job => jobs.set(key(job.source_file, job.source_domain), job));
+      data.jobs.forEach(job => jobs.set(key(job.source_file, job.source_domain, job.listing_key), job));
       applyJobs();
       schedulePoll();
     } catch (_) {
@@ -106,7 +122,7 @@
     if (!button || button.disabled || busy) return;
     try {
       const lead = JSON.parse(button.dataset.lead);
-      source = {file: button.dataset.sourceFile, domain: button.dataset.sourceDomain, button};
+      source = {file: button.dataset.sourceFile, domain: button.dataset.sourceDomain, listing: button.dataset.listingKey || '', button};
       form.reset();
       Object.entries(lead).forEach(([name, value]) => {
         const field = form.elements.namedItem(name === 'industry' ? 'crm_industry' : name);
@@ -117,6 +133,9 @@
         const input = card && card.querySelector('input[name="' + name + '"]');
         if (input) form.elements.namedItem(name).value = input.value;
       });
+      // A Google Maps lead keeps the website it was verified with, or none.
+      form.elements.namedItem('website').readOnly = Boolean(source.listing);
+      if (source.listing) form.elements.namedItem('website').value = lead.website || '';
       message.textContent = '';
       save.disabled = false;
       save.textContent = 'Add Contact';
@@ -139,15 +158,27 @@
     message.textContent = 'Adding to ACT II\u2026';
     let confirmed = false;
     try {
-      const response = await fetch('/lead-bot/add-to-crm', {
+      const lead = Object.fromEntries(new FormData(form).entries());
+      const send = () => fetch('/lead-bot/add-to-crm', {
         method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
         signal: AbortSignal.timeout(20000),
         body: JSON.stringify({csrf_token: csrfToken, source_file: current.file,
-          source_domain: current.domain, lead: Object.fromEntries(new FormData(form).entries())})
+          source_domain: current.domain, listing_key: current.listing, lead})
       });
-      const data = await response.json();
+      let response = await send();
+      let data = await response.json();
+      if (response.status === 403 && data.error_code === 'csrf_stale' && await refreshToken()) {
+        response = await send();  // same request; the queue keeps one job per lead
+        data = await response.json();
+      }
       if (!response.ok || data.ok !== true) {
         message.textContent = data.error || 'CRM request failed. Refresh and check the connection.';
+        if (data.error_code === 'signed_out') {
+          const link = document.createElement('a');
+          link.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+          link.textContent = 'Sign in';
+          message.append(' ', link);
+        }
         return;
       }
       if (!data.state) {
@@ -156,7 +187,7 @@
         data.state = data.status === 'created' ? 'added' : 'already_present';
         data.message = data.status === 'created' ? 'Added to CRM.' : 'Already present in CRM.';
       } else {
-        jobs.set(key(current.file, current.domain), data);
+        jobs.set(key(current.file, current.domain, current.listing), data);
       }
       paint(current.button, data);
       message.textContent = notes[data.state] || data.message;

@@ -67,8 +67,19 @@ def lead_payload(row: dict, source_file: str) -> dict:
     metadata = from_row(row)
     website = first(row, "website", "url", "domain")
     source_domain = domain(first(row, "domain", "website", "url"))
+    maps = maps_listing_fields(row)
+    if maps is not None and maps["website_verified"] != "true":
+        # Google Maps listing without a website we verified ourselves: the CRM
+        # stores the website as missing. Never invent or keep an unverified domain.
+        website = source_domain = ""
     notes = ["Imported from LeadMeLeads.", f"Original scan: {source_file}.",
-             f"Domain: {source_domain}."]
+             f"Domain: {source_domain}." if source_domain else "Domain: none (no verified website)."]
+    if maps is not None:
+        for label, value in (("Google Maps category", maps["category"]), ("Google place ID", maps["place_id"]),
+                             ("Google CID", maps["cid"]), ("Google Maps listing", maps["profile_url"]),
+                             ("Website listed on Google (not verified)", maps["unverified_website"])):
+            if value:
+                notes.append(f"{label}: {value}.")
     for label, value in (
         ("Lead score", metadata["lead_score"]),
         ("Industry/search", metadata["base_keyword"]),
@@ -81,7 +92,7 @@ def lead_payload(row: dict, source_file: str) -> dict:
     ):
         if value:
             notes.append(f"{label}: {value}.")
-    return {
+    payload = {
         "company_name": first(row, "business", "company_name", "business_name", "title", "domain"),
         "person_name": first(row, "contact_name", "person_name", "owner_name"),
         "domain": source_domain, "website": website,
@@ -91,3 +102,18 @@ def lead_payload(row: dict, source_file: str) -> dict:
         "industry": metadata["base_keyword"], "lead_score": metadata["lead_score"],
         "source_note": "\n".join(notes),
     }
+    if maps is not None:
+        payload.update(category=maps["category"], place_id=maps["place_id"], cid=maps["cid"])
+    return payload
+
+
+def maps_listing_fields(row: dict):
+    """Google Maps listing identity for a Maps export row, else None."""
+    from agents.actii_search_metadata_agent import first
+    if not isinstance(row, dict) or "website_status" not in row:
+        return None
+    verified = first(row, "website_verified").lower() == "true"
+    website = first(row, "website", "url")
+    return {"place_id": first(row, "place_id"), "cid": first(row, "cid"), "category": first(row, "category"),
+            "profile_url": first(row, "profile_url"), "website_verified": "true" if verified else "false",
+            "unverified_website": "" if verified else website}

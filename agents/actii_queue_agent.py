@@ -86,8 +86,44 @@ def verify_website(lead, source_domain):
         raise QueueError("Business name is required.", 422)
 
 
+MAPS_SOURCE_PREFIX = "leadmeleads-place:"
+
+
+def maps_source_ref(listing_key):
+    """One CRM identity per Google listing for an owner, the same in every scan,
+    so re-importing it from a later scan never creates a duplicate contact."""
+    from agents.lead_row_identity import clean_listing_key
+    key = clean_listing_key(listing_key)
+    if not key or any(c.isspace() for c in key) or len(key) > 300:
+        raise QueueError("This Google Maps listing has no usable place ID.", 422)
+    return MAPS_SOURCE_PREFIX + key
+
+
+def verify_maps_lead(lead, source_domain, listing_key):
+    """A Google Maps lead: the listing ID is the identity; a website is optional,
+    but one that is present must be the verified one (source_domain)."""
+    from agents.lead_row_identity import clean_listing_key
+    key = clean_listing_key(listing_key)
+    kind, _, ident = key.partition(":")
+    if not key or not isinstance(lead, dict) or str(lead.get(kind) or "").strip() != ident:
+        raise QueueError("This Google Maps listing has no usable place ID.", 422)
+    if not isinstance(lead.get("company_name"), str) or not lead["company_name"].strip():
+        raise QueueError("Business name is required.", 422)
+    website = lead.get("website")
+    if website is None or (isinstance(website, str) and not website.strip()):
+        if source_domain:
+            raise QueueError("Website must retain the original prospect's hostname.", 422)
+        return
+    if not source_domain:
+        raise QueueError("This business has no verified website. Leave the website blank.", 422)
+    verify_website(lead, source_domain)
+
+
 def current_source_authorized(user_id, username, filename, source_domain):
-    """Read-only account lookup, exact export ownership, and current source check."""
+    """Read-only account lookup, exact export ownership, and current source check.
+
+    source_domain is the prospect's domain, or for a Google Maps export a
+    listing key ("place_id:..."/"cid:...") naming exactly one row."""
     from agents.auth_agent import AUTH_DB
     from agents.lead_dashboard_agent import _leadbot_export_exact_owner_values, _leadbot_user_keys, safe_export_file
     from agents.actii_search_metadata_agent import from_export
@@ -101,8 +137,30 @@ def current_source_authorized(user_id, username, filename, source_domain):
         return False
     user = dict(zip(("id", "username", "role"), row))
     path = safe_export_file(filename)
-    return bool(path and _leadbot_user_keys(user) & _leadbot_export_exact_owner_values(filename)
-                and from_export(path, source_domain) is not None)
+    if not (path and _leadbot_user_keys(user) & _leadbot_export_exact_owner_values(filename)):
+        return False
+    from agents.lead_row_identity import clean_listing_key
+    if clean_listing_key(source_domain):
+        return maps_export_row(path, source_domain) is not None
+    return from_export(path, source_domain) is not None
+
+
+def maps_export_row(path, listing_key):
+    """The single Maps-export row for this listing key, else None (read-only)."""
+    import csv
+    from agents.lead_row_identity import is_maps_export, maps_rows_for_key
+    try:
+        if path.stat().st_size > 2 * 1024 * 1024:
+            return None
+        with path.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            rows = list(reader)
+            if not is_maps_export(reader.fieldnames):
+                return None
+    except (OSError, ValueError, csv.Error):
+        return None
+    hits = maps_rows_for_key(rows, listing_key)
+    return rows[hits[0]] if len(hits) == 1 else None
 
 
 # Same file app.main.history_file_path() uses (<repo>/reports/history.json); read only.
@@ -248,7 +306,7 @@ class ImportQueue:
         elif self.clock() >= job["expires_at"]:
             reason = "expired"
         elif not (self.authorize_report if job.get("kind") == COMPARE_REPORT else self.authorize)(
-                job["user_id"], job["username"], job["source_file"], job["source_domain"]):
+                job["user_id"], job["username"], job["source_file"], job.get("listing_key") or job["source_domain"]):
             reason = "authorization_revoked"
         if reason:
             # An outstanding dispatch may already have committed. Never make it retryable.
@@ -263,16 +321,24 @@ class ImportQueue:
     @staticmethod
     def public(job):
         result = {key: job[key] for key in ("id", "state", "source_file", "source_domain", "updated_at")}
+        if job.get("listing_key"):
+            result["listing_key"] = job["listing_key"]
         result.update(ok=True, message=MESSAGES[job["state"]])
         if job.get("contact_id"):
             result["contact_id"] = job["contact_id"]
             result["open_url"] = f"http://127.0.0.1:8842/crm/contacts/{job['contact_id']}"
         return result
 
-    def enqueue(self, user, filename, source_domain, lead):
-        binding = self.authorize_owner(user, filename, source_domain)
-        verify_website(lead, source_domain)
-        source_ref = f"leadmeleads:{filename}:{source_domain}"
+    def enqueue(self, user, filename, source_domain, lead, listing_key=None):
+        if listing_key:
+            source_ref = maps_source_ref(listing_key)
+            listing_key = source_ref[len(MAPS_SOURCE_PREFIX):]
+            binding = self.authorize_owner(user, filename, listing_key)
+            verify_maps_lead(lead, source_domain, listing_key)
+        else:
+            binding = self.authorize_owner(user, filename, source_domain)
+            verify_website(lead, source_domain)
+            source_ref = f"leadmeleads:{filename}:{source_domain}"
         payload = {"owner_id": user["username"], "source_ref": source_ref, "lead": lead}
         if len(json.dumps(payload, ensure_ascii=True).encode()) > MAX_PAYLOAD:
             raise QueueError("Prospect details exceed the CRM import limit.", 422)
@@ -286,6 +352,7 @@ class ImportQueue:
                 raise QueueError("CRM queue limit reached. Try later.", 429)
             job = {"id": uuid.uuid4().hex, "state": "queued", "source_file": filename,
                    "source_domain": source_domain, "source_ref": source_ref,
+                   **({"listing_key": listing_key} if listing_key else {}),
                    **{key: binding[key] for key in ("connector_id", "binding_version", "user_id", "username")},
                    "payload": payload, "payload_hash": payload_hash(payload), "attempts": 0,
                    "created_at": self.clock(), "expires_at": self.clock() + JOB_SECONDS,
@@ -365,7 +432,8 @@ class ImportQueue:
                 self._save(job, "claimed")
                 return {"ok": True, "job": {"kind": job.get("kind", LEAD_IMPORT), **{key: job[key] for key in (
                     "id", "connector_id", "user_id", "username", "binding_version", "payload", "payload_hash",
-                    "source_domain", "lease_id", "lease_until", "expires_at")}}}
+                    "source_domain", "lease_id", "lease_until", "expires_at")},
+                    **({"listing_key": job["listing_key"]} if job.get("listing_key") else {})}}
             return {"ok": True, "job": None}
 
     def acknowledge(self, authorization, body):

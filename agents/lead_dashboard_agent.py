@@ -862,7 +862,16 @@ def lead_cards(rows, selected_name="", csrf_token=""):
         crm_payload = lead_payload(row, selected_name)
         crm_data = html.escape(json.dumps(crm_payload), quote=True)
         crm_button = ""
-        if selected_name and actions_domain:
+        if is_maps_row and selected_name and listing_key:
+            # Google Maps listing: identified by place ID/CID, so it can be added
+            # to the CRM with or without a website (a missing one stays missing).
+            crm_button = (
+                f'<button type="button" class="lead-add-crm" data-lead="{crm_data}" '
+                f'data-source-file="{html.escape(selected_name, quote=True)}" '
+                f'data-source-domain="{html.escape(actions_domain, quote=True)}" '
+                f'data-listing-key="{listing_key_attr}">Add to CRM</button>'
+            )
+        elif selected_name and actions_domain and not is_maps_row:
             crm_button = (
                 f'<button type="button" class="lead-add-crm" data-lead="{crm_data}" '
                 f'data-source-file="{html.escape(selected_name, quote=True)}" '
@@ -881,19 +890,20 @@ def lead_cards(rows, selected_name="", csrf_token=""):
             )
 
         if is_maps_row and selected_name and not actions_domain:
-            # Website-dependent actions shown disabled, with the reason, when
-            # this Maps business has no single verified website.
+            # Website-dependent actions (Compare) shown disabled, with the reason,
+            # when this Maps business has no single verified website.
             if not website:
-                why_disabled = "Needs a verified website: this business has no website."
+                why_disabled = "Compare needs a verified website: this business has no website."
             elif not maps_website_verified:
-                why_disabled = "Needs a verified website: the listed website could not be verified."
+                why_disabled = "Compare needs a verified website: the listed website could not be verified."
             else:
-                why_disabled = "Several locations share this website, so it cannot be used for this lead."
+                why_disabled = "Compare is unavailable: several locations share this website."
             why_attr = html.escape(why_disabled, quote=True)
-            crm_button = (
-                f'<button type="button" class="lead-action-disabled" disabled aria-disabled="true" '
-                f'title="{why_attr}">Add to CRM</button>'
-            )
+            if not listing_key:
+                crm_button = (
+                    f'<button type="button" class="lead-action-disabled" disabled aria-disabled="true" '
+                    f'title="This listing has no Google place ID.">Add to CRM</button>'
+                )
             compare_link = (
                 f'<button type="button" class="lead-action-disabled" disabled aria-disabled="true" '
                 f'title="{why_attr}">Compare with Top Competitor</button>'
@@ -5207,9 +5217,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (!emptyBox && leadsBox && leadsBox.children.length > 0) return;
 
+            let pageToken = "";
+            try { pageToken = JSON.parse((document.getElementById("actiiCrmConfig") || {}).textContent || '""'); } catch (_) {}
             fetch("/lead-bot/cards/" + encodeURIComponent(selectedFile), {
                 cache: "no-store",
-                credentials: "same-origin"
+                credentials: "same-origin",
+                // Keep this page's form token valid (see /lead-bot/cards).
+                headers: pageToken ? {"X-LeadBot-CSRF": String(pageToken)} : {}
             })
             .then(function (res) {
                 // 401/403/404 (denied, forbidden, missing) and any redirect
@@ -9448,7 +9462,7 @@ def _actii_crm_modal(csrf_token=""):
   </form>
 </dialog>
 <script type="application/json" id="actiiCrmConfig">{token}</script>
-<script src="/static/actii-crm.js?v=2026-11-02-add-contact" defer></script>
+<script src="/static/actii-crm.js?v=2026-11-10-maps-crm" defer></script>
 """
 
 # === LEADBOT CSV SIZE CAP START ===

@@ -59,7 +59,7 @@ class CrmImportTests(unittest.TestCase):
         Path('data/leadbot_export_owners.json').write_text(json.dumps({self.file: {'owner_username': 'owner'}}))
         app = FastAPI()
         ns = dict(app=app, AuthRequest=Request, Request=Request, JSONResponse=JSONResponse, AUTH_COOKIE_NAME='vast_session', Path=Path, safe_export_file=dashboard.safe_export_file, _leadbot_export_visible_to_user=dashboard._leadbot_export_visible_to_user)
-        names = {'auth_current_user', '_csrf_token_valid', 'leadbot_user_can_access_export', 'leadbot_add_to_crm'}
+        names = {'auth_current_user', '_csrf_token_valid', '_get_or_create_csrf_token', 'leadbot_user_can_access_export', 'leadbot_add_to_crm', '_leadbot_add_maps_lead_to_crm', 'leadbot_csrf_token'}
         tree = ast.parse((ROOT/'app/main.py').read_text())
         functions = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
         assert {n.name for n in functions} == names

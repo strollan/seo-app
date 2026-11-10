@@ -13257,7 +13257,9 @@ async def leadbot_add_to_crm(request: AuthRequest):
     """Authenticated review form: disabled, explicit local bridge, or bound queue."""
     user = auth_current_user(request)
     if not user:
-        return JSONResponse({"ok": False, "error": "Sign in to add a lead to ACT II."}, status_code=401)
+        # The sign-in itself has ended (or never existed). A finished scan is not this.
+        return JSONResponse({"ok": False, "error_code": "signed_out",
+                             "error": "You are signed out. Sign in again, then add this lead from your saved results."}, status_code=401)
     from agents.actii_queue_routes import limited_json
     from agents.actii_queue_agent import QueueError
     try:
@@ -13265,7 +13267,11 @@ async def leadbot_add_to_crm(request: AuthRequest):
     except QueueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
     if not isinstance(payload, dict) or not _csrf_token_valid(request, str(payload.get("csrf_token") or "")):
-        return JSONResponse({"ok": False, "error": "Your session has expired. Refresh and try again."}, status_code=403)
+        # Signed in, but this page's form token was replaced (each page render issues a
+        # new one, e.g. when a finished scan loads its saved cards). The page can fetch
+        # a fresh token from /lead-bot/csrf-token and retry once.
+        return JSONResponse({"ok": False, "error_code": "csrf_stale",
+                             "error": "This page's security check is out of date. Refresh the page and try again."}, status_code=403)
     import os
     mode = os.getenv("ACTII_CRM_MODE", "disabled")
     if mode not in {"local", "queue"}:
@@ -13278,12 +13284,16 @@ async def leadbot_add_to_crm(request: AuthRequest):
             return JSONResponse({"ok": False, "error": "Refresh this page before queuing an import."}, status_code=403)
     source_file = str(payload.get("source_file") or "").strip()
     source_domain = str(payload.get("source_domain") or "").strip()
+    from agents.lead_row_identity import clean_listing_key
+    listing_key = clean_listing_key(payload.get("listing_key"))
     if (not source_file or source_file != Path(source_file).name or "\\" in source_file
-            or not source_domain or not leadbot_user_can_access_export(source_file, request)):
+            or not (source_domain or listing_key) or not leadbot_user_can_access_export(source_file, request)):
         return JSONResponse({"ok": False, "error": "This lead is not available from one of your exports."}, status_code=403)
     from agents.lead_dashboard_agent import safe_export_file
     from agents.leadbot_block_gate import normalize_domain
     source_path = safe_export_file(source_file)
+    if source_path and listing_key:
+        return _leadbot_add_maps_lead_to_crm(request, user, payload, source_path, listing_key, mode)
     source_domain_normalized = normalize_domain(source_domain)
     from agents.actii_search_metadata_agent import from_export
     search_metadata = from_export(source_path, source_domain_normalized, Path("data/leadbot_live_jobs")) if source_path else None
@@ -13309,14 +13319,9 @@ async def leadbot_add_to_crm(request: AuthRequest):
     if row is None:
         return JSONResponse({"ok": False, "error": "The original lead is no longer available."}, status_code=422)
     if "website_status" in row:
-        # Google Maps exports: the CRM is keyed by website, so only a single
-        # business with a website we verified ourselves may be imported.
-        # Businesses without one ("No Website") and chain locations sharing
-        # one website are not importable yet.
-        if str(row.get("website_verified") or "").strip().lower() != "true":
-            return JSONResponse({"ok": False, "error": "This business has no verified website, so it cannot be added to the CRM yet."}, status_code=422)
-        if len(matching_rows) > 1:
-            return JSONResponse({"ok": False, "error": "Several locations share this website, so it cannot be added to the CRM yet."}, status_code=422)
+        # Google Maps exports are identified by listing (place ID/CID), never by
+        # domain: chain locations share a website and No Website rows share "".
+        return JSONResponse({"ok": False, "error": "Refresh the page, then add this Google Maps lead again."}, status_code=422)
     canonical = lead_payload(row, source_path.name)
     # Only contact details are editable. Ignore browser-supplied owners, ranks and provenance.
     for key in ("company_name", "person_name", "email", "phone", "website", "address"):
@@ -13336,6 +13341,52 @@ async def leadbot_add_to_crm(request: AuthRequest):
     if authorization.status_code != 200:
         return authorization
     result = import_lead(owner_id, source_ref, lead)
+    return JSONResponse(result, status_code=int(result.pop("status_code", 200)), headers={"Cache-Control": "no-store, private"})
+
+
+def _leadbot_add_maps_lead_to_crm(request, user, payload, source_path, listing_key, mode):
+    """Add ONE Google Maps listing (with or without a website) to ACT II.
+
+    Identity is the listing's place ID/CID. The website is sent only when we
+    verified it; otherwise it is stored as missing. Contact fields stay editable,
+    but name/phone/address default to the listing and provenance comes from the export.
+    """
+    from agents.actii_integration_agent import import_lead, lead_payload
+    from agents.actii_queue_agent import maps_export_row, maps_source_ref, QueueError
+    from agents.actii_queue_routes import respond
+    from agents.actii_search_metadata_agent import domain as crm_domain, from_export_row
+    row = maps_export_row(source_path, listing_key)
+    if row is None:
+        return JSONResponse({"ok": False, "error": "This Google Maps listing is no longer in this saved result."}, status_code=422)
+    lead = payload.get("lead")
+    if not isinstance(lead, dict):
+        return JSONResponse({"ok": False, "error": "Business name is required."}, status_code=422)
+    canonical = lead_payload(row, source_path.name)
+    for key in ("company_name", "person_name", "email", "phone", "website", "address"):
+        if key in lead:
+            if not isinstance(lead[key], str) or len(lead[key]) > 2000:
+                return JSONResponse({"ok": False, "error": "A contact field is invalid or too long."}, status_code=422)
+            canonical[key] = lead[key].strip()
+    if not canonical.get("company_name"):
+        return JSONResponse({"ok": False, "error": "Business name is required."}, status_code=422)
+    verified_domain = crm_domain(canonical["domain"]) if canonical.get("domain") else ""
+    canonical["search_metadata"] = from_export_row(source_path, row, Path("data/leadbot_live_jobs"))
+    if mode == "queue":
+        return respond(lambda queue: queue.enqueue(user, source_path.name, verified_domain, canonical, listing_key=listing_key),
+                       accepted=True)
+    owner_id = str((user.get("username") if isinstance(user, dict) else getattr(user, "username", "")) or "").strip()
+    if not owner_id:
+        return JSONResponse({"ok": False, "error": "Your LeadMeLeads account has no CRM owner identifier."}, status_code=403)
+    try:
+        from agents.actii_queue_agent import verify_maps_lead
+        verify_maps_lead(canonical, verified_domain, listing_key)
+        source_ref = maps_source_ref(listing_key)
+    except QueueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
+    authorization = respond(lambda queue: {"ok": bool(queue.authorize_owner(user, source_path.name, listing_key))}, local=True)
+    if authorization.status_code != 200:
+        return authorization
+    result = import_lead(owner_id, source_ref, canonical)
     return JSONResponse(result, status_code=int(result.pop("status_code", 200)), headers={"Cache-Control": "no-store, private"})
 
 
@@ -13540,7 +13591,13 @@ def leadbot_cards_for_selected_export(filename: str, request: AuthRequest):
             )
 
         rows = read_csv_rows(path, limit=100)
-        return AuthHTMLResponse(lead_cards(rows, selected_name=path.name, csrf_token=_get_or_create_csrf_token(request)))
+        # Reuse the calling page's still-valid form token. Issuing a new one here
+        # would invalidate the token the open page already holds (Add to CRM,
+        # delete, save) the moment a finished live scan loads its saved cards.
+        page_token = str(request.headers.get("x-leadbot-csrf") or "").strip()
+        if not (page_token and _csrf_token_valid(request, page_token)):
+            page_token = _get_or_create_csrf_token(request)
+        return AuthHTMLResponse(lead_cards(rows, selected_name=path.name, csrf_token=page_token))
 
     except Exception as exc:
         print(f"LEADBOT SELECTED CSV CARD FALLBACK ERROR: {exc}", flush=True)
@@ -14716,6 +14773,8 @@ function renderMapsLead(lead, jobParams) {{
     // Compare/CRM actions attach only to a verified website (actions_domain).
     div.dataset.crmDomain = String(lead.actions_domain || "").trim().toLowerCase();
     div.dataset.placeId = String(lead.place_id || "");
+    // Add to CRM attaches by the listing's Google ID: with or without a website.
+    div.dataset.listingKey = String(lead.listing_key || "");
     div.innerHTML = `
         <h3>${{esc(lead.title || "Untitled Lead")}}</h3>
         <div class="domain">${{esc(lead.domain || (hasWebsite ? "" : "No Website"))}}</div>
@@ -14748,14 +14807,14 @@ function renderMapsLead(lead, jobParams) {{
     `;
 
     if (!div.dataset.crmDomain) {{
-        // Website-dependent actions stay visible but disabled, with the reason.
-        const why = !hasWebsite ? "Needs a verified website: this business has no website."
-            : !verified ? "Needs a verified website: the listed website could not be verified."
-            : "Several locations share this website, so it cannot be used for this lead.";
+        // Website-dependent actions (Compare) stay visible but disabled, with the
+        // reason. Add to CRM does not need a website; it arrives with the saved cards.
+        const why = !hasWebsite ? "Compare needs a verified website: this business has no website."
+            : !verified ? "Compare needs a verified website: the listed website could not be verified."
+            : "Compare is unavailable: several locations share this website.";
         const off = document.createElement("div");
         off.className = "lead-crm-action lead-actions-disabled";
-        off.innerHTML = '<button type="button" class="lead-action-disabled" disabled aria-disabled="true" title="' + esc(why) + '">Add to CRM</button>' +
-            '<button type="button" class="lead-action-disabled" disabled aria-disabled="true" title="' + esc(why) + '">Compare with Top Competitor</button>' +
+        off.innerHTML = '<button type="button" class="lead-action-disabled" disabled aria-disabled="true" title="' + esc(why) + '">Compare with Top Competitor</button>' +
             '<small class="lead-action-disabled-why">' + esc(why) + '</small>';
         div.appendChild(off);
     }}
@@ -14896,8 +14955,11 @@ async function addCompletedLiveCrmActions(job) {{
     if (IS_GUEST || job.status !== "done" || !job.export_file) return;
 
     const filename = String(job.export_file).split(/[\\/]/).pop();
+    let pageToken = "";
+    try {{ pageToken = JSON.parse((document.getElementById("actiiCrmConfig") || {{}}).textContent || '""'); }} catch (_) {{}}
     const response = await fetch("/lead-bot/cards/" + encodeURIComponent(filename), {{
-        cache: "no-store", credentials: "same-origin"
+        cache: "no-store", credentials: "same-origin",
+        headers: pageToken ? {{"X-LeadBot-CSRF": String(pageToken)}} : {{}}
     }});
     if (!response.ok || response.redirected) return;
 
@@ -14905,16 +14967,22 @@ async function addCompletedLiveCrmActions(job) {{
     savedCards.innerHTML = await response.text();
     const liveCards = Array.from(document.querySelectorAll("#leads .card[data-crm-domain]"));
     savedCards.content.querySelectorAll(".lead-add-crm").forEach(function (button) {{
+        if (button.dataset.sourceFile !== filename) return;
+        const listingKey = String(button.dataset.listingKey || "");
         const domain = String(button.dataset.sourceDomain || "").trim().toLowerCase();
-        if (!domain || button.dataset.sourceFile !== filename) return;
-        const card = liveCards.find(function (item) {{ return item.dataset.crmDomain === domain; }});
+        // Google Maps leads match by listing ID (chain locations share a website and
+        // No Website leads have none); organic leads match by domain.
+        const card = listingKey
+            ? liveCards.find(function (item) {{ return item.dataset.listingKey === listingKey; }})
+            : (domain ? liveCards.find(function (item) {{ return !item.dataset.listingKey && item.dataset.crmDomain === domain; }}) : null);
         if (!card || card.querySelector(".lead-add-crm")) return;
         const action = document.createElement("div");
         action.className = "lead-crm-action";
         action.appendChild(button.cloneNode(true));
         const compare = button.parentElement && button.parentElement.querySelector(".lead-top-competitor");
-        if (compare && compare.dataset.sourceDomain === button.dataset.sourceDomain) action.appendChild(compare.cloneNode(true));
-        card.appendChild(action);
+        if (compare && domain && compare.dataset.sourceDomain === button.dataset.sourceDomain) action.appendChild(compare.cloneNode(true));
+        const disabledActions = card.querySelector(".lead-actions-disabled");
+        if (disabledActions) card.insertBefore(action, disabledActions); else card.appendChild(action);
     }});
 }}
 

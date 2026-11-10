@@ -445,7 +445,8 @@ class EndToEndScanTests(Isolated):
         html = lead_cards(rows, selected_name=job["export_file"], csrf_token="t")
         self.assertEqual(html.count('class="lead-card"'), 25)
         self.assertEqual(html.count(">No Website</span>"), 10)
-        self.assertEqual(html.count('class="lead-add-crm"'), len(verified))
+        # Add to CRM is offered for every listing (identity = place ID); Compare only with a verified website.
+        self.assertEqual(html.count('class="lead-add-crm"'), 25)
         self.assertEqual(html.count('class="lead-top-competitor"'), len(verified))
         self.assertNotIn("leadbot-missing-pill", html)
 
@@ -568,21 +569,23 @@ class MapsCrmTests(unittest.TestCase):
             writer.writeheader()
             writer.writerows(rows)
 
-    def post(self, domain, name):
-        self.payload.update(source_domain=domain, lead=dict(company_name=name))
+    def post(self, domain, name, listing_key=""):
+        self.payload.update(source_domain=domain, listing_key=listing_key, lead=dict(company_name=name))
         return self.client.post("/lead-bot/add-to-crm", json=self.payload)
 
-    def test_no_website_rows_cannot_be_imported(self):
-        for domain in ("", "!!!", "   "):
-            self.assertIn(self.post(domain, "No Site Plumbing").status_code, (403, 422))
+    def test_maps_rows_are_never_selected_by_domain(self):
+        for domain in ("", "!!!", "   ", "chain.example", "good.example"):
+            self.assertIn(self.post(domain, "x").status_code, (403, 422))
         self.transport.assert_not_called()
 
-    def test_unverified_and_chain_rows_rejected_verified_allowed(self):
-        self.assertEqual(self.post("unverified.example", "Unverified Plumbing").status_code, 422)
-        self.assertEqual(self.post("chain.example", "Chain Plumbing").status_code, 422)
-        self.transport.assert_not_called()
-        self.assertEqual(self.post("good.example", "Good Plumbing").status_code, 200)
-        self.assertEqual(self.transport.call_count, 1)
+    def test_every_listing_imports_by_place_id_with_only_verified_websites(self):
+        # Approved 2026-11-10: businesses without (verified) websites can be added to the CRM.
+        cases = [("place_id:ChIJ_none", ""), ("place_id:ChIJ_unv", ""), ("place_id:ChIJ_c1", "https://chain.example/"),
+                 ("place_id:ChIJ_c2", "https://chain.example/"), ("place_id:ChIJ_g", "https://good.example/")]
+        for key, website in cases:
+            self.assertEqual(self.post("", "x", key).status_code, 200, key)
+            self.assertEqual(json.loads(self.transport.call_args.kwargs["data"])["lead"]["website"], website, key)
+        self.assertEqual(self.transport.call_count, len(cases))
 
 
 class Python310CompatibilityTests(unittest.TestCase):
@@ -591,7 +594,9 @@ class Python310CompatibilityTests(unittest.TestCase):
                "agents/lead_live_job_agent.py", "agents/lead_export_agent.py",
                "agents/lead_dashboard_agent.py", "app/main.py", "scripts/leadbot_discovery_ledger.py",
                "agents/lead_row_identity.py", "agents/lead_finding_agent.py", "business_competitor_finder.py",
-               "scripts/test_maps_row_actions.py"]
+               "scripts/test_maps_row_actions.py", "scripts/test_crm_maps_import.py",
+               "agents/actii_queue_agent.py", "agents/actii_pull_connector.py", "agents/actii_integration_agent.py",
+               "agents/actii_search_metadata_agent.py"]
 
     def test_changed_files_parse_as_python_310(self):
         import ast
