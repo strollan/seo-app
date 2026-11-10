@@ -14458,6 +14458,7 @@ body.leadbot-live-final .live-progress-bar {{
 /* === DIRECT LIVE CONSOLE CSS END === */
 
 </style>
+<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-10-lead-snapshot">
 </head>
 <body>
 <div class="container">
@@ -14727,6 +14728,61 @@ function leadbotWhyNoteLines(keyword, market, serpPosition, hasPhone, hasEmail, 
     return [line1, line2, line3, line4];
 }}
 
+// Lead snapshot panel: JS mirror of agents/lead_snapshot_agent.py (keep in step).
+// Saved fields only. Maps/Places positions are never shown as organic rank.
+function leadSnapshotInt(value) {{
+    const n = parseInt(String(value == null ? "" : value).trim(), 10);
+    return Number.isFinite(n) ? n : null;
+}}
+function leadSnapshotHtml(lead) {{
+    const isMaps = lead.discovery_source === "google_maps" || String(lead.source || "").toLowerCase() === "dataforseo_maps";
+    const source = String(lead.source || "").toLowerCase();
+    const page = String(lead.serp_page || "").trim().toLowerCase();
+    let out = '<aside class="lead-snapshot" aria-label="Lead snapshot">';
+
+    let score = leadSnapshotInt(lead.final_lead_score);
+    if (score === null) score = leadSnapshotInt(lead.score);
+    if (score === null) {{
+        out += '<div class="ls-row"><span class="ls-label">Lead score</span><span class="ls-value ls-muted">Not scored</span></div>';
+    }} else {{
+        score = Math.max(0, Math.min(100, score));
+        out += '<div class="ls-row ls-score"><span class="ls-label">Lead score</span><span class="ls-value"><b>' + score + '</b> / 100</span>' +
+            '<span class="ls-bar" role="img" aria-label="Lead score ' + score + ' out of 100"><span style="width:' + score + '%"></span></span></div>';
+    }}
+
+    let organic = null;
+    if (!isMaps && !["dataforseo_maps", "google_places", "google_maps"].includes(source) && !["google maps", "google places"].includes(page)) {{
+        const pos = leadSnapshotInt(lead.serp_position);
+        if (pos !== null && pos >= 1) organic = pos;
+    }}
+    out += '<div class="ls-row"><span class="ls-label">Google organic position</span>' + (organic
+        ? '<span class="ls-value">#' + organic + ' · Results page ' + (Math.floor((organic - 1) / 10) + 1) + '</span>'
+        : '<span class="ls-value ls-muted">Organic rank not checked.</span>') + '</div>';
+
+    const mapsPos = isMaps ? leadSnapshotInt(lead.maps_position) : null;
+    if (mapsPos !== null && mapsPos >= 1) {{
+        out += '<div class="ls-row"><span class="ls-label">Google Maps position</span><span class="ls-value">#' + mapsPos + '</span></div>';
+    }}
+
+    const url = String(lead.url || "").trim();
+    let host = "";
+    try {{ host = new URL(url).hostname.toLowerCase().replace(/^www\\./, ""); }} catch (_) {{}}
+    const googleHost = /(^|\\.)google\\.[a-z.]+$/.test(host) || host === "goo.gl" || host === "g.page" || host === "maps.app.goo.gl";
+    if (url && !googleHost && !["not found", "none", "null", "nan", "missing"].includes(url.toLowerCase())) {{
+        const linkable = /^https?:\\/\\//i.test(url) && !!host;
+        const urlHtml = linkable
+            ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer nofollow">' + esc(url) + '</a>'
+            : esc(url);
+        const tag = (isMaps && lead.website_verified === true)
+            ? '<span class="ls-tag ls-verified">Verified</span>'
+            : '<span class="ls-tag ls-unverified">Listed but not verified</span>';
+        out += '<div class="ls-row ls-website"><span class="ls-label">Website</span><span class="ls-value">Yes · ' + urlHtml + ' ' + tag + '</span></div>';
+    }} else {{
+        out += '<div class="ls-row ls-website"><span class="ls-label">Website</span><span class="ls-value">No — No website listed</span></div>';
+    }}
+    return out + '</aside>';
+}}
+
 // Google Maps discovery cards (agents/lead_maps_discovery_agent.py). One card
 // per Maps listing (place_id/CID), so chain locations sharing one website
 // stay separate. A provider-listed website is shown as "not verified" until
@@ -14786,8 +14842,10 @@ function renderMapsLead(lead, jobParams) {{
     // Add to CRM attaches by the listing's Google ID: with or without a website.
     div.dataset.listingKey = String(lead.listing_key || "");
     div.innerHTML = `
+        <div class="lead-snapshot-head"><div>
         <h3>${{esc(lead.title || "Untitled Lead")}}</h3>
         <div class="domain">${{esc(lead.domain || (hasWebsite ? "" : "No Website"))}}</div>
+        </div>${{leadSnapshotHtml(lead)}}</div>
         <div class="badges">
             <span>${{esc(lead.outreach_status || "needs_manual_research")}}</span>
             <span>Google Maps${{position ? " #" + esc(position) : ""}}</span>
@@ -14909,8 +14967,10 @@ function renderLead(lead, jobParams) {{
     div.className = "card";
     div.dataset.crmDomain = String(lead.domain || "").trim().toLowerCase();
     div.innerHTML = `
+        <div class="lead-snapshot-head"><div>
         <h3>${{esc(lead.title || "Untitled Lead")}}</h3>
         <div class="domain">${{esc(lead.domain || "")}}</div>
+        </div>${{leadSnapshotHtml(lead)}}</div>
         <div class="badges">
             <span>${{esc(lead.outreach_status || "needs_manual_research")}}</span>
             ${{serpBadge}}

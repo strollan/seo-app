@@ -927,6 +927,7 @@ def lead_cards(rows, selected_name="", csrf_token="", owner_key=""):
                 f'<small class="lead-action-disabled-why">{html.escape(why_disabled)}</small>'
             )
 
+        from agents.lead_snapshot_agent import snapshot_html
         # Block / Delete (agents/lead_card_actions_agent.py), keyed by the
         # lead's stable identity: Maps listing ID, else the organic domain.
         manage_html = ""
@@ -967,6 +968,7 @@ def lead_cards(rows, selected_name="", csrf_token="", owner_key=""):
                     <p class="domain">{html.escape(domain)}</p>
                 </div>
                 <div class="score">{html.escape(score)}</div>
+                {snapshot_html(row)}
             </div>
 
             <div class="badges">
@@ -3799,6 +3801,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 }
 /* === LEADBOT FINAL DELETE BLOCK POSITION OVERRIDE END === */
 </style>
+<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-10-lead-snapshot">
 
 
 
@@ -9493,10 +9496,10 @@ def _actii_crm_modal(csrf_token=""):
 <style>
 .lead-card-manage {{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }}
 .lead-card-manage button {{ margin:0 !important; border-radius:999px; padding:6px 12px; min-height:28px; font:inherit; font-size:10px; line-height:1; font-weight:700; cursor:pointer; }}
-.lead-card-block {{ background:#fff; color:#334155; border:1px solid #94a3b8; }}
-.lead-card-delete {{ background:#fff; color:#b91c1c; border:1px solid #fca5a5; }}
-.lead-card-block:hover,.lead-card-block:focus-visible {{ background:#f1f5f9; }}
-.lead-card-delete:hover,.lead-card-delete:focus-visible {{ background:#fef2f2; }}
+.lead-card-manage .lead-card-block {{ background:#fff !important; color:#334155 !important; border:1px solid #94a3b8 !important; }}
+.lead-card-manage .lead-card-delete {{ background:#fff !important; color:#b91c1c !important; border:1px solid #fca5a5 !important; }}
+.lead-card-manage .lead-card-block:hover,.lead-card-manage .lead-card-block:focus-visible {{ background:#f1f5f9 !important; }}
+.lead-card-manage .lead-card-delete:hover,.lead-card-manage .lead-card-delete:focus-visible {{ background:#fef2f2 !important; }}
 .lead-card-manage button:focus-visible,.lead-card-undo button:focus-visible {{ outline:3px solid #2563eb; outline-offset:2px; }}
 .lead-card-manage button:disabled {{ opacity:.6; cursor:default; }}
 .lead-card-undo {{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; border:1px dashed #94a3b8; border-radius:14px; background:#f8fafc; padding:12px 16px; margin:0 0 14px; color:#334155; font-size:13px; }}

@@ -1,0 +1,27 @@
+/* Lead snapshot panel (agents/lead_snapshot_agent.py + live page leadSnapshotHtml).
+   Sits in the empty right side of the card header; stacks under the title on phones. */
+.lead-head:has(.lead-snapshot) { padding-right: 0 !important; align-items: flex-start !important; gap: 16px !important; }
+.lead-head > div:first-child { min-width: 0; }
+.lead-snapshot-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.lead-snapshot-head > div:first-child { min-width: 0; }
+.lead-snapshot {
+  flex: 0 1 300px; width: 300px; max-width: 100%; box-sizing: border-box;
+  display: grid; gap: 7px; padding: 10px 12px;
+  border: 1px solid #dbe4f0; border-radius: 12px; background: #f8fafc;
+  font-size: 12px; line-height: 1.3; color: #0f172a; text-align: left;
+}
+.lead-snapshot .ls-row { display: grid; gap: 2px; min-width: 0; }
+.lead-snapshot .ls-label { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; }
+.lead-snapshot .ls-value { font-weight: 700; overflow-wrap: anywhere; }
+.lead-snapshot .ls-value b { font-size: 16px; font-weight: 900; }
+.lead-snapshot .ls-muted { color: #64748b; font-weight: 600; }
+.lead-snapshot .ls-bar { display: block; height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin-top: 2px; }
+.lead-snapshot .ls-bar > span { display: block; height: 100%; border-radius: inherit; background: #16a34a; }
+.lead-snapshot a { color: #123d8b; text-decoration: underline; font-weight: 700; }
+.lead-snapshot .ls-tag { display: inline-block; margin-left: 2px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.lead-snapshot .ls-verified { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.lead-snapshot .ls-unverified { background: #f1f5f9; color: #475569; border: 1px solid #94a3b8; }
+@media (max-width: 700px) {
+  .lead-head:has(.lead-snapshot), .lead-snapshot-head { flex-direction: column !important; }
+  .lead-snapshot { flex-basis: auto; width: 100%; }
+}
