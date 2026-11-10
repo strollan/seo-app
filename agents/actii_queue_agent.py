@@ -327,6 +327,7 @@ class ImportQueue:
         if job.get("contact_id"):
             result["contact_id"] = job["contact_id"]
             result["open_url"] = f"http://127.0.0.1:8842/crm/contacts/{job['contact_id']}"
+            result["contacts_url"] = "http://127.0.0.1:8842/crm"
         return result
 
     def enqueue(self, user, filename, source_domain, lead, listing_key=None):
@@ -415,8 +416,20 @@ class ImportQueue:
                 return result[0]
             return {"ok": True, "jobs": result}
 
-    def claim(self, authorization):
+    @staticmethod
+    def claim_selector(body):
+        """Every claim names what it may take: one exact job, or only jobs requested after a cutoff.
+        There is no blind oldest-first claim, so a held older request is never picked up by accident."""
+        if isinstance(body, dict) and set(body) == {"job_id"} and isinstance(body["job_id"], str) and ID.fullmatch(body["job_id"]):
+            return {"job_id": body["job_id"]}
+        if (isinstance(body, dict) and set(body) == {"created_after"} and type(body["created_after"]) in {int, float}
+                and 0 < body["created_after"] < 1e11):
+            return {"created_after": float(body["created_after"])}
+        raise QueueError("Invalid claim request.", 422)
+
+    def claim(self, authorization, selector):
         binding = self.authenticate(authorization)
+        selector = self.claim_selector(selector)
         with file_lock(self.root):
             jobs = [job for job in self._jobs() if job["connector_id"] == binding["connector_id"]]
             for job in jobs:
@@ -426,13 +439,15 @@ class ImportQueue:
             for job in sorted(jobs, key=lambda j: j["created_at"]):
                 if job["state"] != "queued" or job["next_attempt_at"] > self.clock():
                     continue
+                if job["id"] != selector.get("job_id", job["id"]) or job["created_at"] <= selector.get("created_after", 0):
+                    continue
                 job.pop("receipt", None)
                 job.update(state="processing", lease_id=uuid.uuid4().hex, lease_until=self.clock() + LEASE_SECONDS,
                            attempts=job["attempts"] + 1)
                 self._save(job, "claimed")
                 return {"ok": True, "job": {"kind": job.get("kind", LEAD_IMPORT), **{key: job[key] for key in (
                     "id", "connector_id", "user_id", "username", "binding_version", "payload", "payload_hash",
-                    "source_domain", "lease_id", "lease_until", "expires_at")},
+                    "source_domain", "lease_id", "lease_until", "expires_at", "created_at")},
                     **({"listing_key": job["listing_key"]} if job.get("listing_key") else {})}}
             return {"ok": True, "job": None}
 

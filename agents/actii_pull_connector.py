@@ -222,16 +222,34 @@ class PullConnector:
             recovered = self._recover_receipts()
             return "Receipts recovered; no jobs claimed." if recovered else "No receipts pending; no jobs claimed."
 
-    def run_once(self):
+    def _claim_selector(self, job_id=None):
+        """Automatic runs take only requests made after the configured cutoff (claim_created_after);
+        an older request is imported only when named exactly with job_id. Never a blind oldest-first claim."""
+        if job_id is not None:
+            if not isinstance(job_id, str) or not ID.fullmatch(job_id):
+                raise ConnectorError("Job id must be 32 lowercase hex characters.")
+            return {"job_id": job_id}
+        try:
+            return {"created_after": timestamp(self.config["claim_created_after"])}
+        except (KeyError, TypeError, ValueError):
+            raise ConnectorError("No claim cutoff configured (claim_created_after); no job claimed.") from None
+
+    def run_once(self, job_id=None):
         """Explicit normal operation: recover, then claim at most one new job."""
         with file_lock(self.root, blocking=False):
             self._check_expiry()
+            selector = self._claim_selector(job_id)
             secret = self._local_secret()  # Validate before claiming any work.
             recovered = self._recover_receipts()
-            result = self._remote("/integrations/actii/claim", {})
+            result = self._remote("/integrations/actii/claim", selector)
             job = result.get("job")
             if job is None:
                 return "Receipts recovered; no pending import." if recovered else "No pending import."
+            # Production must honour the selector; anything else is never imported.
+            if (not isinstance(job, dict) or job.get("id") != selector.get("job_id", job.get("id"))
+                    or type(job.get("created_at")) not in {int, float}
+                    or job["created_at"] <= selector.get("created_after", 0)):
+                raise ConnectorError("Claimed job does not match the requested selection; no import submitted.")
             self._validate_job(job)
             path = self.root / (job["id"] + ".json")
             if path.exists():

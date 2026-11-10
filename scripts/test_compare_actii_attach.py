@@ -80,7 +80,7 @@ class AttachFixture(unittest.TestCase):
         return self.app_client.post("/history/attach-to-crm", json={"csrf_token": self.csrf, "saved_report": saved_report, **extra})
 
     def claim(self):
-        response = self.app_client.post("/integrations/actii/claim", json={}, headers=self.worker)
+        response = self.app_client.post("/integrations/actii/claim", json={"created_after": 978307200}, headers=self.worker)
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["job"]
 
@@ -187,7 +187,7 @@ class ConnectorTests(AttachFixture):
     def connector(self, local_response):
         secret_file = Path.cwd() / "local-signing.json"
         atomic_json(secret_file, {"integration_secret": "synthetic-secret", "owner_map": {"owner": "Synthetic Workspace"}})
-        config = {"state_dir": str(Path.cwd() / "connector-state"), "production_origin": "https://leadmeleads.example",
+        config = {"state_dir": str(Path.cwd() / "connector-state"), "claim_created_after": "2001-01-01T00:00:00+00:00", "production_origin": "https://leadmeleads.example",
                   "token": TOKEN, "actii_secret_file": str(secret_file), "workspace": "Synthetic Workspace",
                   "expires_at": self.binding["expires_at"], **{k: self.binding[k] for k in ("connector_id", "binding_version", "user_id", "username")}}
         sent = []

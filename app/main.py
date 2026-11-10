@@ -13416,9 +13416,8 @@ async def actii_connector_claim(request: AuthRequest):
         body = await limited_json(request, 1024)
     except QueueError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=error.status)
-    if body != {}:
-        return JSONResponse({"ok": False, "error": "Invalid claim request."}, status_code=422)
-    return respond(lambda queue: queue.claim(request.headers.get("authorization", "")))
+    # The body names exactly what may be claimed ({"job_id"} or {"created_after"}); validated after authentication.
+    return respond(lambda queue: queue.claim(request.headers.get("authorization", ""), body))
 
 
 @app.post("/integrations/actii/result")

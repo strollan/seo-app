@@ -92,7 +92,9 @@ class CrmUiTests(unittest.TestCase):
                 self.jobs[0].update(state="added", message="Added to CRM.", open_url="http://127.0.0.1:8842/crm/contacts/7")
                 self.page.reload()
                 self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Added to ACT II'")
-                self.assertEqual(self.page.locator('.lead-crm-result a').get_attribute("href"), "http://127.0.0.1:8842/crm/contacts/7")
+                links = self.page.locator('.lead-crm-result a')
+                self.assertEqual([links.nth(i).get_attribute("href") for i in range(links.count())],
+                                 ["http://127.0.0.1:8842/crm/contacts/7", "http://127.0.0.1:8842/crm"])
                 self.assertEqual(self.posts, 1)
         self.assertEqual(self.errors, [])
 
@@ -135,7 +137,9 @@ class CrmUiTests(unittest.TestCase):
         self.page.get_by_role("button", name="Add Contact", exact=True).click()
         self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Already in ACT II'")
         self.assertIn("No duplicate was created", self.page.locator('#actiiCrmMessage').text_content())
-        self.assertEqual(self.page.locator('#actiiCrmMessage a').count(), 1)
+        links = self.page.locator('#actiiCrmMessage a')
+        self.assertEqual([links.nth(i).get_attribute("href") for i in range(links.count())],
+                         ["http://127.0.0.1:8842/crm/contacts/7", "http://127.0.0.1:8842/crm"])
         self.assertEqual(self.posts, 1)
         self.assertEqual(self.errors, [])
 

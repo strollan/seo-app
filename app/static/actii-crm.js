@@ -9,18 +9,19 @@
   const message = document.getElementById('actiiCrmMessage');
   const save = form.querySelector('.crm-save');
   const cancel = document.getElementById('actiiCrmCancel');
-  // A queued job only moves when the ACT II connector on the workstation picks it up, so
-  // "queued" must never look like work in progress. Only "processing" means it is importing.
+  // A queued job only moves when the ACT II connector on the workstation picks it up (automatically,
+  // about every 30 seconds while the workstation is on), so "queued" must never look like work in
+  // progress. Only "processing" means it is importing.
   const labels = {queued: 'Pending import', processing: 'Importing\u2026', added: 'Added to ACT II',
     already_present: 'Already in ACT II', needs_review: 'Needs review', failed: 'Import failed'};
   const JUST_QUEUED = 'Queued for ACT II';  // the 202 reply on this page, until the state changes
   // Plain-language status beside the button; review keeps the server's guidance.
   const notes = {
-    queued: 'Pending import. Your request is saved and will be imported when the ACT II connector on your workstation picks it up. No need to resubmit.',
+    queued: 'Pending import. New requests are picked up automatically within about a minute while ACT II is running on your workstation. If it stays pending, the workstation is offline or the request is held for review. Your request is saved; no need to resubmit.',
     processing: 'Importing into ACT II now. This usually takes a couple of minutes.',
     added: 'Added to ACT II.', already_present: 'Already in ACT II. No duplicate was created.',
     failed: 'Import failed. Nothing was added to ACT II. Check that ACT II is running on your workstation; this lead keeps its failed request, so ask support to retry it rather than resubmitting.'};
-  const JUST_QUEUED_NOTE = 'Queued for ACT II. It will be imported when the ACT II connector on your workstation picks it up. No need to resubmit.';
+  const JUST_QUEUED_NOTE = 'Queued for ACT II. It is picked up automatically within about a minute while ACT II is running on your workstation. No need to resubmit.';
   const STALLED_NOTE = 'Still pending. Automatic status checks have stopped; refresh the page later to check. Your request is saved.';
   const pending = state => state === 'queued' || state === 'processing';
   const POLL_MS = 15000, POLL_LIMIT = 80;  // read-only status checks for at most ~20 minutes
@@ -57,8 +58,20 @@
     link.href = target.href;
     link.target = '_blank';
     link.rel = 'noopener';
-    link.textContent = 'Open ACT II on this workstation';
+    link.textContent = 'Open this contact in ACT II';
     return link;
+  }
+
+  // The ACT II contacts list lives at /crm (there is no /crm/contacts list page).
+  function contactLinks(data) {
+    const all = document.createElement('a');
+    all.href = 'http://127.0.0.1:8842/crm';
+    all.target = '_blank';
+    all.rel = 'noopener';
+    all.textContent = 'All ACT II contacts';
+    const links = document.createDocumentFragment();
+    links.append(localLink(data), ' \u00b7 ', all);
+    return links;
   }
 
   function paint(button, data) {
@@ -79,11 +92,11 @@
     const note = (fresh ? JUST_QUEUED_NOTE : notes[data.state]) || data.message || label;
     result.textContent = note;
     if (data.state === 'added' || data.state === 'already_present') {
-      result.append(' ', localLink(data));
+      result.append(' ', contactLinks(data));
     }
     if (source && source.button === button && !busy) {
       message.textContent = note;
-      if (data.state === 'added' || data.state === 'already_present') message.append(' ', localLink(data));
+      if (data.state === 'added' || data.state === 'already_present') message.append(' ', contactLinks(data));
       save.disabled = true;
       save.textContent = label;
       cancel.textContent = 'Close';
@@ -213,7 +226,7 @@
       paint(current.button, data);
       const fresh = data.state === 'queued' && current.button.dataset.crmQueuedHere === 'true';
       message.textContent = (fresh ? JUST_QUEUED_NOTE : notes[data.state]) || data.message;
-      if (data.state === 'added' || data.state === 'already_present') message.append(' ', localLink(data));
+      if (data.state === 'added' || data.state === 'already_present') message.append(' ', contactLinks(data));
       save.textContent = current.button.textContent;
       cancel.textContent = 'Close';
       confirmed = true;

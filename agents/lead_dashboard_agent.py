@@ -9462,7 +9462,7 @@ def _actii_crm_modal(csrf_token=""):
   </form>
 </dialog>
 <script type="application/json" id="actiiCrmConfig">{token}</script>
-<script src="/static/actii-crm.js?v=2026-11-10-crm-status" defer></script>
+<script src="/static/actii-crm.js?v=2026-11-10-crm-autopickup" defer></script>
 """
 
 # === LEADBOT CSV SIZE CAP START ===

@@ -70,7 +70,7 @@ class QueueFixture(unittest.TestCase):
         return response.json()
 
     def claim(self):
-        response = self.status_client.post("/integrations/actii/claim", json={}, headers=self.worker_headers)
+        response = self.status_client.post("/integrations/actii/claim", json={"created_after": 978307200}, headers=self.worker_headers)
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["job"]
 
@@ -148,13 +148,13 @@ class QueueTests(QueueFixture):
             results = list(pool.map(enqueue, range(12)))
         self.assertEqual(len({r["id"] for r in results}), 1)
         with ThreadPoolExecutor(max_workers=6) as pool:
-            claims = list(pool.map(lambda _: self.queue.claim("Bearer " + TOKEN)["job"], range(8)))
+            claims = list(pool.map(lambda _: self.queue.claim("Bearer " + TOKEN, {"created_after": 978307200})["job"], range(8)))
         self.assertEqual(sum(j is not None for j in claims), 1)
 
     def test_bearer_scope_and_other_owner_status(self):
         job = self.enqueue()
         for header in ({}, {"Authorization": "Bearer wrong"}):
-            self.assertEqual(self.status_client.post("/integrations/actii/claim", json={}, headers=header).status_code, 401)
+            self.assertEqual(self.status_client.post("/integrations/actii/claim", json={"created_after": 978307200}, headers=header).status_code, 401)
         self.status_client.cookies.clear()
         self.assertEqual(self.status_client.get("/lead-bot/crm-jobs", headers=self.worker_headers).status_code, 401)
         self.assertEqual(self.client.post("/lead-bot/add-to-crm", json={**self.payload, "csrf_token": ""}, headers=self.worker_headers).status_code, 403)
@@ -217,7 +217,7 @@ class QueueTests(QueueFixture):
         self.assertIsNone(self.claim())
         self.assertEqual(self.state(item["id"]), "failed")
         self.binding["expires_at"] = datetime.fromtimestamp(self.now[0] - 1, timezone.utc).isoformat(); self.write_binding()
-        self.assertEqual(self.status_client.post("/integrations/actii/claim", json={}, headers=self.worker_headers).status_code, 401)
+        self.assertEqual(self.status_client.post("/integrations/actii/claim", json={"created_after": 978307200}, headers=self.worker_headers).status_code, 401)
 
     def test_integrity_bad_permissions_symlinks_and_disk_failure(self):
         self.bindings.chmod(0o644)
@@ -305,7 +305,7 @@ class RecoveryOnlyTests(QueueFixture):
     def setUp(self):
         super().setUp()
         self.calls = []
-        self.config = {**self.binding, "production_origin": "https://production.example", "token": TOKEN,
+        self.config = {**self.binding, "claim_created_after": "2001-01-01T00:00:00+00:00", "production_origin": "https://production.example", "token": TOKEN,
                        "workspace": "Synthetic", "actii_secret_file": "/unused/signing.json",
                        "state_dir": str(Path.cwd() / "recovery-state")}
         self.session = Mock()
@@ -431,6 +431,108 @@ class RecoveryOnlyTests(QueueFixture):
         states = [self.state(item["id"]) for item in (first, second)]
         self.assertEqual(sorted(states), ["added", "queued"])
 
+    # --- Exact job selection: no blind oldest-first claim ---
+    def post_claim(self, body):
+        return self.status_client.post("/integrations/actii/claim", json=body, headers=self.worker_headers)
+
+    def test_claim_without_selector_is_refused_and_claims_nothing(self):
+        item = self.enqueue()
+        for body in ({}, {"created_after": "0"}, {"created_after": 0}, {"created_after": True}, {"job_id": "x" * 32},
+                     {"job_id": item["id"], "created_after": 1}, {"extra": 1}):
+            with self.subTest(body=body):
+                self.assertEqual(self.post_claim(body).status_code, 422)
+        self.assertEqual(self.post_claim({}).status_code, 422)
+        with self.assertRaises(queue_module.QueueError):
+            self.queue.claim("Bearer " + TOKEN, None)
+        self.assertEqual(self.state(item["id"]), "queued")
+        headers = {"Authorization": "Bearer " + "wrong-token-" + "0" * 32}
+        self.assertEqual(self.status_client.post("/integrations/actii/claim", json={}, headers=headers).status_code, 401)
+
+    def test_cutoff_never_claims_older_held_jobs(self):
+        held = self.enqueue()
+        cutoff = self.now[0]
+        self.now[0] += 5
+        newer = self.second_job()
+        self.assertIsNone(self.post_claim({"created_after": self.now[0]}).json()["job"])
+        job = self.post_claim({"created_after": cutoff}).json()["job"]
+        self.assertEqual(job["id"], newer["id"])
+        self.assertGreater(job["created_at"], cutoff)
+        self.assertEqual(self.state(held["id"]), "queued")
+        self.assertEqual(self.ack(job, contact_id=7).status_code, 200)
+        self.assertIsNone(self.post_claim({"created_after": cutoff}).json()["job"])
+        self.assertEqual(self.state(held["id"]), "queued")
+
+    def test_exact_job_id_claims_only_that_job(self):
+        first = self.enqueue()
+        second = self.second_job()
+        self.assertIsNone(self.post_claim({"job_id": "0" * 32}).json()["job"])
+        job = self.post_claim({"job_id": second["id"]}).json()["job"]
+        self.assertEqual(job["id"], second["id"])
+        self.assertEqual(self.state(first["id"]), "queued")
+
+    def test_connector_without_cutoff_refuses_before_any_request(self):
+        self.enqueue()
+        del self.config["claim_created_after"]
+        with patch.object(self.worker, "_local_secret", return_value="synthetic"):
+            with self.assertRaises(ConnectorError):
+                self.worker.run_once()
+            with self.assertRaises(ConnectorError):
+                self.worker.run_once("not-a-job-id")
+        self.assertEqual(self.calls, [])
+
+    def test_connector_cutoff_skips_held_job_and_imports_new_one(self):
+        held = self.enqueue()
+        self.now[0] += 5
+        self.config["claim_created_after"] = datetime.fromtimestamp(self.now[0] - 1, timezone.utc).isoformat()
+        with patch.object(self.worker, "_local_secret", return_value="synthetic"), \
+             patch.object(self.worker, "_submit", return_value={"outcome": "created", "contact_id": 7}) as submit:
+            self.assertEqual(self.worker.run_once(), "No pending import.")
+            submit.assert_not_called()
+            newer = self.second_job()
+            self.assertEqual(self.worker.run_once(), "Added.")
+            submit.assert_called_once()
+        self.assertEqual(self.state(newer["id"]), "added")
+        self.assertEqual(self.state(held["id"]), "queued")
+        self.assertEqual(self.status_client.get("/lead-bot/crm-jobs/" + newer["id"]).json()["contacts_url"],
+                         "http://127.0.0.1:8842/crm")
+
+    def test_connector_exact_job_imports_named_older_job_only(self):
+        held = self.enqueue()
+        self.now[0] += 5
+        other = self.second_job()
+        self.config["claim_created_after"] = datetime.fromtimestamp(self.now[0] + 60, timezone.utc).isoformat()
+        with patch.object(self.worker, "_local_secret", return_value="synthetic"), \
+             patch.object(self.worker, "_submit", return_value={"outcome": "created", "contact_id": 7}) as submit:
+            self.assertEqual(self.worker.run_once(held["id"]), "Added.")
+            submit.assert_called_once()
+        self.assertEqual(self.state(held["id"]), "added")
+        self.assertEqual(self.state(other["id"]), "queued")
+
+    def test_connector_rejects_server_that_ignores_the_selection(self):
+        held = self.enqueue()
+        self.now[0] += 5
+        self.config["claim_created_after"] = datetime.fromtimestamp(self.now[0] - 1, timezone.utc).isoformat()
+        original = self.queue.claim
+        with patch.object(self.queue, "claim", side_effect=lambda auth, _: original(auth, {"created_after": 1})), \
+             patch.object(self.worker, "_local_secret", return_value="synthetic"), \
+             patch.object(self.worker, "_submit", side_effect=AssertionError("must not import")):
+            with self.assertRaises(ConnectorError):
+                self.worker.run_once()
+        self.assertEqual(self.state(held["id"]), "processing")  # leased but never dispatched; lease expiry -> review
+
+    def test_cli_job_flag_requires_once(self):
+        import actii_pull_connector as cli
+        with patch.object(cli, "load_config", return_value=self.config), \
+             patch.object(cli, "PullConnector", return_value=self.worker), patch("builtins.print"):
+            with self.assertRaises(SystemExit):
+                cli.main(["--config", "synthetic.json", "--recover-only", "--job", "0" * 32])
+            with patch.object(self.worker, "run_once", return_value="No pending import.") as run:
+                self.assertEqual(cli.main(["--config", "synthetic.json", "--once", "--job", "a" * 32]), 0)
+                run.assert_called_once_with("a" * 32)
+                run.reset_mock()
+                self.assertEqual(cli.main(["--config", "synthetic.json", "--once"]), 0)
+                run.assert_called_once_with(None)
+
     def test_cli_requires_explicit_mutually_exclusive_operation(self):
         import actii_pull_connector as cli
         with patch.object(cli, "load_config", return_value=self.config), \
@@ -460,7 +562,7 @@ class CompanionTests(QueueFixture):
         self.secret_file = Path.cwd() / "local-signing.json"
         atomic_json(self.secret_file, {"integration_secret": "synthetic-integration-secret", "owner_map": {"owner": "Workspace"}})
         self.config = {**{k: self.binding[k] for k in ("connector_id", "binding_version", "user_id", "username", "expires_at")},
-                       "production_origin": "https://production.example", "token": TOKEN, "workspace": "Workspace",
+                       "claim_created_after": "2001-01-01T00:00:00+00:00", "production_origin": "https://production.example", "token": TOKEN, "workspace": "Workspace",
                        "actii_secret_file": str(self.secret_file), "state_dir": str(Path.cwd() / "companion-state")}
         self.worker = PullConnector(self.config, clock=lambda: self.now[0], session=self.session)
 
