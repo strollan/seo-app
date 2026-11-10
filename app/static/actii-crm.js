@@ -9,11 +9,19 @@
   const message = document.getElementById('actiiCrmMessage');
   const save = form.querySelector('.crm-save');
   const cancel = document.getElementById('actiiCrmCancel');
-  const labels = {queued: 'Adding to ACT II\u2026', processing: 'Adding to ACT II\u2026', added: 'Added to ACT II',
-    already_present: 'Already in ACT II', needs_review: 'Needs Review', failed: 'Failed'};
-  // Plain-language status beside the button; review/failure keep the server's guidance.
-  const notes = {queued: 'This usually takes a couple of minutes.', processing: 'This usually takes a couple of minutes.',
-    added: 'Added to ACT II.', already_present: 'Already in ACT II. No duplicate was created.'};
+  // A queued job only moves when the ACT II connector on the workstation picks it up, so
+  // "queued" must never look like work in progress. Only "processing" means it is importing.
+  const labels = {queued: 'Pending import', processing: 'Importing\u2026', added: 'Added to ACT II',
+    already_present: 'Already in ACT II', needs_review: 'Needs review', failed: 'Import failed'};
+  const JUST_QUEUED = 'Queued for ACT II';  // the 202 reply on this page, until the state changes
+  // Plain-language status beside the button; review keeps the server's guidance.
+  const notes = {
+    queued: 'Pending import. Your request is saved and will be imported when the ACT II connector on your workstation picks it up. No need to resubmit.',
+    processing: 'Importing into ACT II now. This usually takes a couple of minutes.',
+    added: 'Added to ACT II.', already_present: 'Already in ACT II. No duplicate was created.',
+    failed: 'Import failed. Nothing was added to ACT II. Check that ACT II is running on your workstation; this lead keeps its failed request, so ask support to retry it rather than resubmitting.'};
+  const JUST_QUEUED_NOTE = 'Queued for ACT II. It will be imported when the ACT II connector on your workstation picks it up. No need to resubmit.';
+  const STALLED_NOTE = 'Still pending. Automatic status checks have stopped; refresh the page later to check. Your request is saved.';
   const pending = state => state === 'queued' || state === 'processing';
   const POLL_MS = 15000, POLL_LIMIT = 80;  // read-only status checks for at most ~20 minutes
   const jobs = new Map();
@@ -55,9 +63,12 @@
 
   function paint(button, data) {
     if (!Object.hasOwn(labels, data.state)) throw new Error('Invalid status');
-    button.textContent = labels[data.state];
+    const fresh = data.state === 'queued' && button.dataset.crmQueuedHere === 'true';
+    const label = fresh ? JUST_QUEUED : labels[data.state];
+    button.textContent = label;
     button.disabled = true;
     button.dataset.crmState = data.state;
+    if (data.state !== 'queued') delete button.dataset.crmQueuedHere;
     let result = button.parentElement.querySelector('.lead-crm-result');
     if (!result) {
       result = document.createElement('span');
@@ -65,17 +76,27 @@
       result.setAttribute('role', 'status');
       button.insertAdjacentElement('afterend', result);
     }
-    const note = notes[data.state] || data.message || labels[data.state];
+    const note = (fresh ? JUST_QUEUED_NOTE : notes[data.state]) || data.message || label;
     result.textContent = note;
     if (data.state === 'added' || data.state === 'already_present') {
       result.append(' ', localLink(data));
     }
     if (source && source.button === button && !busy) {
       message.textContent = note;
+      if (data.state === 'added' || data.state === 'already_present') message.append(' ', localLink(data));
       save.disabled = true;
-      save.textContent = labels[data.state];
+      save.textContent = label;
       cancel.textContent = 'Close';
     }
+  }
+
+  // Shown when status can't be read or checks have stopped; the button stays settled (never spinning).
+  function notePending(text) {
+    document.querySelectorAll('[data-crm-state="queued"], [data-crm-state="processing"]').forEach(button => {
+      const result = button.parentElement.querySelector('.lead-crm-result');
+      if (result) result.textContent = text;
+      if (source && source.button === button && !busy) message.textContent = text;
+    });
   }
 
   function applyJobs() {
@@ -90,18 +111,15 @@
     checking = true;
     try {
       const response = await fetch('/lead-bot/crm-jobs', {credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000)});
-      if (!response.ok) return;
+      if (!response.ok) throw new Error('Status unavailable');
       const data = await response.json();
-      if (data.ok !== true || !Array.isArray(data.jobs)) return;
+      if (data.ok !== true || !Array.isArray(data.jobs)) throw new Error('Invalid status');
       data.jobs.forEach(job => jobs.set(key(job.source_file, job.source_domain, job.listing_key), job));
       applyJobs();
       schedulePoll();
     } catch (_) {
       // Keep the last confirmed state; a status outage must never resubmit an import.
-      document.querySelectorAll('[data-crm-state="queued"], [data-crm-state="processing"]').forEach(button => {
-        const result = button.parentElement.querySelector('.lead-crm-result');
-        if (result) result.textContent = 'Status unavailable. Refresh to check; your import request is saved.';
-      });
+      notePending('Status unavailable. Refresh to check; your import request is saved.');
     } finally {
       checking = false;
     }
@@ -112,7 +130,8 @@
   function schedulePoll() {
     clearTimeout(pollTimer);
     pollTimer = null;
-    if (polls >= POLL_LIMIT || ![...jobs.values()].some(job => pending(job.state))) return;
+    if (![...jobs.values()].some(job => pending(job.state))) return;
+    if (polls >= POLL_LIMIT) { notePending(STALLED_NOTE); return; }
     pollTimer = setTimeout(() => { pollTimer = null; polls += 1; checkJobs(); }, POLL_MS);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !pollTimer) schedulePoll(); });
@@ -153,9 +172,9 @@
     const current = source;
     busy = true;
     save.disabled = cancel.disabled = current.button.disabled = true;
-    save.textContent = current.button.textContent = 'Adding to ACT II\u2026';
+    save.textContent = current.button.textContent = 'Sending\u2026';  // bounded by the 20 s request timeout
     form.setAttribute('aria-busy', 'true');
-    message.textContent = 'Adding to ACT II\u2026';
+    message.textContent = 'Sending to ACT II\u2026';
     let confirmed = false;
     try {
       const lead = Object.fromEntries(new FormData(form).entries());
@@ -172,7 +191,8 @@
         data = await response.json();
       }
       if (!response.ok || data.ok !== true) {
-        message.textContent = data.error || 'CRM request failed. Refresh and check the connection.';
+        message.textContent = data.error || ('Could not send this lead to ACT II (error ' + response.status +
+          '). Nothing was queued. Try again with Retry request; if it keeps failing, refresh the page.');
         if (data.error_code === 'signed_out') {
           const link = document.createElement('a');
           link.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
@@ -188,11 +208,13 @@
         data.message = data.status === 'created' ? 'Added to CRM.' : 'Already present in CRM.';
       } else {
         jobs.set(key(current.file, current.domain, current.listing), data);
+        if (response.status === 202 && data.state === 'queued') current.button.dataset.crmQueuedHere = 'true';
       }
       paint(current.button, data);
-      message.textContent = notes[data.state] || data.message;
+      const fresh = data.state === 'queued' && current.button.dataset.crmQueuedHere === 'true';
+      message.textContent = (fresh ? JUST_QUEUED_NOTE : notes[data.state]) || data.message;
       if (data.state === 'added' || data.state === 'already_present') message.append(' ', localLink(data));
-      save.textContent = labels[data.state];
+      save.textContent = current.button.textContent;
       cancel.textContent = 'Close';
       confirmed = true;
     } catch (_) {

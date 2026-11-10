@@ -71,7 +71,9 @@ class CrmUiTests(unittest.TestCase):
                 self.page.screenshot(path=f"/tmp/actii-crm-{width}.png")
                 self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
                 self.page.get_by_role("button", name="Add Contact", exact=True).click()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Queued for ACT II'")
+                self.assertNotIn("couple of minutes", self.page.locator('#actiiCrmMessage').text_content())
+                self.assertIn("Queued for ACT II", self.page.locator('#actiiCrmMessage').text_content())
                 self.assertTrue(self.page.locator('.lead-add-crm').is_disabled())
                 self.assertTrue(self.page.locator('.crm-save').is_disabled())
                 self.page.locator('.lead-add-crm').click(force=True)  # a second click must not resubmit
@@ -79,11 +81,14 @@ class CrmUiTests(unittest.TestCase):
                 self.assertEqual(self.posts, 1)
                 self.assertEqual(self.page.locator('.lead-crm-result a').count(), 0)
                 self.page.reload()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Pending import'")
+                self.assertNotIn("couple of minutes", self.page.locator('.lead-crm-result').text_content())
+                self.assertTrue(self.page.locator('.lead-add-crm').is_disabled())
                 self.assertEqual(self.posts, 1)
                 self.jobs[0].update(state="processing", message="Processing in ACT II.")
                 self.page.reload()
-                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
+                self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Importing…'")
+                self.assertIn("couple of minutes", self.page.locator('.lead-crm-result').text_content())
                 self.jobs[0].update(state="added", message="Added to CRM.", open_url="http://127.0.0.1:8842/crm/contacts/7")
                 self.page.reload()
                 self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Added to ACT II'")
@@ -95,7 +100,7 @@ class CrmUiTests(unittest.TestCase):
         self.jobs = [self.reply.copy()]
         self.page.clock.install()
         self.page.goto("https://ui.example/")
-        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Adding to ACT II…'")
+        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Pending import'")
         self.assertEqual(self.status_checks, 1)
         self.page.clock.fast_forward(15000)
         self.page.wait_for_function("() => true")
@@ -110,12 +115,60 @@ class CrmUiTests(unittest.TestCase):
         self.assertEqual(self.errors, [])
 
     def test_review_failed_and_existing_states(self):
-        for state, label in (("needs_review", "Needs Review"), ("failed", "Failed"), ("already_present", "Already in ACT II")):
-            self.jobs = [{**self.reply, "state": state, "open_url": "http://127.0.0.1:8842/crm/contacts/7"}]
+        cases = (("needs_review", "Needs review", "Do not resubmit"), ("failed", "Import failed", "Nothing was added"),
+                 ("already_present", "Already in ACT II", "No duplicate was created"))
+        for state, label, note in cases:
+            self.jobs = [{**self.reply, "state": state, "open_url": "http://127.0.0.1:8842/crm/contacts/7",
+                          "message": "Needs review on the ACT II workstation. Do not resubmit." if state == "needs_review" else ""}]
             self.page.goto("https://ui.example/")
             self.page.wait_for_function("label => document.querySelector('.lead-add-crm').textContent === label", arg=label)
             self.assertTrue(self.page.locator('.lead-add-crm').is_disabled())
+            self.assertIn(note, self.page.locator('.lead-crm-result').text_content())
+            self.assertNotIn("couple of minutes", self.page.locator('.lead-crm-result').text_content())
         self.assertEqual(self.posts, 0)
+        self.assertEqual(self.errors, [])
+
+    def test_existing_contact_reply_to_submission(self):
+        self.status = 202; self.reply = {**self.reply, "state": "already_present", "message": "Already present in CRM.",
+                                         "open_url": "http://127.0.0.1:8842/crm/contacts/7"}
+        self.open_form()
+        self.page.get_by_role("button", name="Add Contact", exact=True).click()
+        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Already in ACT II'")
+        self.assertIn("No duplicate was created", self.page.locator('#actiiCrmMessage').text_content())
+        self.assertEqual(self.page.locator('#actiiCrmMessage a').count(), 1)
+        self.assertEqual(self.posts, 1)
+        self.assertEqual(self.errors, [])
+
+    def test_queued_with_connector_stopped_settles_without_spinning(self):
+        self.jobs = [self.reply.copy()]
+        self.page.clock.install()
+        self.page.goto("https://ui.example/")
+        self.page.wait_for_function("document.querySelector('.lead-add-crm').textContent === 'Pending import'")
+        for expected in range(2, 82):  # each check finishes before the next one is scheduled
+            self.page.clock.fast_forward(15000)
+            for _ in range(100):
+                if self.status_checks >= expected:
+                    break
+                self.page.wait_for_timeout(20)
+            self.assertEqual(self.status_checks, expected)
+        self.page.wait_for_timeout(200)
+        self.page.clock.fast_forward(15000)
+        self.page.wait_for_function("document.querySelector('.lead-crm-result').textContent.includes('Automatic status checks have stopped')")
+        checks = self.status_checks
+        self.page.clock.fast_forward(600000)
+        self.assertEqual(self.status_checks, checks)  # bounded: no endless polling
+        self.assertEqual(self.page.locator('.lead-add-crm').text_content(), 'Pending import')
+        self.assertEqual(self.posts, 0)
+        self.assertEqual(self.errors, [])
+
+    def test_server_error_offers_retry(self):
+        self.status = 503; self.reply = {"ok": False}
+        self.open_form()
+        self.page.get_by_role("button", name="Add Contact", exact=True).click()
+        self.page.wait_for_function("document.getElementById('actiiCrmMessage').textContent.includes('Nothing was queued')")
+        self.assertFalse(self.page.get_by_role("button", name="Retry request", exact=True).is_disabled())
+        self.assertEqual(self.page.locator('.lead-add-crm').text_content(), 'Add to CRM')
+        self.assertEqual(self.errors, [])
 
     def test_validation_failure_preserves_edits_and_keyboard_close(self):
         self.status = 422; self.reply = {"ok": False, "error": "Website must retain the original prospect's hostname."}
