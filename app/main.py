@@ -1031,6 +1031,27 @@ def fetch_page_data(url: str, *, strict: bool = False):
             "image_count": image_count,
             "alt_count": alt_count,
         })
+        if strict:
+            # SEO report evidence (strict/audit path only; Compare's default output is unchanged).
+            # Raw observations from this one response; nothing is inferred or invented here.
+            robots_tag = soup.find("meta", attrs={"name": re.compile(r"^(robots|googlebot)$", re.I)})
+            html_tag = soup.find("html")
+            internal_sample = []
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if (href.startswith("/") or base_domain in href) and len(internal_sample) < 12:
+                    internal_sample.append({"href": href[:300], "text": a.get_text(" ", strip=True)[:120]})
+            data["audit_evidence"] = {
+                "http_status": int(getattr(r, "status_code", 0) or 0),
+                "x_robots_tag": str((getattr(r, "headers", None) or {}).get("X-Robots-Tag", "") or "")[:200],
+                "robots_meta": str(robots_tag.get("content", "") if robots_tag else "")[:200],
+                "lang": str(html_tag.get("lang", "") if html_tag else "")[:20],
+                "h1_texts": [t.get_text(" ", strip=True)[:200] for t in h1_tags[:5]],
+                "h2_texts": [t[:200] for t in h2_texts[:15]],
+                "images_missing_alt": [str(img.get("src", "") or "(no src)")[:300] for img in images
+                                       if not img.get("alt", "").strip()][:10],
+                "internal_links": internal_sample,
+            }
         return data
 
     except requests.exceptions.HTTPError as e:

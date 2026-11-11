@@ -59,14 +59,15 @@ def crawl(pages):
 class BuildAuditTests(unittest.TestCase):
     def audit(self, html, url="https://alpha-plumbing.example/", final=None, status=200):
         with mock.patch.object(appmain, "crawl_get", crawl({url: (html, final or url, status)})):
-            return audit_module.build_audit(appmain.fetch_page_data(url), url)
+            return audit_module.build_audit(appmain.fetch_page_data(url, strict=True), url)
 
     def test_good_page_passes_with_evidence_and_no_score(self):
         a = self.audit(GOOD_HTML)
         self.assertEqual(a["status"], "complete")
         results = {f["id"]: f["result"] for f in a["findings"]}
         self.assertEqual(results, {"title": "pass", "meta_description": "pass", "h1": "pass", "h2": "pass", "content_depth": "pass",
-                                   "internal_links": "pass", "image_alt": "pass", "canonical": "pass"})
+                                   "internal_links": "pass", "image_alt": "pass", "canonical": "pass",
+                                   "indexability": "pass"})
         title = next(f for f in a["findings"] if f["id"] == "title")
         self.assertIn("Alpha Plumbing | Shirley NY Emergency Plumber", title["evidence"])
         self.assertNotIn("score", json.dumps(a).lower())
@@ -273,6 +274,84 @@ class ConnectorPassTests(unittest.TestCase):
     def test_default_local_origin_is_unchanged(self):
         from agents import actii_pull_connector
         self.assertEqual(actii_pull_connector.LOCAL_ORIGIN, "http://127.0.0.1:8842")
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "seo_report"
+
+
+class SeoReportV2Tests(unittest.TestCase):
+    """Single-site SEO report (format v2): richer evidence from the same one strict fetch, nothing invented."""
+
+    def audit(self, html, url="https://alpha-plumbing.example/", headers=None):
+        def fake(u, **kwargs):
+            response = FakeResponse(html, u, 200)
+            response.headers = headers or {}
+            return response
+        with mock.patch.object(appmain, "crawl_get", fake):
+            return audit_module.build_audit(appmain.fetch_page_data(url, strict=True), url)
+
+    def test_report_is_version_2_with_evidence_and_not_verified_list(self):
+        a = self.audit(GOOD_HTML)
+        self.assertEqual((a["version"], a["status"]), (2, "complete"))
+        ev = a["evidence"]
+        self.assertEqual(ev["h1"], ["Emergency Plumber in Shirley, NY"])
+        self.assertEqual(ev["h2"], ["Services", "Areas we serve"])
+        self.assertEqual(ev["http_status"], 200)
+        self.assertEqual(len(ev["internal_links"]), 5)
+        self.assertEqual(ev["internal_links"][0], {"href": "/drain-cleaning", "text": "Drain"})
+        checks = {item["check"] for item in a["not_verified"]}
+        self.assertTrue({"Search rankings", "Search volume and traffic", "Backlinks"} <= checks)
+        self.assertNotIn("score", json.dumps(a).lower())
+
+    def test_noindex_in_meta_or_header_fails_indexability(self):
+        html = GOOD_HTML.replace("</head>", '<meta name="robots" content="noindex, follow"></head>')
+        by = {f["id"]: f for f in self.audit(html)["findings"]}
+        self.assertEqual((by["indexability"]["result"], by["indexability"]["priority"]), ("fail", "high"))
+        self.assertIn("noindex, follow", by["indexability"]["evidence"])
+        by = {f["id"]: f for f in self.audit(GOOD_HTML, headers={"X-Robots-Tag": "noindex"})["findings"]}
+        self.assertEqual(by["indexability"]["result"], "fail")
+        self.assertIn("X-Robots-Tag", by["indexability"]["evidence"])
+
+    def test_missing_alt_images_and_h2_text_are_named(self):
+        a = self.audit(POOR_HTML.replace("<p>", "<h2>Our Menu</h2><p>"))
+        by = {f["id"]: f for f in a["findings"]}
+        self.assertIn("x.jpg", by["image_alt"]["evidence"])
+        self.assertIn("“Our Menu”", by["h2"]["evidence"])
+        self.assertEqual(a["evidence"]["images_missing_alt"], ["x.jpg", "y.jpg"])
+
+    def test_priorities_are_deterministic(self):
+        by = {f["id"]: f for f in self.audit(POOR_HTML)["findings"]}
+        self.assertEqual(by["h1"]["priority"], "high")
+        self.assertEqual(by["image_alt"]["priority"], "medium")
+        self.assertEqual(by["canonical"]["priority"], "medium")
+        self.assertTrue(all(f["priority"] == "" for f in by.values() if f["result"] in {"pass", "info"}))
+
+    def test_keyword_opportunities_only_use_phrases_on_the_page(self):
+        html = (FIXTURES / "icecream.html").read_text()
+        a = self.audit(html, url="https://scoops.example/")
+        page_text = " ".join(html.lower().split())
+        phrases = [o["phrase"] for o in a["keyword_opportunities"]]
+        self.assertIn("soft serve", " ".join(phrases))
+        for phrase in phrases:
+            self.assertIn(phrase, page_text, phrase)
+            self.assertNotIn(phrase, "scoops ice cream shop | homemade ice cream in bayport")   # not already in the title
+        for invented in ("contractor", "plumb", "roof", "licensed", "long island"):
+            self.assertNotIn(invented, json.dumps(a["keyword_opportunities"]).lower())
+        self.assertNotIn("volume", json.dumps(a["keyword_opportunities"]).lower())
+        self.assertTrue(all("mention" in o["evidence"] for o in a["keyword_opportunities"]))
+
+    def test_thin_page_has_no_keyword_opportunities(self):
+        self.assertEqual(self.audit(POOR_HTML)["keyword_opportunities"], [])
+
+    def test_non_strict_compare_fetch_output_is_unchanged(self):
+        with mock.patch.object(appmain, "crawl_get", crawl({"https://alpha-plumbing.example/": (GOOD_HTML, "https://alpha-plumbing.example/", 200)})):
+            page = appmain.fetch_page_data("https://alpha-plumbing.example/")
+        self.assertNotIn("audit_evidence", page)
+
+    def test_python310_compatible_datetime_usage(self):
+        source = Path(audit_module.__file__).read_text()
+        self.assertNotRegex(source, r"from datetime import[^\n]*\bUTC\b")
+        self.assertNotIn("datetime.UTC", source)
 
 
 if __name__ == "__main__":
