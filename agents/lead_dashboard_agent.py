@@ -3801,7 +3801,7 @@ body:not(.leadbot-live-page) a[href*="/lead-bot/block-domains"] {
 }
 /* === LEADBOT FINAL DELETE BLOCK POSITION OVERRIDE END === */
 </style>
-<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-10-lead-snapshot">
+<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-11-snapshot-wide">
 
 
 

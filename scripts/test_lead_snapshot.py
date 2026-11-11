@@ -40,24 +40,24 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("<b>52</b> / 100", out)
         self.assertIn('style="width:52%"', out)
         self.assertIn('aria-label="Lead score 52 out of 100"', out)
-        self.assertIn("#34 · Results page 4", out)
-        self.assertNotIn("Google Maps position", out)
+        self.assertIn("#34 · Page 4", out)
+        self.assertNotIn('class="ls-label">Maps<', out)
 
     def test_unmeasured_organic_rank(self):
         for row in (organic(serp_position=""), organic(serp_position="manual"), organic(serp_position="0")):
             out = snap.snapshot_html(row)
             self.assertIn("Organic rank not checked.", out)
-            self.assertNotIn("Results page", out)
+            self.assertNotIn("· Page", out)
 
     def test_maps_position_is_never_organic(self):
         out = snap.snapshot_html(maps())
         self.assertIn("Organic rank not checked.", out)
-        self.assertNotIn("Results page", out)
-        self.assertIn("Google Maps position</span><span class=\"ls-value\">#7", out)
+        self.assertNotIn("· Page", out)
+        self.assertIn('Maps<span class="ls-long"> Position</span></span><span class="ls-value">#7', out)
         # Organic-export Google Places rows: not organic, and not a Maps listing rank.
         places = snap.snapshot_html(organic(serp_page="Google Places", serp_position="2", source="google_places"))
         self.assertIn("Organic rank not checked.", places)
-        self.assertNotIn("Google Maps position", places)
+        self.assertNotIn('class="ls-label">Maps<', places)
 
     def test_score_missing_or_clamped(self):
         self.assertIn("Not scored", snap.snapshot_html(organic(final_lead_score="", score="")))
@@ -66,23 +66,33 @@ class SnapshotTests(unittest.TestCase):
 
     def test_website_states(self):
         verified = snap.snapshot_html(maps())
-        self.assertIn('Yes · <a href="https://mapsbagels.example/" target="_blank" rel="noopener noreferrer nofollow">'
-                      'https://mapsbagels.example/</a>', verified)
-        self.assertIn(">Verified<", verified)
+        self.assertIn('Yes · <span class="ls-tag ls-verified">Verified</span>', verified)
+        self.assertIn('<a class="ls-url" href="https://mapsbagels.example/" title="https://mapsbagels.example/" '
+                      'target="_blank" rel="noopener noreferrer nofollow">mapsbagels.example</a>', verified)
         unverified = snap.snapshot_html(maps(website_verified="false", website_status="unverified"))
-        self.assertIn("Listed but not verified", unverified)
+        self.assertIn("Yes · <span class=\"ls-tag ls-unverified\">Not verified</span>", unverified)
         self.assertNotIn(">Verified<", unverified)
-        self.assertIn("Listed but not verified", snap.snapshot_html(organic()))
+        self.assertIn(">Not verified<", snap.snapshot_html(organic()))
         for row in (maps(url="", domain="", website_status="missing", website_verified="false"),
                     organic(url="", domain=""),
                     organic(url="https://www.google.com/url?q=https://x.example")):
             out = snap.snapshot_html(row)
-            self.assertIn("No — No website listed", out)
+            self.assertIn("No website listed", out)
+            self.assertNotIn("ls-url", out)
             self.assertNotIn("<a ", out)
         # The domain is never substituted for a missing URL.
         self.assertNotIn("alphabagels.example", snap.snapshot_html(organic(url="")))
         # A recorded non-http value is shown as text, never linked.
         self.assertNotIn("<a ", snap.snapshot_html(organic(url="javascript:alert(1)")))
+
+    def test_display_url(self):
+        self.assertEqual(snap.display_url("https://www.example.com/"), "example.com")
+        self.assertEqual(snap.display_url("http://example.com/menu/"), "example.com/menu/")
+
+    def test_score_basis_tooltip(self):
+        out = snap.snapshot_html(maps(score_basis='Phone +15 · Verified website +20 "x"'))
+        self.assertIn('title="Why: Phone +15 · Verified website +20 &quot;x&quot;"', out)
+        self.assertNotIn("title=\"Why", snap.snapshot_html(organic()))
 
     def test_escaping(self):
         out = snap.snapshot_html(organic(url='https://x.example/"><script>alert(1)</script>'))

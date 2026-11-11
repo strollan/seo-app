@@ -47,6 +47,7 @@ MAPS_EXPORT_FIELDS = [
     "maps_position",
     "rating_value",
     "rating_votes",
+    "score_basis",
 ]
 
 WEBSITE_VERIFIED = "verified"
@@ -375,15 +376,94 @@ def build_lead(
         if flag not in lead["contact_flags"]:
             lead["contact_flags"].append(flag)
 
-    score = 60
-    score += {"email_and_call_ready": 12, "call_ready": 7, "email_ready": 6}.get(status, -20)
-    if lead["has_street_address"]:
-        score += 3
-    if status != "email_and_call_ready":
-        score = min(score, 94)
-    lead["final_lead_score"] = max(0, min(100, score))
-    lead["score"] = lead["final_lead_score"]
+    score, basis = maps_lead_score(lead)
+    lead["final_lead_score"] = score
+    lead["score"] = score
+    lead["score_basis"] = basis
     return lead
+
+
+# -- lead score ------------------------------------------------------------------
+#
+# What the Maps lead score measures (0-100): how well-evidenced and reachable a
+# prospect is, from facts this scan actually recorded. Every point maps to one
+# saved field; nothing is estimated, randomised or curved.
+#
+#   Reachability   up to 35  phone 15, email on the business's own domain 15,
+#                            contact page on its own site 5
+#   Website        up to 20  verified (we fetched it, same site) 20,
+#                            listed but unverified 8, social profile only 3, none 0
+#   Relevance      up to 20  Maps primary category matches the search 20,
+#                            additional category 14, business name only 10
+#   Listing        up to 15  street address 7; Google reviews 25+ 8, 5-24 5, 1-4 2
+#   Local SEO room up to 10  Maps position 11+ 10, 4-10 6, 1-3 2 (top-3 is
+#                            already winning local search, so least room)
+#   Shared website     -10   the website is shared by several listings (chain)
+#
+# Historical scores are never recalculated: saved exports keep the score they
+# were saved with. (The old formula, 60 + contact status + 3 for an address,
+# could only produce ~6 values, so most Maps leads were 67, 70 or 75.)
+
+_RELEVANCE_POINTS = {"primary_category": 20, "additional_category": 14, "business_name": 10, "no_keyword": 12}
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    try:
+        return int(float(str(value).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return None
+
+
+def maps_lead_score(lead: Dict[str, Any]) -> Tuple[int, str]:
+    """(score 0-100, "Phone +15 · ..." explanation) from a Maps lead's saved evidence."""
+    parts: List[Tuple[str, int]] = []
+    status = str(lead.get("outreach_status") or "")
+
+    if str(lead.get("best_phone") or "").strip():
+        parts.append(("Phone", 15))
+    if status in {"email_and_call_ready", "email_ready"}:
+        parts.append(("Own-domain email", 15))
+    if str(lead.get("contact_page_url") or "").strip():
+        parts.append(("Contact page", 5))
+
+    website_status = str(lead.get("website_status") or "")
+    verified = lead.get("website_verified") in (True, "True", "true", "1", 1)
+    if verified:
+        parts.append(("Verified website", 20))
+    elif website_status == WEBSITE_SOCIAL:
+        parts.append(("Social profile only", 3))
+    elif str(lead.get("website") or lead.get("url") or "").strip():
+        parts.append(("Website not verified", 8))
+
+    relevance = _RELEVANCE_POINTS.get(str(lead.get("relevance") or ""), 0)
+    if relevance:
+        label = {20: "Category match", 14: "Secondary category match", 10: "Name match", 12: "Relevance"}[relevance]
+        parts.append((label, relevance))
+
+    if lead.get("has_street_address") in (True, "True", "true", "1", 1):
+        parts.append(("Street address", 7))
+    votes = _int_or_none(lead.get("rating_votes")) or 0
+    if votes >= 25:
+        parts.append((f"{votes} reviews", 8))
+    elif votes >= 5:
+        parts.append((f"{votes} reviews", 5))
+    elif votes >= 1:
+        parts.append((f"{votes} reviews", 2))
+
+    position = _int_or_none(lead.get("maps_position"))
+    if position and position >= 11:
+        parts.append((f"Maps #{position}", 10))
+    elif position and position >= 4:
+        parts.append((f"Maps #{position}", 6))
+    elif position and position >= 1:
+        parts.append((f"Maps #{position}", 2))
+
+    if int(lead.get("shared_domain_count") or 0) > 1:
+        parts.append(("Website shared by several listings", -10))
+
+    score = max(0, min(100, sum(points for _, points in parts)))
+    basis = " · ".join(f"{label} {points:+d}" for label, points in parts) or "No recorded evidence"
+    return score, basis
 
 
 def public_card_fields(lead: Dict[str, Any]) -> Dict[str, Any]:
@@ -404,6 +484,7 @@ def public_card_fields(lead: Dict[str, Any]) -> Dict[str, Any]:
         "maps_position": str(lead.get("maps_position") or ""),
         "rating_value": str(lead.get("rating_value") or ""),
         "rating_votes": str(lead.get("rating_votes") or ""),
+        "score_basis": lead.get("score_basis") or "",
         "has_street_address": bool(lead.get("has_street_address")),
         # Only a verified website of ONE business may be compared, audited or
         # sent to the CRM (chain locations sharing a website are ambiguous).

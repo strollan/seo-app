@@ -14458,7 +14458,7 @@ body.leadbot-live-final .live-progress-bar {{
 /* === DIRECT LIVE CONSOLE CSS END === */
 
 </style>
-<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-10-lead-snapshot">
+<link rel="stylesheet" href="/static/lead-snapshot.css?v=2026-11-11-snapshot-wide">
 </head>
 <body>
 <div class="container">
@@ -14734,6 +14734,14 @@ function leadSnapshotInt(value) {{
     const n = parseInt(String(value == null ? "" : value).trim(), 10);
     return Number.isFinite(n) ? n : null;
 }}
+function leadSnapshotDisplayUrl(url) {{
+    let shown = String(url || "").trim().replace(/^https?:[/][/]/i, "").replace(/^www[.]/i, "");
+    if (shown.endsWith("/") && shown.indexOf("/") === shown.length - 1) shown = shown.slice(0, -1);
+    return shown || String(url || "");
+}}
+function leadSnapshotRow(label, valueHtml, cls, extra) {{
+    return '<div class="ls-row' + (cls ? ' ' + cls : '') + '"><span class="ls-label">' + label + '</span><span class="ls-value">' + valueHtml + '</span>' + (extra || '') + '</div>';
+}}
 function leadSnapshotHtml(lead) {{
     const isMaps = lead.discovery_source === "google_maps" || String(lead.serp_page || "").trim().toLowerCase() === "google maps";
     const source = String(lead.source || "").toLowerCase();
@@ -14743,11 +14751,12 @@ function leadSnapshotHtml(lead) {{
     let score = leadSnapshotInt(lead.final_lead_score);
     if (score === null) score = leadSnapshotInt(lead.score);
     if (score === null) {{
-        out += '<div class="ls-row"><span class="ls-label">Lead score</span><span class="ls-value ls-muted">Not scored</span></div>';
+        out += leadSnapshotRow("Lead Score", '<span class="ls-muted">Not scored</span>');
     }} else {{
         score = Math.max(0, Math.min(100, score));
-        out += '<div class="ls-row ls-score"><span class="ls-label">Lead score</span><span class="ls-value"><b>' + score + '</b> / 100</span>' +
-            '<span class="ls-bar" role="img" aria-label="Lead score ' + score + ' out of 100"><span style="width:' + score + '%"></span></span></div>';
+        const basis = String(lead.score_basis || "").trim();
+        out += '<div class="ls-row ls-score"' + (basis ? ' title="' + esc("Why: " + basis) + '"' : '') + '><span class="ls-label">Lead Score</span><span class="ls-value"><b>' + score + '</b> / 100' +
+            '<span class="ls-bar" role="img" aria-label="Lead score ' + score + ' out of 100"><span style="width:' + score + '%"></span></span></span></div>';
     }}
 
     let organic = null;
@@ -14755,13 +14764,13 @@ function leadSnapshotHtml(lead) {{
         const pos = leadSnapshotInt(lead.serp_position);
         if (pos !== null && pos >= 1) organic = pos;
     }}
-    out += '<div class="ls-row"><span class="ls-label">Google organic position</span>' + (organic
-        ? '<span class="ls-value">#' + organic + ' · Results page ' + (Math.floor((organic - 1) / 10) + 1) + '</span>'
-        : '<span class="ls-value ls-muted">Organic rank not checked.</span>') + '</div>';
+    out += leadSnapshotRow('Organic<span class="ls-long"> Position</span>', organic
+        ? '#' + organic + ' · Page ' + (Math.floor((organic - 1) / 10) + 1)
+        : '<span class="ls-muted">Organic rank not checked.</span>');
 
     const mapsPos = isMaps ? leadSnapshotInt(lead.maps_position) : null;
     if (mapsPos !== null && mapsPos >= 1) {{
-        out += '<div class="ls-row"><span class="ls-label">Google Maps position</span><span class="ls-value">#' + mapsPos + '</span></div>';
+        out += leadSnapshotRow('Maps<span class="ls-long"> Position</span>', '#' + mapsPos);
     }}
 
     const url = String(lead.url || "").trim();
@@ -14771,15 +14780,16 @@ function leadSnapshotHtml(lead) {{
     const googleHost = /(^|[.])google[.][a-z.]+$/.test(host) || host === "goo.gl" || host === "g.page" || host === "maps.app.goo.gl";
     if (url && !googleHost && !["not found", "none", "null", "nan", "missing"].includes(url.toLowerCase())) {{
         const linkable = /^https?:[/][/]/i.test(url) && !!host;
+        const shown = esc(leadSnapshotDisplayUrl(url));
         const urlHtml = linkable
-            ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer nofollow">' + esc(url) + '</a>'
-            : esc(url);
+            ? '<a class="ls-url" href="' + esc(url) + '" title="' + esc(url) + '" target="_blank" rel="noopener noreferrer nofollow">' + shown + '</a>'
+            : '<span class="ls-url" title="' + esc(url) + '">' + shown + '</span>';
         const tag = (isMaps && lead.website_verified === true)
             ? '<span class="ls-tag ls-verified">Verified</span>'
-            : '<span class="ls-tag ls-unverified">Listed but not verified</span>';
-        out += '<div class="ls-row ls-website"><span class="ls-label">Website</span><span class="ls-value">Yes · ' + urlHtml + ' ' + tag + '</span></div>';
+            : '<span class="ls-tag ls-unverified">Not verified</span>';
+        out += leadSnapshotRow("Website", 'Yes · ' + tag, "ls-website", urlHtml);
     }} else {{
-        out += '<div class="ls-row ls-website"><span class="ls-label">Website</span><span class="ls-value">No — No website listed</span></div>';
+        out += leadSnapshotRow("Website", '<span class="ls-muted">No website listed</span>', "ls-website");
     }}
     return out + '</aside>';
 }}

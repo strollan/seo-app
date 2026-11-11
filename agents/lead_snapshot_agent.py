@@ -7,8 +7,8 @@ Reuses saved fields only: no lookups, no paid calls.
   are never shown as organic rank.
 - Google Maps position: shown separately, for Maps listings only.
 - Website: the recorded URL as-is (never invented or substituted). "Verified"
-  only when the Maps website check confirmed it; otherwise "Listed but not
-  verified". Google search/redirect URLs are not business websites.
+  only when the Maps website check confirmed it; otherwise "Not
+  verified" (shown as "Yes · Not verified"). Google search/redirect URLs are not business websites.
 
 app/main.py's live page mirrors this in JS (leadSnapshotHtml); keep the two in step.
 """
@@ -78,49 +78,68 @@ def website(row: Dict[str, Any]) -> Dict[str, Any]:
     return {"url": url, "link": bool(_http_url(url)), "verified": verified}
 
 
+def display_url(url: str) -> str:
+    """Compact visible form of a URL (scheme, "www." and a lone trailing slash dropped)."""
+    shown = url.strip()
+    for prefix in ("https://", "http://"):
+        if shown.lower().startswith(prefix):
+            shown = shown[len(prefix):]
+            break
+    if shown.lower().startswith("www."):
+        shown = shown[4:]
+    if shown.endswith("/") and shown.count("/") == 1:
+        shown = shown[:-1]
+    return shown or url
+
+
+def _row(label: str, value_html: str, cls: str = "", extra: str = "") -> str:
+    cls_attr = f"ls-row {cls}".strip()
+    return (f'<div class="{cls_attr}"><span class="ls-label">{label}</span>'
+            f'<span class="ls-value">{value_html}</span>{extra}</div>')
+
+
 def snapshot_html(row: Dict[str, Any]) -> str:
+    """Label/value rows, one line each (the website URL gets its own line)."""
     esc = html.escape
     parts = ['<aside class="lead-snapshot" aria-label="Lead snapshot">']
 
     score = lead_score(row)
     if score is None:
-        parts.append('<div class="ls-row"><span class="ls-label">Lead score</span>'
-                     '<span class="ls-value ls-muted">Not scored</span></div>')
+        parts.append(_row("Lead Score", '<span class="ls-muted">Not scored</span>'))
     else:
+        basis = str(row.get("score_basis") or "").strip()
+        title = f' title="{esc("Why: " + basis, quote=True)}"' if basis else ""
         parts.append(
-            '<div class="ls-row ls-score"><span class="ls-label">Lead score</span>'
-            f'<span class="ls-value"><b>{score}</b> / 100</span>'
+            f'<div class="ls-row ls-score"{title}><span class="ls-label">Lead Score</span>'
+            f'<span class="ls-value"><b>{score}</b> / 100'
             f'<span class="ls-bar" role="img" aria-label="Lead score {score} out of 100">'
-            f'<span style="width:{score}%"></span></span></div>'
+            f'<span style="width:{score}%"></span></span></span></div>'
         )
 
     position = organic_position(row)
     if position:
-        organic = f"#{position} · Results page {results_page(position)}"
-        parts.append('<div class="ls-row"><span class="ls-label">Google organic position</span>'
-                     f'<span class="ls-value">{esc(organic)}</span></div>')
+        parts.append(_row('Organic<span class="ls-long"> Position</span>', esc(f"#{position} · Page {results_page(position)}")))
     else:
-        parts.append('<div class="ls-row"><span class="ls-label">Google organic position</span>'
-                     '<span class="ls-value ls-muted">Organic rank not checked.</span></div>')
+        parts.append(_row('Organic<span class="ls-long"> Position</span>', '<span class="ls-muted">Organic rank not checked.</span>'))
 
     maps_rank = maps_position(row)
     if maps_rank:
-        parts.append('<div class="ls-row"><span class="ls-label">Google Maps position</span>'
-                     f'<span class="ls-value">#{maps_rank}</span></div>')
+        parts.append(_row('Maps<span class="ls-long"> Position</span>', f"#{maps_rank}"))
 
     site = website(row)
     if site["url"]:
-        url_html = (
-            f'<a href="{esc(site["url"], quote=True)}" target="_blank" rel="noopener noreferrer nofollow">'
-            f'{esc(site["url"])}</a>' if site["link"] else esc(site["url"])
-        )
         tag = ('<span class="ls-tag ls-verified">Verified</span>' if site["verified"]
-               else '<span class="ls-tag ls-unverified">Listed but not verified</span>')
-        parts.append('<div class="ls-row ls-website"><span class="ls-label">Website</span>'
-                     f'<span class="ls-value">Yes · {url_html} {tag}</span></div>')
+               else '<span class="ls-tag ls-unverified">Not verified</span>')
+        shown = esc(display_url(site["url"]))
+        full = esc(site["url"], quote=True)
+        url_html = (
+            f'<a class="ls-url" href="{full}" title="{full}" target="_blank" '
+            f'rel="noopener noreferrer nofollow">{shown}</a>' if site["link"]
+            else f'<span class="ls-url" title="{full}">{shown}</span>'
+        )
+        parts.append(_row("Website", f"Yes · {tag}", "ls-website", url_html))
     else:
-        parts.append('<div class="ls-row ls-website"><span class="ls-label">Website</span>'
-                     '<span class="ls-value">No — No website listed</span></div>')
+        parts.append(_row("Website", '<span class="ls-muted">No website listed</span>', "ls-website"))
 
     parts.append("</aside>")
     return "".join(parts)
