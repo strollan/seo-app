@@ -75,7 +75,7 @@ CARD_IMAGES = {
         "A local storefront connected to target fit, contactability, and website opportunity signals.",
     ),
     "/how-to-find-local-leads": (
-        "/static/images/resources/how-to-find-local-leads-card.webp",
+        "/static/images/resources/how-to-find-local-leads-green-a224b4f957fa.webp",
         "A map search identifies local storefronts and organizes them into a verified shortlist.",
     ),
     "/how-to-verify-local-business-leads-before-outreach": (
