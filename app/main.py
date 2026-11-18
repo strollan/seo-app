@@ -897,6 +897,10 @@ def fetch_page_data(url: str, *, strict: bool = False):
         image_count = len(images)
         alt_texts = [img.get("alt", "").strip() for img in images if img.get("alt", "").strip()]
         alt_count = len(alt_texts)
+        # Read before extract_visible_text(): it decomposes <header>/<footer>, leaving any <img> inside them with
+        # attrs=None, so reading them afterwards raised and the strict SEO audit came back "could not be fetched".
+        images_missing_alt = [str(img.get("src", "") or "(no src)")[:300] for img in images
+                              if not img.get("alt", "").strip()][:10]
 
         text = extract_visible_text(soup)
         tokens = tokenize(text)
@@ -1048,8 +1052,7 @@ def fetch_page_data(url: str, *, strict: bool = False):
                 "lang": str(html_tag.get("lang", "") if html_tag else "")[:20],
                 "h1_texts": [t.get_text(" ", strip=True)[:200] for t in h1_tags[:5]],
                 "h2_texts": [t[:200] for t in h2_texts[:15]],
-                "images_missing_alt": [str(img.get("src", "") or "(no src)")[:300] for img in images
-                                       if not img.get("alt", "").strip()][:10],
+                "images_missing_alt": images_missing_alt,
                 "internal_links": internal_sample,
             }
         return data

@@ -319,6 +319,22 @@ class SeoReportV2Tests(unittest.TestCase):
         self.assertIn("“Our Menu”", by["h2"]["evidence"])
         self.assertEqual(a["evidence"]["images_missing_alt"], ["x.jpg", "y.jpg"])
 
+    def test_images_in_header_and_footer_do_not_break_the_audit(self):
+        """Regression (prod ded6dbc): extract_visible_text() decomposes <header>/<footer>, which left their <img>
+        tags with attrs=None; reading alt text afterwards raised and the whole audit became 'could not be fetched'."""
+        html = GOOD_HTML.replace("<body>", "<body><header><img src='/logo.png'><img src='/badge.png' alt='Award'></header>")
+        html = html.replace("</body>", "<footer><img src='/footer-map.png'></footer></body>")
+        a = self.audit(html)
+        self.assertEqual(a["status"], "complete")
+        self.assertEqual(a["evidence"]["images_missing_alt"], ["/logo.png", "/footer-map.png"])
+        by = {f["id"]: f for f in a["findings"]}
+        self.assertIn("3 of 5 images have alt text", by["image_alt"]["evidence"])
+
+    def test_missing_alt_list_matches_previous_rules_outside_header_footer(self):
+        html = POOR_HTML.replace("<p>", "<img src='z.jpg' alt='  '><img src='w.jpg' alt><img alt='x'><img><p>")
+        a = self.audit(html)
+        self.assertEqual(a["evidence"]["images_missing_alt"], ["z.jpg", "w.jpg", "(no src)", "x.jpg", "y.jpg"])
+
     def test_priorities_are_deterministic(self):
         by = {f["id"]: f for f in self.audit(POOR_HTML)["findings"]}
         self.assertEqual(by["h1"]["priority"], "high")
